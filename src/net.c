@@ -143,7 +143,7 @@ int AddSocket(struct NETConnectionManager* const manager, const int sfd, void (*
     return err;
   }
   err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, sfd, &((struct epoll_event) {
-    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP,
+    .events = EPOLLIN | EPOLLRDHUP,
     .data = (epoll_data_t) {
       .fd = sfd
     }
@@ -185,7 +185,6 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
     printf("done connecting at %ld\n", GetTime(0));
     if(err != 0) {
       (void) close(sfd);
-      sfd = 0;
       continue;
     } else {
       *sockt = (struct NETSocket) {
@@ -199,14 +198,16 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
         .protocol = n->ai_protocol,
         .sfd = sfd
       };
-      break;
+      freeaddrinfo(res);
+      return 0;
     }
   }
   freeaddrinfo(res);
-  return sfd;
+  return -1;
 }
 
-int SyncTCP_GAIConnect(const char* const hostname, const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+int SyncTCP_GAIConnect(const char* const hostname, const char* const service, struct NETSocket* restrict socket) {
+  struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, 0, &res);
   if(err != 0) {
     return err;
@@ -214,7 +215,8 @@ int SyncTCP_GAIConnect(const char* const hostname, const char* const service, st
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, struct NETSocket* restrict socket) {
+  struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, AI_NUMERICHOST, &res);
   if(err != 0) {
     return err;
@@ -237,13 +239,11 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
     err = bind(sfd, n->ai_addr, n->ai_addrlen);
     if(err != 0) {
       (void) close(sfd);
-      sfd = 0;
       continue;
     }
     err = listen(sfd, 64);
     if(err != 0) {
       (void) close(sfd);
-      sfd = 0;
       continue;
     } else {
       *sockt = (struct NETSocket) {
@@ -257,14 +257,16 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
         .protocol = n->ai_protocol,
         .sfd = sfd
       };
-      break;
+      freeaddrinfo(res);
+      return 0;
     }
   }
   freeaddrinfo(res);
-  return sfd;
+  return -1;
 }
 
-int SyncTCP_GAIListen(const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+int SyncTCP_GAIListen(const char* const service, struct NETSocket* restrict socket) {
+  struct addrinfo* res;
   int err = GetAddrInfo(NULL, service, AI_PASSIVE, &res);
   if(err != 0) {
     return err;
@@ -393,4 +395,8 @@ int AsyncTCPConnect(struct ANET* const info) {
 int AsyncTCPListen(struct ANET* const info) {
   pthread_t t;
   return pthread_create(&t, NULL, AsyncTCPListenThread, info);
+}
+
+int TCPSend(const int sfd, const void* const buffer, const size_t length, const int cork) {
+  int err = send(sfd, buffer, length, MSG_NOSIGNAL | (cork * MSG_MORE));
 }
