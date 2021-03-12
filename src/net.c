@@ -1,3 +1,19 @@
+/*
+   Copyright 2021 shädam
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -15,6 +31,14 @@
 #include <stdio.h>
 #include <arpa/inet.h> // htons, htonl, etc
 
+void SocketNoBlock(const int sfd) {
+  int err = fcntl(sfd, F_GETFL, 0);
+  if(err == -1) {
+    err = 0;
+  }
+  (void) fcntl(sfd, F_SETFL, err | O_NONBLOCK);
+}
+
 int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const restrict res) {
   return getaddrinfo(hostname, service, &((struct addrinfo) {
     .ai_family = flags & (AF_INET | AF_INET6 | AF_UNSPEC),
@@ -28,213 +52,35 @@ int GetAddrInfo(const char* const hostname, const char* const service, const int
   }), res);
 }
 
-#define arr ((struct AsyncGAIArray*) a)
+#define arra ((struct ANET_GAIArray*) a)
 
 __nonnull((1))
 static void* AsyncGAIThread(void* a) {
   struct addrinfo* res;
-  int i = 0;
-  for(; i < arr->count; ++i) {
-    arr->infos[i].callback(res, GetAddrInfo(arr->infos[i].hostname, arr->infos[i].service, arr->infos[i].flags, &res));
+  uint_fast32_t i = 0;
+  for(; i < arra->count; ++i) {
+    arra->arr[i].callback(res, GetAddrInfo(arra->arr[i].hostname, arra->arr[i].service, arra->arr[i].flags, &res));
     freeaddrinfo(res);
   }
   return NULL;
 }
 
-#undef arr
-#define arr ((struct AsyncNETArray*) a)
+#undef arra
 
-__nonnull((1))
-static void* AsyncTCPConnectThread(void* a) {
-  struct addrinfo* res;
-  struct addrinfo* n;
-  struct NETSocket nets;
-  const enum NETFlags type = arr->type;
-  int err;
-  int sfd;
-  int i = 0;
-  /*
-  >= 0 = success
-  -1 = getaddrinfo err
-  -2 = connect err
-  -3 = no socket succeeded
-  */
-  for(; i < arr->count; ++i) {
-    if(type == NET_GAI) {
-      err = GetAddrInfo(arr->infos.gai[i].hostname, arr->infos.gai[i].service, arr->infos.gai[i].flags, &res);
-      if(err != 0) {
-        errno = err;
-        arr->infos.gai[i].callback(NULL, -1);
-        continue;
-      }
-    } else {
-      res = arr->infos.nogai[i].addrinfos;
-    }
-    for(n = res; n != NULL; n = n->ai_next) {
-      printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
-      sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-      if(sfd == -1) {
-        printf("creating a socket failed with reason: %s\n", strerror(errno));
-        continue;
-      }
-      puts("got socket");
-      nets = (struct NETSocket) {
-        .addr = *n->ai_addr,
-        .canonname = n->ai_canonname,
-        .addrlen = n->ai_addrlen,
-        .state = NET_CLOSED,
-        .flags = n->ai_flags,
-        .family = n->ai_family,
-        .socktype = n->ai_socktype,
-        .protocol = n->ai_protocol,
-        .sfd = sfd
-      };
-      printf("we connecting at %ld\n", GetTime(0));
-      err = connect(sfd, n->ai_addr, n->ai_addrlen);
-      printf("done connecting at %ld\n", GetTime(0));
-      if(err != 0) {
-        (void) close(sfd);
-        if(type == NET_GAI) {
-          arr->infos.gai[i].callback(&nets, -2);
-          if(n->ai_next == NULL) {
-            arr->infos.gai[i].callback(&nets, -3);
-            break;
-          }
-        } else {
-          arr->infos.nogai[i].callback(&nets, -2);
-          if(n->ai_next == NULL) {
-            arr->infos.nogai[i].callback(&nets, -3);
-            break;
-          }
-        }
-        continue;
-      } else {
-        err = fcntl(sfd, F_GETFL, 0);
-        if(err == -1) {
-          err = 0;
-        }
-        err = fcntl(sfd, F_SETFL, err | O_NONBLOCK);
-        if(err == -1) {
-          printf("err at first fcntl: %s\n", strerror(errno));
-        }
-        nets.state = NET_OPEN;
-        if(type == NET_GAI) {
-          arr->infos.gai[i].callback(&nets, sfd);
-        } else {
-          arr->infos.nogai[i].callback(&nets, sfd);
-        }
-        break;
-      }
-    }
-    freeaddrinfo(res);
-  }
-  return NULL;
+int AsyncGetAddrInfo(struct ANET_GAIArray* const array) {
+  pthread_t t;
+  return pthread_create(&t, NULL, AsyncGAIThread, array);
 }
-
-__nonnull((1))
-static void* AsyncTCPListenThread(void* a) {
-  struct addrinfo* res;
-  struct addrinfo* n;
-  struct NETSocket nets;
-  const enum NETFlags type = arr->type;
-  int err;
-  int sfd;
-  int i = 0;
-  int yes = 1;
-  /*
-  >= 0 = success
-  -1 = getaddrinfo err
-  -2 = bind err
-  -3 = listen err
-  -3 = no socket succeeded
-  */
-  for(; i < arr->count; ++i) {
-    if(type == NET_GAI) {
-      err = GetAddrInfo(arr->infos.gai[i].hostname, arr->infos.gai[i].service, arr->infos.gai[i].flags | AI_PASSIVE, &res);
-      if(err != 0) {
-        errno = err;
-        arr->infos.gai[i].callback(NULL, -1);
-        continue;
-      }
-    } else {
-      res = arr->infos.nogai[i].addrinfos;
-    }
-    for(n = res; n != NULL; n = n->ai_next) {
-      printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
-      sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-      if(sfd == -1) {
-        printf("creating a socket failed with reason: %s\n", strerror(errno));
-        continue;
-      }
-      puts("got socket");
-      nets = (struct NETSocket) {
-        .addr = *n->ai_addr,
-        .canonname = n->ai_canonname,
-        .addrlen = n->ai_addrlen,
-        .state = NET_CLOSED,
-        .flags = n->ai_flags,
-        .family = n->ai_family,
-        .socktype = n->ai_socktype,
-        .protocol = n->ai_protocol,
-        .sfd = sfd
-      };
-      (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-      err = bind(sfd, n->ai_addr, n->ai_addrlen);
-      if(err != 0) {
-        (void) close(sfd);
-        if(type == NET_GAI) {
-          arr->infos.gai[i].callback(&nets, -2);
-        } else {
-          arr->infos.nogai[i].callback(&nets, -2);
-        }
-        continue;
-      }
-      puts("bind succeeded");
-      err = listen(sfd, 128);
-      if(err != 0) {
-        (void) close(sfd);
-        if(type == NET_GAI) {
-          arr->infos.gai[i].callback(&nets, -3);
-          if(n->ai_next == NULL) {
-            arr->infos.gai[i].callback(&nets, -4);
-            break;
-          }
-        } else {
-          arr->infos.nogai[i].callback(&nets, -3);
-          if(n->ai_next == NULL) {
-            arr->infos.nogai[i].callback(&nets, -4);
-            break;
-          }
-        }
-        continue;
-      } else {
-        err = fcntl(sfd, F_GETFL, 0);
-        if(err == -1) {
-          err = 0;
-        }
-        err = fcntl(sfd, F_SETFL, err | O_NONBLOCK);
-        if(err == -1) {
-          printf("err at first fcntl: %s\n", strerror(errno));
-        }
-        nets.state = NET_OPEN;
-        if(type == NET_GAI) {
-          arr->infos.gai[i].callback(&nets, sfd);
-        } else {
-          arr->infos.nogai[i].callback(&nets, sfd);
-        }
-        break;
-      }
-    }
-    freeaddrinfo(res);
-  }
-  return NULL;
-}
-
-#undef arr
 
 static void dummy_signal_handler(__unused int sig) {}
 
 #define manager ((struct NETConnectionManager*) s)
+
+__nothrow __nonnull((1))
+static void EPollThreadCleanup(void* s) {
+  close(manager->epoll);
+  net_avl_free(&manager->avl_tree);
+}
 
 __nonnull((1))
 static void* EPollThread(void* s) {
@@ -252,11 +98,10 @@ static void* EPollThread(void* s) {
     .sa_flags = 0,
     .sa_handler = dummy_signal_handler
   }), NULL);
+  pthread_cleanup_push(EPollThreadCleanup, s);
   while(1) {
-    puts("epoll is waiting");
     err = epoll_wait(manager->epoll, events, 100, -1);
     if(err == -1) {
-      printf("epoll got -1 code, errno: %d | %s\n", errno, strerror(errno));
       close(manager->epoll);
       net_avl_free(&manager->avl_tree);
       return NULL;
@@ -265,6 +110,7 @@ static void* EPollThread(void* s) {
       net_avl_search(&manager->avl_tree, events[i].data.fd, events[i].events);
     }
   }
+  pthread_cleanup_pop(1);
   return NULL;
 }
 
@@ -280,7 +126,7 @@ int InitConnectionManager(struct NETConnectionManager* const manager, const uint
     close(epoll);
     return err;
   }
-  net_avl_tree(&manager->avl_tree, avg_size);
+  manager->avl_tree = net_avl_tree(avg_size);
   err = net_avl_init(&manager->avl_tree);
   if(err != 0) {
     close(epoll);
@@ -297,7 +143,7 @@ int AddSocket(struct NETConnectionManager* const manager, const int sfd, void (*
     return err;
   }
   err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, sfd, &((struct epoll_event) {
-    .events = EPOLLIN | EPOLLRDHUP,
+    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP,
     .data = (epoll_data_t) {
       .fd = sfd
     }
@@ -319,20 +165,232 @@ int DeleteSocket(struct NETConnectionManager* const manager, const int sfd) {
 }
 
 void FreeConnectionManager(struct NETConnectionManager* const manager) {
+  (void) pthread_cancel(manager->thread);
   (void) pthread_sigqueue(manager->thread, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
 }
 
-int AsyncGetAddrInfo(struct AsyncGAIArray* const array) {
-  pthread_t t;
-  return pthread_create(&t, NULL, AsyncGAIThread, array);
+int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt) {
+  struct addrinfo* n;
+  int sfd;
+  int err;
+  for(n = res; n != NULL; n = n->ai_next) {
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
+    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    printf("we connecting at   %ld\n", GetTime(0));
+    err = connect(sfd, n->ai_addr, n->ai_addrlen);
+    printf("done connecting at %ld\n", GetTime(0));
+    if(err != 0) {
+      (void) close(sfd);
+      sfd = 0;
+      continue;
+    } else {
+      *sockt = (struct NETSocket) {
+        .addr = *n->ai_addr,
+        .canonname = n->ai_canonname,
+        .addrlen = n->ai_addrlen,
+        .state = NET_OPEN,
+        .flags = n->ai_flags,
+        .family = n->ai_family,
+        .socktype = n->ai_socktype,
+        .protocol = n->ai_protocol,
+        .sfd = sfd
+      };
+      break;
+    }
+  }
+  freeaddrinfo(res);
+  return sfd;
 }
 
-int AsyncTCPConnect(struct AsyncNETArray* const array) {
-  pthread_t t;
-  return pthread_create(&t, NULL, AsyncTCPConnectThread, array);
+int SyncTCP_GAIConnect(const char* const hostname, const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+  int err = GetAddrInfo(hostname, service, 0, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPConnect(res, socket);
 }
 
-int AsyncTCPListen(struct AsyncNETArray* const array) {
+int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+  int err = GetAddrInfo(hostname, service, AI_NUMERICHOST, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPConnect(res, socket);
+}
+
+int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) {
+  struct addrinfo* n;
+  int sfd;
+  int err;
+  for(n = res; n != NULL; n = n->ai_next) {
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
+    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    err = bind(sfd, n->ai_addr, n->ai_addrlen);
+    if(err != 0) {
+      (void) close(sfd);
+      sfd = 0;
+      continue;
+    }
+    err = listen(sfd, 64);
+    if(err != 0) {
+      (void) close(sfd);
+      sfd = 0;
+      continue;
+    } else {
+      *sockt = (struct NETSocket) {
+        .addr = *n->ai_addr,
+        .canonname = n->ai_canonname,
+        .addrlen = n->ai_addrlen,
+        .state = NET_OPEN,
+        .flags = n->ai_flags,
+        .family = n->ai_family,
+        .socktype = n->ai_socktype,
+        .protocol = n->ai_protocol,
+        .sfd = sfd
+      };
+      break;
+    }
+  }
+  freeaddrinfo(res);
+  return sfd;
+}
+
+int SyncTCP_GAIListen(const char* const service, struct addrinfo* res, struct NETSocket* restrict socket) {
+  int err = GetAddrInfo(NULL, service, AI_PASSIVE, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPListen(res, socket);
+}
+
+#define arr ((struct ANET*) a)
+
+__nonnull((1))
+static void* AsyncTCPConnectThread(void* a) {
+  struct addrinfo* n;
+  struct NETSocket nets;
+  int err;
+  int sfd;
+  /*
+  >0 = success
+  -1 = connect err
+  -2 = no socket succeeded
+  */
+  for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
+    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    puts("got socket");
+    nets = (struct NETSocket) {
+      .addr = *n->ai_addr,
+      .canonname = n->ai_canonname,
+      .addrlen = n->ai_addrlen,
+      .state = NET_CLOSED,
+      .flags = n->ai_flags,
+      .family = n->ai_family,
+      .socktype = n->ai_socktype,
+      .protocol = n->ai_protocol,
+      .sfd = sfd
+    };
+    printf("we connecting at %ld\n", GetTime(0));
+    err = connect(sfd, n->ai_addr, n->ai_addrlen);
+    printf("done connecting at %ld\n", GetTime(0));
+    if(err != 0) {
+      (void) close(sfd);
+      arr->callback(&nets, -1);
+      if(n->ai_next == NULL) {
+        arr->callback(&nets, -2);
+        break;
+      }
+      continue;
+    } else {
+      nets.state = NET_OPEN;
+      arr->callback(&nets, sfd);
+      break;
+    }
+  }
+  freeaddrinfo(arr->addrinfo);
+  return NULL;
+}
+
+__nonnull((1))
+static void* AsyncTCPListenThread(void* a) {
+  struct addrinfo* n;
+  struct NETSocket nets;
+  int err;
+  int sfd;
+  /*
+  >0 = success
+  -1 = bind err
+  -2 = listen err
+  -3 = no socket succeeded
+  */
+  for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
+    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    puts("got socket");
+    nets = (struct NETSocket) {
+      .addr = *n->ai_addr,
+      .canonname = n->ai_canonname,
+      .addrlen = n->ai_addrlen,
+      .state = NET_CLOSED,
+      .flags = n->ai_flags,
+      .family = n->ai_family,
+      .socktype = n->ai_socktype,
+      .protocol = n->ai_protocol,
+      .sfd = sfd
+    };
+    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    err = bind(sfd, n->ai_addr, n->ai_addrlen);
+    if(err != 0) {
+      (void) close(sfd);
+      arr->callback(&nets, -1);
+      continue;
+    }
+    puts("bind succeeded");
+    err = listen(sfd, 64);
+    if(err != 0) {
+      (void) close(sfd);
+      arr->callback(&nets, -2);
+      if(n->ai_next == NULL) {
+        arr->callback(&nets, -3);
+        break;
+      }
+      continue;
+    } else {
+      nets.state = NET_OPEN;
+      arr->callback(&nets, sfd);
+      break;
+    }
+  }
+  freeaddrinfo(arr->addrinfo);
+  return NULL;
+}
+
+#undef arr
+
+int AsyncTCPConnect(struct ANET* const info) {
   pthread_t t;
-  return pthread_create(&t, NULL, AsyncTCPListenThread, array);
+  return pthread_create(&t, NULL, AsyncTCPConnectThread, info);
+}
+
+int AsyncTCPListen(struct ANET* const info) {
+  pthread_t t;
+  return pthread_create(&t, NULL, AsyncTCPListenThread, info);
 }

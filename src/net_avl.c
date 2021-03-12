@@ -1,11 +1,27 @@
+/*
+   Copyright 2021 shädam
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 #include "net_avl.h"
 
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
-void net_avl_tree(struct net_avl_tree* const tree, const uint32_t max_items_per_part) {
-  *tree = (struct net_avl_tree) {
+struct net_avl_tree net_avl_tree(const uint32_t max_items_per_part) {
+  return (struct net_avl_tree) {
     .parts = NULL,
     .head = NULL,
     .last = NULL,
@@ -49,7 +65,7 @@ void net_avl_free(struct net_avl_tree* const tree) {
   }
 }
 
-__nothrow __nonnull((1, 2))
+__nonnull((1, 2))
 static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node* const restrict node, struct net_avl_node* const restrict temp, const int sign) {
   if(sign == -1) {
     node->left = temp->right;
@@ -77,7 +93,7 @@ static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node*
   node->parent = temp;
 }
 
-__nothrow __nonnull((1, 2))
+__nonnull((1, 2))
 static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node* const restrict node, struct net_avl_node* const restrict temp, const int sign) {
   struct net_avl_node* restrict temp2;
   if(sign == -1) {
@@ -283,7 +299,7 @@ void net_avl_search(struct net_avl_tree* const tree, const int sfd, const uint32
   }
 }
 
-__nothrow __nonnull((1, 2))
+__nonnull((1, 2))
 static void net_avl_swap(struct net_avl_tree* const restrict tree, struct net_avl_node* restrict node) {
   *node = *tree->last;
   if(node->parent != NULL) {

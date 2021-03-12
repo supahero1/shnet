@@ -1,3 +1,19 @@
+/*
+   Copyright 2020-2021 shädam
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 #ifndef f_CPk_VQMzsBbdk_fxJrua_7Af_ItkDT
 #define f_CPk_VQMzsBbdk_fxJrua_7Af_ItkDT 1
 
@@ -5,7 +21,7 @@
 extern "C" {
 #endif
 
-#include "def.h"
+#include "../def.h"
 
 #include <stdatomic.h>
 #include <pthread.h>
@@ -41,25 +57,25 @@ struct WorkerCluster {
   _Atomic uint8_t count;
 };
 
-__nothrow __const
+__const
 extern struct WorkerCluster WorkerCluster(const uint8_t);
 
-__nothrow __nonnull((1, 2))
+__nonnull((1, 2))
 extern int Work(struct WorkerCluster* const restrict, void** const, const uint32_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void WorkCleanup(struct WorkerCluster* const);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void ClearCluster(struct WorkerCluster* const, const uint8_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern int PopulateCluster(struct WorkerCluster* const, const uint8_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void SetClusterWorkerReady(struct WorkerCluster* const, const uint8_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void SetClusterWorkersReady(struct WorkerCluster* const);
 
 struct TIObject {
@@ -81,19 +97,18 @@ struct TIStorage {
   _Atomic uint8_t clean_work;
 };
 
-__nothrow __const
+__const
 extern struct TIStorage TIStorage(const uint8_t);
 
-__nothrow
 extern uint64_t GetTime(const uint64_t);
 
-__nothrow __nonnull((1, 2))
+__nonnull((1, 2))
 extern int AddTimeout(struct TIStorage* const restrict, const struct TIObject* const restrict, const uint32_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void TICleanup(struct TIStorage* const);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void ClearStorage(struct TIStorage* const restrict, const uint8_t);
 
 extern int DeployTimeout(struct TIStorage* const);

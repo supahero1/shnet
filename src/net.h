@@ -1,3 +1,19 @@
+/*
+   Copyright 2021 shädam
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 #ifndef W_pOOj__2VkXM_ew9zpRf2pZH_H8ggTe
 #define W_pOOj__2VkXM_ew9zpRf2pZH_H8ggTe 1
 
@@ -5,13 +21,13 @@
 extern "C" {
 #endif
 
+#include "../def.h"
+#include "../net/net_avl.h"
+#include "../distr/distr.h"
+
 #include <netdb.h>
 #include <stdint.h>
 #include <signal.h>
-
-#include "def.h"
-#include "net_avl.h"
-#include "distr.h"
 
 /*struct HTTP_URL {
   char* protocol;
@@ -31,17 +47,34 @@ extern "C" {
   uint8_t port_len;
 };
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern struct HTTP_URL ParseHTTP_URL(const char* const);
 
 struct HTTPSocket {
   uint8_t state;
 };*/
 
-enum NETFlags { NET_CONNECTING, NET_OPEN, NET_CLOSED,
-  NET_GAI   = 1,
-  NET_NOGAI = 2
+enum NETFlags { NET_CONNECTING, NET_OPEN, NET_CLOSED };
+
+extern void SocketNoBlock(const int sfd);
+
+__nonnull((4))
+extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);
+
+struct ANET_GAILookup {
+  void (*callback)(struct addrinfo*, int);
+  char* hostname;
+  char* service;
+  int flags;
 };
+
+struct ANET_GAIArray {
+  struct ANET_GAILookup* arr;
+  uint_fast32_t count;
+};
+
+__nonnull((1))
+extern int AsyncGetAddrInfo(struct ANET_GAIArray* const);
 
 struct NETSocket {
   struct sockaddr addr;
@@ -55,70 +88,49 @@ struct NETSocket {
   int sfd;
 };
 
-struct AsyncGAIList {
-  void (*callback)(struct addrinfo*, int);
-  char* hostname;
-  char* service;
-  int flags;
-};
+__nonnull((1))
+extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* restrict);
 
-struct AsyncGAI {
-  void (*callback)(struct NETSocket*, int);
-  char* hostname;
-  char* service;
-  int flags;
-};
+__nonnull((1))
+extern int SyncTCP_GAIConnect(const char* const, const char* const, struct addrinfo*, struct NETSocket* restrict);
 
-struct AsyncNoGAI {
-  void (*callback)(struct NETSocket*, int);
-  struct addrinfo* addrinfos;
-};
+__nonnull((1))
+extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, struct addrinfo*, struct NETSocket* restrict);
 
-union GAIInfo {
-  struct AsyncGAI* gai;
-  struct AsyncNoGAI* nogai;
-};
+__nonnull((1))
+extern int SyncTCPListen(struct addrinfo* const, struct NETSocket* restrict);
 
-struct AsyncNETArray {
-  union GAIInfo infos;
-  uint32_t count;
-  enum NETFlags type;
-};
-
-struct AsyncGAIArray {
-  struct AsyncGAIList* infos;
-  uint32_t count;
-};
-
-__nothrow __nonnull((4))
-extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);
-
-__nothrow __nonnull((1))
-extern int AsyncGetAddrInfo(struct AsyncGAIArray* const);
-
-__nothrow __nonnull((1))
-extern int AsyncTCPConnect(struct AsyncNETArray* const);
-
-__nothrow __nonnull((1))
-extern int AsyncTCPListen(struct AsyncNETArray* const);
+__nonnull((1))
+extern int SyncTCP_GAIListen(const char* const, struct addrinfo*, struct NETSocket* restrict);
 
 struct NETConnectionManager {
   pthread_t thread;
-  struct net_avl_tree avl_tree; // store socket info too
+  struct net_avl_tree avl_tree;
   int epoll;
 };
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern int InitConnectionManager(struct NETConnectionManager* const, const uint32_t);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern int AddSocket(struct NETConnectionManager* const, const int, void (*)(int, uint32_t));
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern int DeleteSocket(struct NETConnectionManager* const, const int);
 
-__nothrow __nonnull((1))
+__nonnull((1))
 extern void FreeConnectionManager(struct NETConnectionManager* const);
+
+struct ANET {
+  void (*callback)(struct NETSocket*, int);
+  struct addrinfo* addrinfo;
+};
+
+__nonnull((1))
+extern int AsyncTCPConnect(struct ANET* const);
+
+__nonnull((1))
+extern int AsyncTCPListen(struct ANET* const);
 
 #ifdef __cplusplus
 }
