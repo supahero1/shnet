@@ -10,6 +10,7 @@ extern "C" {
 #include <signal.h>
 
 #include "../def.h"
+#include "../net/net_avl.h"
 #include "../distr/distr.h"
 
 /*struct HTTP_URL {
@@ -93,13 +94,31 @@ __nothrow __nonnull((4))
 extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);
 
 __nothrow __nonnull((1))
-int AsyncGetAddrInfo(struct AsyncGAIArray* const);
+extern int AsyncGetAddrInfo(struct AsyncGAIArray* const);
 
 __nothrow __nonnull((1))
-int AsyncTCPConnect(struct AsyncNETArray* const);
+extern int AsyncTCPConnect(struct AsyncNETArray* const);
 
 __nothrow __nonnull((1))
-int AsyncTCPListen(struct AsyncNETArray* const);
+extern int AsyncTCPListen(struct AsyncNETArray* const);
+
+struct NETConnectionManager {
+  pthread_t thread;
+  struct net_avl_tree avl_tree; // store socket info too
+  int epoll;
+};
+
+__nothrow __nonnull((1))
+extern int InitConnectionManager(struct NETConnectionManager* const, const uint32_t);
+
+__nothrow __nonnull((1))
+extern int AddSocket(struct NETConnectionManager* const, const int, void (*)(int, uint32_t));
+
+__nothrow __nonnull((1))
+extern int DeleteSocket(struct NETConnectionManager* const, const int);
+
+__nothrow __nonnull((1))
+extern void FreeConnectionManager(struct NETConnectionManager* const);
 
 #ifdef __cplusplus
 }
