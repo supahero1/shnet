@@ -9,9 +9,9 @@ extern "C" {
 #include <stdint.h>
 #include <signal.h>
 
-#include "../def.h"
-#include "../net/net_avl.h"
-#include "../distr/distr.h"
+#include "def.h"
+#include "net_avl.h"
+#include "distr.h"
 
 /*struct HTTP_URL {
   char* protocol;
