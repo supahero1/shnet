@@ -33,6 +33,10 @@ void event_handler(int sfd, uint32_t events) {
   printf("socket %d received the following events: ", sfd);
   if((events & EPOLLIN) != 0) {
     printf("EPOLLIN ");
+    char buf[500];
+    memset(buf, 0, 500);
+    size_t err = recv(sfd, buf, 500, 0);
+    printf("(bytes read: %ld, the message is: %s) ", err, buf);
   }
   if((events & EPOLLPRI) != 0) {
     printf("EPOLLPRI ");
@@ -62,7 +66,7 @@ void event_handler(int sfd, uint32_t events) {
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   int err;
   if(argc < 2) {
     puts("Minimum amount of arguments is 1.");
