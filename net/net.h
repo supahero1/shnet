@@ -92,16 +92,16 @@ __nonnull((1))
 extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIConnect(const char* const, const char* const, struct addrinfo*, struct NETSocket* restrict);
+extern int SyncTCP_GAIConnect(const char* const, const char* const, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, struct addrinfo*, struct NETSocket* restrict);
+extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, struct NETSocket* restrict);
 
 __nonnull((1))
 extern int SyncTCPListen(struct addrinfo* const, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIListen(const char* const, struct addrinfo*, struct NETSocket* restrict);
+extern int SyncTCP_GAIListen(const char* const, struct NETSocket* restrict);
 
 struct NETConnectionManager {
   pthread_t thread;
