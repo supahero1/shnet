@@ -26,7 +26,6 @@ extern "C" {
 #include "../net/net_avl.h"
 #include "../distr/distr.h"
 
-#include <netdb.h>
 #include <stdint.h>
 
 /*struct HTTP_URL {

@@ -41,7 +41,6 @@ void onmessage(struct NETSocket socket) {
 
 void onclose(struct NETSocket socket) {
   puts("onclose()");
-  exit(1);
 }
 
 void onerror(struct NETSocket socket) {
@@ -61,52 +60,47 @@ int main(int argc, char** argv) {
   }
   switch(argv[1][0]) {
     case 'c': {
-      struct NETSocket sock;
+      struct NETSocket sock[100];
       struct NETConnectionManager manager;
-      err = InitConnectionManager(&manager, 1);
+      err = InitConnectionManager(&manager, 5);
       if(err != 0) {
         printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
         exit(1);
       }
-      err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock);
-      if(err < -1) {
-        printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
-        exit(1);
-      } else if(err == -1) {
-        puts("no address succeeded at SyncTCP_GAIConnect");
-        exit(1);
+      for(int i = 0; i < 10; ++i) {
+        err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock[i]);
+        if(err < -1) {
+          printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
+          exit(1);
+        } else if(err == -1) {
+          puts("no address succeeded at SyncTCP_GAIConnect");
+          exit(1);
+        }
+        sock[i].onmessage = onmessage;
+        sock[i].onclose = onclose;
+        sock[i].onerror = onerror;
+        sock[i].onsent = onsent;
+        puts("SyncTCP_GAIConnect succeeded");
+        err = AddSocket(&manager, sock[i]);
+        if(err != 0) {
+          printf("error at AddSocket %d | %s\n", err, strerror(err));
+          exit(1);
+        }
+        puts("AddSocket succeeded");
+        /*char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
+        err = TCPSend(&sock[i], buf, sizeof(buf));
+        if(err != 0) {
+          printf("error at TCPSend %d | %s\n", err, strerror(err));
+          exit(1);
+        }*/
       }
-      sock.onmessage = onmessage;
-      sock.onclose = onclose;
-      sock.onerror = onerror;
-      sock.onsent = onsent;
-      puts("SyncTCP_GAIConnect succeeded");
-      err = AddSocket(&manager, sock);
-      if(err != 0) {
-        printf("error at AddSocket %d | %s\n", err, strerror(err));
-        exit(1);
-      }
-      puts("AddSocket succeeded");
-      /*char buf[] = "GET /index.html HTTP/1.0";
-      err = TCPSend(&sock, buf, sizeof(buf));
-      if(err != 0) {
-        printf("error at TCPSend %d | %s\n", err, strerror(err));
-        exit(1);
-      }*/
-      struct TIStorage ti = TIStorage(DISTR_ALWAYS);
-      err = DeployTimeout(&ti);
-      if(err != 0) {
-        puts("deploy err");
-        exit(1);
-      }
-      err = AddTimeout(&ti, &((struct TIObject) {
-        .time = GetTime(1 * 1000000000),
-        .func = TCPShutdown,
-        .data = &sock
-      }), 1);
-      if(err != 0) {
-        puts("addtimeout err");
-        exit(1);
+      char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
+      for(int i = 0; i < 10; ++i) {
+        err = TCPSend(&sock[i], buf, sizeof(buf));
+        if(err != 0) {
+          printf("error at TCPSend %d | %s\n", err, strerror(err));
+          exit(1);
+        }
       }
       (void) getc(stdin);
       break;

@@ -198,6 +198,7 @@ static void* EPollThread(void* s) {
   while(1) {
     err = epoll_wait(manager->epoll, events, 100, -1);
     if(err == -1) {
+      printf("epoll_wait err: %s\n", strerror(errno));
       close(manager->epoll);
       net_avl_free(&manager->avl_tree);
       return NULL;
