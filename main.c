@@ -51,8 +51,14 @@ void onsent(struct NETSocket socket) {
   puts("the socket sent all data we wanted it to send");
 }
 
-void onconnection(struct NETServer server, int sfd) {
-  printf("new connection %d\n", sfd);
+void onconnection(struct NETServer server, struct NETSocket socket) {
+  printf("new socket's sfd: %d\n", socket.sfd);
+  int err = AddSocket(server.manager, socket);
+  if(err != 0) {
+    printf("error at AddSocket %d | %s\n", err, strerror(err));
+    exit(1);
+  }
+  puts("AddSocket succeeded");
 }
 
 void serveronerror(struct NETServer server) {
@@ -126,6 +132,66 @@ void asyncgai(struct addrinfo* info, int status) {
   }
 }
 
+void asyncserver(struct NETServer* const server, const int sfd) {
+  switch(sfd) {
+    case -1: {
+      printf("connection error: %s\n", strerror(errno));
+      break;
+    }
+    case -2: {
+      puts("no socket succeeded");
+      exit(1);
+    }
+    default: {
+      int err;
+      struct NETConnManager manager;
+      err = InitConnManager(&manager, 5);
+      if(err != 0) {
+        printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
+        exit(1);
+      }
+      server->onconnection = onconnection;
+      server->onerror = serveronerror;
+      server->manager = &manager;
+      err = AddServer(&manager, *server);
+      if(err != 0) {
+        printf("error at AddServer %d | %s\n", err, strerror(err));
+        exit(1);
+      }
+      puts("AddServer succeeded");
+      (void) getc(stdin);
+      break;
+    }
+  }
+}
+
+void asyncgaiserver(struct addrinfo* info, int status) {
+  if(status == 0) {
+    puts("gai succeeded");
+    struct ANET_L* a = malloc(sizeof(struct ANET_L));
+    if(a == NULL) {
+      puts("cant malloc lol");
+      exit(1);
+    }
+    struct addrinfo* copy = malloc(sizeof(struct addrinfo));
+    if(copy == NULL) {
+      puts("cant malloc lol");
+      exit(1);
+    }
+    *copy = *info;
+    a->handler = asyncserver;
+    a->addrinfo = copy;
+    status = AsyncTCPListen(a);
+    if(status != 0) {
+      printf("error at AsyncTCPListen: %s\n", strerror(status));
+      exit(1);
+    }
+  } else {
+    printf("error at AsyncGetAddrInfo: %s\n", strerror(status));
+    exit(1);
+  }
+}
+
 int main(int argc, char** argv) {
   int err;
   if(argc < 3) {
@@ -152,11 +218,24 @@ int main(int argc, char** argv) {
         break;
       }
       case 'l': {
-        
+        err = AsyncGetAddrInfo(&((struct ANET_GAIArray) {
+          .arr = &((struct ANET_GAILookup) {
+            .handler = asyncgaiserver,
+            .hostname = argv[3],
+            .service = argv[4],
+            .flags = IPv4
+          }),
+          .count = 1
+        }));
+        if(err != 0) {
+          printf("error at AsyncGetAddrInfo: %s\n", strerror(err));
+          exit(1);
+        }
+        (void) getc(stdin);
         break;
       }
       default: {
-        puts("Option not recognized. The available options: l(isten) <port>, c(onnect) <host> <port>");
+        puts("Option not recognized. The available options: l(isten) <host> <port>, c(onnect) <host> <port>");
         break;
       }
     }
@@ -199,11 +278,36 @@ int main(int argc, char** argv) {
         break;
       }
       case 'l': {
-        
+        struct NETServer serv;
+        struct NETConnManager manager;
+        err = InitConnManager(&manager, 5);
+        if(err != 0) {
+          printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
+          exit(1);
+        }
+        err = SyncTCP_GAIListen(argv[3], argv[4], IPv4, &serv);
+        if(err < -1) {
+          printf("error at SyncTCP_GAIListen %d | %s\n", err, strerror(err));
+          exit(1);
+        } else if(err == -1) {
+          puts("no address succeeded at SyncTCP_GAIListen");
+          exit(1);
+        }
+        serv.onconnection = onconnection;
+        serv.onerror = serveronerror;
+        serv.manager = &manager;
+        puts("SyncTCP_GAIListen succeeded");
+        err = AddServer(&manager, serv);
+        if(err != 0) {
+          printf("error at AddServer %d | %s\n", err, strerror(err));
+          exit(1);
+        }
+        puts("AddServer succeeded");
+        (void) getc(stdin);
         break;
       }
       default: {
-        puts("Option not recognized. The available options: l(isten) <port>, c(onnect) <host> <port>");
+        puts("Option not recognized. The available options: l(isten) <host> <port>, c(onnect) <host> <port>");
         break;
       }
     }

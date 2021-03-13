@@ -67,8 +67,6 @@ extern void TCPNoDelayOn(const int);
 
 extern void TCPNoDelayOff(const int);
 
-extern void GetIPAsString(const struct NETSocket, char*);
-
 __nonnull((1))
 void TCPSocketFree(struct NETSocket* const);
 
@@ -137,6 +135,12 @@ extern int AddSocket(struct NETConnManager* const, const struct NETSocket);
 
 __nonnull((1))
 extern int AddServer(struct NETConnManager* const, const struct NETServer);
+
+__nonnull((1))
+extern struct NETSocket* GetSocket(struct NETConnManager* const, const int);
+
+__nonnull((1))
+extern struct NETServer* GetServer(struct NETConnManager* const, const int);
 
 __nonnull((1))
 extern int DeleteSocket(struct NETConnManager* const, const int);

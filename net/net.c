@@ -55,13 +55,6 @@ void TCPNoDelayOff(const int sfd) {
   (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){0}, sizeof(int));
 }
 
-void GetIPAsString(const struct NETSocket socket, char* str) {
-  if(socket.addrlen == 4) {
-    strcpy(str, inet_ntoa(((struct sockaddr_in*)&socket.addr)->sin_addr));
-  }
-  printf("addrlen: %d\n", socket.addrlen);
-}
-
 void TCPSocketFree(struct NETSocket* const socket) {
   if(socket->send_buffer != NULL) {
     free(socket->send_buffer);
@@ -75,7 +68,7 @@ void TCPServerFree(struct NETServer* const server) {
   size_t i;
   if(server->connections != NULL) {
     for(i = 0; i < server->conn_count; ++i) {
-      TCPShutdown(net_avl_search(&server->manager->avl_tree, server->connections[i]));
+      TCPShutdown(GetSocket(server->manager, server->connections[i]));
     }
     free(server->connections);
     server->connections = NULL;
@@ -261,7 +254,7 @@ static void* EPollThread(void* s) {
               TCPKill(sock);
               continue;
             } else {
-              printf("recv error %d | %s", errno, strerror(errno));
+              printf("recv error %d | %s\n", errno, strerror(errno));
               sock->onerror(*sock);
             }
           } else if(sock->onmessage != NULL) {
@@ -305,7 +298,7 @@ static void* EPollThread(void* s) {
           puts("EPOLLERR");
         }
         if((events[i].events & EPOLLIN) != 0) {
-          puts("new connection");
+          puts("new connection pending");
           ptr = realloc(serv->connections, sizeof(int) * (serv->conn_count + 1));
           if(ptr == NULL) {
             errno = ENOMEM;
@@ -325,7 +318,22 @@ static void* EPollThread(void* s) {
           }
           serv->connections[serv->conn_count++] = temp;
           if(serv->onconnection != NULL) {
-            serv->onconnection(*serv, temp);
+            serv->onconnection(*serv, (struct NETSocket) {
+              .addr = addr,
+              .onmessage = NULL,
+              .onclose = NULL,
+              .onerror = NULL,
+              .onsent = NULL,
+              .send_buffer = NULL,
+              .length = 0,
+              .addrlen = addr_len,
+              .state = NET_OPEN,
+              .flags = serv->flags ^ AI_PASSIVE,
+              .family = serv->family,
+              .socktype = serv->socktype,
+              .protocol = serv->protocol,
+              .sfd = temp
+            });
           }
         }
         if((events[i].events & EPOLLOUT) != 0) {
@@ -388,6 +396,14 @@ int AddServer(struct NETConnManager* const manager, const struct NETServer serve
   return AddSocket(manager, *((struct NETSocket*)&server));
 }
 
+struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd) {
+  return net_avl_search(&manager->avl_tree, sfd);
+}
+
+struct NETServer* GetServer(struct NETConnManager* const manager, const int sfd) {
+  return (struct NETServer*) net_avl_search(&manager->avl_tree, sfd);
+}
+
 int DeleteSocket(struct NETConnManager* const manager, const int sfd) {
   net_avl_delete(&manager->avl_tree, sfd);
   int err = epoll_ctl(manager->epoll, EPOLL_CTL_DEL, sfd, (struct epoll_event*) manager);
@@ -425,6 +441,7 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
       printf("creating a socket failed with reason: %s\n", strerror(errno));
       continue;
     }
+    printf("addrlen: %d\n", sockt->addrlen);
     sockt->sfd = sfd;
     printf("we connecting at   %ld\n", GetTime(0));
     printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
@@ -461,27 +478,27 @@ int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service,
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict sockt) {
+int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict serv) {
   struct addrinfo* n;
   int sfd;
   int err;
-  sockt->manager = NULL;
-  sockt->connections = NULL;
-  sockt->conn_count = 0;
+  serv->manager = NULL;
+  serv->connections = NULL;
+  serv->conn_count = 0;
   for(n = res; n != NULL; n = n->ai_next) {
-    sockt->addr = *n->ai_addr;
-    sockt->addrlen = n->ai_addrlen;
-    sockt->flags = n->ai_flags;
-    sockt->family = n->ai_family;
-    sockt->socktype = n->ai_socktype;
-    sockt->protocol = n->ai_protocol;
-    sockt->sfd = -1;
+    serv->addr = *n->ai_addr;
+    serv->addrlen = n->ai_addrlen;
+    serv->flags = n->ai_flags;
+    serv->family = n->ai_family;
+    serv->socktype = n->ai_socktype;
+    serv->protocol = n->ai_protocol;
+    serv->sfd = -1;
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
       continue;
     }
-    sockt->sfd = sfd;
+    serv->sfd = sfd;
     (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     err = bind(sfd, n->ai_addr, n->ai_addrlen);
     if(err != 0) {
@@ -501,13 +518,13 @@ int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict sockt) 
   return -1;
 }
 
-int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* restrict socket) {
+int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* restrict server) {
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
   if(err != 0) {
     return err;
   }
-  return SyncTCPListen(res, socket);
+  return SyncTCPListen(res, server);
 }
 
 #define arr ((struct ANET_C*) a)

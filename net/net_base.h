@@ -44,7 +44,7 @@ struct NETSocket {
 
 struct NETServer {
   struct sockaddr addr;
-  void (*onconnection)(struct NETServer, int);
+  void (*onconnection)(struct NETServer, struct NETSocket);
   long _unused1;
   void (*onerror)(struct NETServer);
   struct NETConnManager* manager;
