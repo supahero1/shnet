@@ -27,11 +27,14 @@ enum NETFlags { NET_OPEN, NET_SEND_CLOSING, NET_RECEIVE_CLOSING, NET_CLOSED };
 
 struct NETSocket {
   struct sockaddr addr;
-  char* canonname;
   void (*onmessage)(struct NETSocket);
   void (*onclose)(struct NETSocket);
+  void (*onerror)(struct NETSocket);
+  void (*onsent)(struct NETSocket);
+  void* send_buffer;
+  size_t length;
   socklen_t addrlen;
-  enum NETFlags state;
+  int state;
   int flags;
   int family;
   int socktype;

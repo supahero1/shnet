@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <netinet/tcp.h>
 
 #include <stdio.h>
 #include <arpa/inet.h> // htons, htonl, etc
@@ -36,6 +37,72 @@ void SocketNoBlock(const int sfd) {
     err = 0;
   }
   (void) fcntl(sfd, F_SETFL, err | O_NONBLOCK);
+}
+
+void SocketCorkOn(const int sfd) {
+  (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){1}, sizeof(int));
+}
+
+void SocketCorkOff(const int sfd) {
+  (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){0}, sizeof(int));
+}
+
+void SocketNoDelayOn(const int sfd) {
+  (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){1}, sizeof(int));
+}
+
+void SocketNoDelayOff(const int sfd) {
+  (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){0}, sizeof(int));
+}
+
+void GetIPAsString(const struct NETSocket socket, char* str) {
+  if(socket.addrlen == 4) {
+    strcpy(str, inet_ntoa(((struct sockaddr_in*)&socket.addr)->sin_addr));
+  }
+  printf("addrlen: %d\n", socket.addrlen);
+}
+
+void FreeSocket(struct NETSocket* const socket) {
+  if(socket->send_buffer != NULL) {
+    free(socket->send_buffer);
+  }
+  socket->length = 0;
+  close(socket->sfd);
+}
+
+int TCPSend(struct NETSocket* restrict socket, void* const buffer, const size_t length) {
+  void* ptr;
+  long bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
+  puts("TCPSend()");
+  if(bytes == -1) {
+    if(errno == EAGAIN || errno == EWOULDBLOCK) {
+      puts("not everything sent");
+      ptr = realloc(socket->send_buffer, socket->length + length - bytes);
+      if(ptr == NULL) {
+        return ENOMEM;
+      }
+      socket->send_buffer = ptr;
+      (void) memcpy(socket->send_buffer + socket->length, buffer + bytes, length - bytes);
+      socket->length += length - bytes;
+      return 0;
+    } else {
+      if(errno == EPIPE && socket->state != NET_CLOSED) {
+        puts("connection shut down unexpectedly");
+        socket->state = NET_CLOSED;
+        if(socket->onclose != NULL) {
+          socket->onclose(*socket);
+        }
+        FreeSocket(socket);
+      }
+      return errno;
+    }
+  } else if(bytes == length) {
+    puts("everything sent");
+    return 0;
+  } else {
+    puts("sent lower amount than requested but no error");
+    exit(1);
+  }
 }
 
 int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const restrict res) {
@@ -115,10 +182,13 @@ static void* EPollThread(void* s) {
         if(sock->state == NET_OPEN) {
           sock->state = NET_SEND_CLOSING;
           puts("the peer doesn't accept messages anymore, connection closing");
-        } else if(sock->state != NET_CLOSED) {
+        } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
           puts("the peer doesn't accept messages anymore, connection closed");
           sock->state = NET_CLOSED;
-          sock->onclose(*sock);
+          if(sock->onclose != NULL) {
+            sock->onclose(*sock);
+          }
+          FreeSocket(sock);
           continue;
         }
       }
@@ -126,10 +196,13 @@ static void* EPollThread(void* s) {
         if(sock->state == NET_OPEN) {
           sock->state = NET_RECEIVE_CLOSING;
           puts("the peer won't send messages anymore, connection closing");
-        } else if(sock->state != NET_CLOSED) {
+        } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
           puts("the peer won't send messages anymore, connection closed");
           sock->state = NET_CLOSED;
-          sock->onclose(*sock);
+          if(sock->onclose != NULL) {
+            sock->onclose(*sock);
+          }
+          FreeSocket(sock);
           continue;
         }
       }
@@ -137,25 +210,47 @@ static void* EPollThread(void* s) {
         getsockopt(sock->sfd, SOL_SOCKET, SO_ERROR, &temp, NULL);
         printf("got an event, code %d, message: %s\n", temp, strerror(temp));
       }
-      if((events[i].events & (EPOLLIN | EPOLLRDNORM)) != 0) { // can receive
+      if((events[i].events & EPOLLIN) != 0) { // can receive
         bytes = recv(sock->sfd, byte, 1, MSG_PEEK);
         if(bytes == 0) {
           if(sock->state != NET_CLOSED) {
             puts("connection closed, received 0 bytes");
             sock->state = NET_CLOSED;
-            sock->onclose(*sock);
+            if(sock->onclose != NULL) {
+              sock->onclose(*sock);
+            }
+            FreeSocket(sock);
             continue;
           }
-        } else {
+        } else if(sock->onmessage != NULL) {
           sock->onmessage(*sock);
         }
       }
-      if(sock->state != NET_SEND_CLOSING && (events[i].events & (EPOLLOUT | EPOLLWRNORM)) != 0) { // can send
-        puts("ready to send messages");
-        char buf[] = "GET /index.html HTTP/1.1\r\n";
-        printf("sent: %ld\n", send(sock->sfd, buf, strlen(buf), MSG_NOSIGNAL)); // to make it disconnect
-        // test on google.com port 443, else there is a chance the peer won't disconnect and the whole console will be spammed
-        // so far this is only a WIP version ill add more stuff latere like some kind of a buffer holding messages-to-send or something else
+      if(sock->length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) { // can send
+        puts("sending what we have in buffer");
+        //char buf[] = "GET /index.html HTTP/1.1\r\n";
+        bytes = send(sock->sfd, sock->send_buffer, sock->length, MSG_NOSIGNAL);
+        if(bytes == -1) {
+          if(errno == EPIPE && sock->state != NET_CLOSED) {
+            puts("connection shut down unexpectedly");
+            sock->state = NET_CLOSED;
+            if(sock->onclose != NULL) {
+              sock->onclose(*sock);
+            }
+            FreeSocket(sock);
+            continue;
+          }
+          sock->onerror(*sock);
+        } else {
+          sock->length -= bytes;
+          if(sock->length == 0) {
+            free(sock->send_buffer);
+            sock->send_buffer = NULL;
+            if(sock->onsent != NULL) {
+              sock->onsent(*sock);
+            }
+          }
+        }
       }
     }
   }
@@ -237,7 +332,8 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
       continue;
     } else {
       sockt->addr = *n->ai_addr;
-      sockt->canonname = n->ai_canonname;
+      sockt->send_buffer = 0;
+      sockt->length = 0;
       sockt->addrlen = n->ai_addrlen;
       sockt->state = NET_OPEN;
       sockt->flags = n->ai_flags;
@@ -293,7 +389,8 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
       continue;
     } else {
       sockt->addr = *n->ai_addr;
-      sockt->canonname = n->ai_canonname;
+      sockt->send_buffer = 0;
+      sockt->length = 0;
       sockt->addrlen = n->ai_addrlen;
       sockt->state = NET_OPEN;
       sockt->flags = n->ai_flags;
@@ -340,9 +437,12 @@ static void* AsyncTCPConnectThread(void* a) {
     puts("got socket");
     nets = (struct NETSocket) {
       .addr = *n->ai_addr,
-      .canonname = n->ai_canonname,
       .onmessage = NULL,
       .onclose = NULL,
+      .onerror = NULL,
+      .onsent = NULL,
+      .send_buffer = 0,
+      .length = 0,
       .addrlen = n->ai_addrlen,
       .state = NET_CLOSED,
       .flags = n->ai_flags,
@@ -393,9 +493,12 @@ static void* AsyncTCPListenThread(void* a) {
     puts("got socket");
     nets = (struct NETSocket) {
       .addr = *n->ai_addr,
-      .canonname = n->ai_canonname,
       .onmessage = NULL,
       .onclose = NULL,
+      .onerror = NULL,
+      .onsent = NULL,
+      .send_buffer = 0,
+      .length = 0,
       .addrlen = n->ai_addrlen,
       .state = NET_CLOSED,
       .flags = n->ai_flags,
@@ -441,12 +544,4 @@ int AsyncTCPConnect(struct ANET* const info) {
 int AsyncTCPListen(struct ANET* const info) {
   pthread_t t;
   return pthread_create(&t, NULL, AsyncTCPListenThread, info);
-}
-
-int TCPSend(const int sfd, const void* const buffer, const size_t length, const int cork) {
-  int err = send(sfd, buffer, length, MSG_NOSIGNAL | (cork * MSG_MORE));
-}
-
-void GetIPAsString(const struct NETSocket socket, char* str) {
-  strcpy(str, inet_ntoa(((struct sockaddr_in*)&socket.addr)->sin_addr));
 }

@@ -32,6 +32,11 @@
 
 void onmessage(struct NETSocket socket) {
   puts("onmessage()");
+  char buffer[50000];
+  memset(buffer, 0, 50000);
+  long bytes = recv(socket.sfd, buffer, 50000, 0);
+  printf("nice got %ld bytes\n", bytes);
+  printf("%s\n", buffer);
 }
 
 void onclose(struct NETSocket socket) {
@@ -39,9 +44,17 @@ void onclose(struct NETSocket socket) {
   exit(1);
 }
 
+void onerror(struct NETSocket socket) {
+  printf("got a socket error when executing some function: %s\n", strerror(errno));
+}
+
+void onsent(struct NETSocket socket) {
+  puts("the socket sent all data we wanted it to send");
+}
+
 int main(int argc, char** argv) {
   int err;
-  printf("%ld %ld\n", sizeof(struct NETSocket), sizeof(struct net_avl_node));
+  printf("%ld %ld %ld\n", sizeof(struct NETSocket), sizeof(struct net_avl_node), sizeof(struct sockaddr));
   if(argc < 2) {
     puts("Minimum amount of arguments is 1.");
     return 1;
@@ -51,9 +64,8 @@ int main(int argc, char** argv) {
       struct NETSocket sock;
       struct NETConnectionManager manager;
       err = InitConnectionManager(&manager, 1);
-      printf("result %d\n", err);
       if(err != 0) {
-        printf("error lol %d | %s\n", err, strerror(err));
+        printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
         exit(1);
       }
       err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock);
@@ -66,15 +78,21 @@ int main(int argc, char** argv) {
       }
       sock.onmessage = onmessage;
       sock.onclose = onclose;
-      puts("SyncTCP_GAIConnect succeeded11");
+      sock.onerror = onerror;
+      sock.onsent = onsent;
+      puts("SyncTCP_GAIConnect succeeded");
       err = AddSocket(&manager, sock);
       if(err != 0) {
         printf("error at AddSocket %d | %s\n", err, strerror(err));
         exit(1);
       }
-      puts("AddSocket succeeded11");
-      //char buf[] = "GET /index.html HTTP/1.1\r\n";
-      //printf("sent: %ld\n", send(sock.sfd, buf, strlen(buf), MSG_NOSIGNAL));
+      puts("AddSocket succeeded");
+      char buf[] = "GET /index.html HTTP/1.1\r\nOrigin: https://google.com\r\n";
+      int err = TCPSend(&sock, buf, sizeof(buf));
+      if(err != 0) {
+        printf("error at TCPSend %d | %s\n", err, strerror(err));
+        exit(1);
+      }
       (void) getc(stdin);
       break;
     }
