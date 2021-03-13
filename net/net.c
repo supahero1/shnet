@@ -65,6 +65,7 @@ void GetIPAsString(const struct NETSocket socket, char* str) {
 void FreeSocket(struct NETSocket* const socket) {
   if(socket->send_buffer != NULL) {
     free(socket->send_buffer);
+    socket->send_buffer = NULL;
   }
   socket->length = 0;
   close(socket->sfd);
