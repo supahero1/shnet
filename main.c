@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
         puts("deploy err");
         exit(1);
       }*/
-      err = SyncTCP_GAIConnect(argv[2], argv[3], &sock);
+      err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock);
       if(err < -1) {
         printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
         exit(1);
@@ -106,8 +106,8 @@ int main(int argc, char** argv) {
         exit(1);
       }
       puts("AddSocket succeeded11");
-      uint8_t buf[] = { 'G', 'E', 'T', ' ', '/', ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '0' };
-      printf("sent: %ld\n", send(sock.sfd, buf, 14, MSG_NOSIGNAL));
+      uint8_t buf[] = { 'G', 'E', 'T', ' ', '/', 'i', 'n', 'd', 'e', 'x', '.', 'h', 't', 'm', 'l', ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '1', '\r', '\n' };
+      printf("sent: %ld\n", send(sock.sfd, buf, 26, MSG_NOSIGNAL));
       (void) getc(stdin);
       break;
     }

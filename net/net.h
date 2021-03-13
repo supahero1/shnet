@@ -54,6 +54,10 @@ struct HTTPSocket {
   uint8_t state;
 };*/
 
+#define IPv4   AF_INET
+#define IPv6   AF_INET6
+#define IP_ANY AF_UNSPEC
+
 extern void SocketNoBlock(const int sfd);
 
 __nonnull((4))
@@ -78,16 +82,16 @@ __nonnull((1))
 extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIConnect(const char* const, const char* const, struct NETSocket* restrict);
+extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, struct NETSocket* restrict);
+extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* restrict);
 
 __nonnull((1))
 extern int SyncTCPListen(struct addrinfo* const, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIListen(const char* const, struct NETSocket* restrict);
+extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETSocket* restrict);
 
 struct NETConnectionManager {
   pthread_t thread;
@@ -117,6 +121,8 @@ extern int AsyncTCPConnect(struct ANET* const);
 
 __nonnull((1))
 extern int AsyncTCPListen(struct ANET* const);
+
+extern void GetIPAsString(const struct NETSocket, char*);
 
 #ifdef __cplusplus
 }

@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+#include "net.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -24,9 +26,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-
-#include "net.h"
-#include "net_avl.h"
 
 #include <stdio.h>
 #include <arpa/inet.h> // htons, htonl, etc
@@ -174,31 +173,28 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
   int sfd;
   int err;
   for(n = res; n != NULL; n = n->ai_next) {
-    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
       continue;
     }
     printf("we connecting at   %ld\n", GetTime(0));
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     err = connect(sfd, n->ai_addr, n->ai_addrlen);
     printf("done connecting at %ld\n", GetTime(0));
     if(err != 0) {
       (void) close(sfd);
       continue;
     } else {
-      *sockt = (struct NETSocket) {
-        .addr = *n->ai_addr,
-        .canonname = n->ai_canonname,
-        .event_handler = NULL,
-        .addrlen = n->ai_addrlen,
-        .state = NET_OPEN,
-        .flags = n->ai_flags,
-        .family = n->ai_family,
-        .socktype = n->ai_socktype,
-        .protocol = n->ai_protocol,
-        .sfd = sfd
-      };
+      sockt->addr = *n->ai_addr;
+      sockt->canonname = n->ai_canonname;
+      sockt->addrlen = n->ai_addrlen;
+      sockt->state = NET_OPEN;
+      sockt->flags = n->ai_flags;
+      sockt->family = n->ai_family;
+      sockt->socktype = n->ai_socktype;
+      sockt->protocol = n->ai_protocol;
+      sockt->sfd = sfd;
       freeaddrinfo(res);
       return 0;
     }
@@ -207,18 +203,18 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
   return -1;
 }
 
-int SyncTCP_GAIConnect(const char* const hostname, const char* const service, struct NETSocket* restrict socket) {
+int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* restrict socket) {
   struct addrinfo* res;
-  int err = GetAddrInfo(hostname, service, 0, &res);
+  int err = GetAddrInfo(hostname, service, which_ip, &res);
   if(err != 0) {
     return err;
   }
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, struct NETSocket* restrict socket) {
+int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* restrict socket) {
   struct addrinfo* res;
-  int err = GetAddrInfo(hostname, service, AI_NUMERICHOST, &res);
+  int err = GetAddrInfo(hostname, service, AI_NUMERICHOST | which_ip, &res);
   if(err != 0) {
     return err;
   }
@@ -230,7 +226,6 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
   int sfd;
   int err;
   for(n = res; n != NULL; n = n->ai_next) {
-    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
@@ -247,18 +242,15 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
       (void) close(sfd);
       continue;
     } else {
-      *sockt = (struct NETSocket) {
-        .addr = *n->ai_addr,
-        .canonname = n->ai_canonname,
-        .event_handler = NULL,
-        .addrlen = n->ai_addrlen,
-        .state = NET_OPEN,
-        .flags = n->ai_flags,
-        .family = n->ai_family,
-        .socktype = n->ai_socktype,
-        .protocol = n->ai_protocol,
-        .sfd = sfd
-      };
+      sockt->addr = *n->ai_addr;
+      sockt->canonname = n->ai_canonname;
+      sockt->addrlen = n->ai_addrlen;
+      sockt->state = NET_OPEN;
+      sockt->flags = n->ai_flags;
+      sockt->family = n->ai_family;
+      sockt->socktype = n->ai_socktype;
+      sockt->protocol = n->ai_protocol;
+      sockt->sfd = sfd;
       freeaddrinfo(res);
       return 0;
     }
@@ -267,9 +259,9 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
   return -1;
 }
 
-int SyncTCP_GAIListen(const char* const service, struct NETSocket* restrict socket) {
+int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* restrict socket) {
   struct addrinfo* res;
-  int err = GetAddrInfo(NULL, service, AI_PASSIVE, &res);
+  int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
   if(err != 0) {
     return err;
   }
@@ -290,7 +282,6 @@ static void* AsyncTCPConnectThread(void* a) {
   -2 = no socket succeeded
   */
   for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
-    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
@@ -343,7 +334,6 @@ static void* AsyncTCPListenThread(void* a) {
   -3 = no socket succeeded
   */
   for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
-    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
@@ -403,4 +393,8 @@ int AsyncTCPListen(struct ANET* const info) {
 
 int TCPSend(const int sfd, const void* const buffer, const size_t length, const int cork) {
   int err = send(sfd, buffer, length, MSG_NOSIGNAL | (cork * MSG_MORE));
+}
+
+void GetIPAsString(const struct NETSocket socket, char* str) {
+  strcpy(str, inet_ntoa(((struct sockaddr_in*)&socket.addr)->sin_addr));
 }
