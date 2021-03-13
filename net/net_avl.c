@@ -282,16 +282,15 @@ int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socke
   }
 }
 
-void net_avl_search(struct net_avl_tree* const tree, const int sfd, const uint32_t events) {
-  const struct net_avl_node* restrict node = tree->head;
+struct NETSocket* net_avl_search(struct net_avl_tree* const tree, const int sfd) {
+  struct net_avl_node* restrict node = tree->head;
   while(1) {
     if(sfd > node->socket.sfd) {
       node = node->right;
     } else if(sfd < node->socket.sfd) {
       node = node->left;
     } else {
-      node->socket.event_handler(sfd, events);
-      return;
+      return &node->socket;
     }
   }
 }

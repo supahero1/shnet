@@ -57,7 +57,7 @@ __nonnull((1))
 extern int net_avl_insert(struct net_avl_tree* const, const struct NETSocket);
 
 __nonnull((1))
-extern void net_avl_search(struct net_avl_tree* const, const int, const uint32_t);
+extern struct NETSocket* net_avl_search(struct net_avl_tree* const, const int);
 
 __nonnull((1))
 extern void net_avl_delete(struct net_avl_tree* const, const int);

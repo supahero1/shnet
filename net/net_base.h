@@ -23,12 +23,13 @@ extern "C" {
 
 #include <netdb.h>
 
-enum NETFlags { NET_CONNECTING, NET_OPEN, NET_CLOSED };
+enum NETFlags { NET_OPEN, NET_SEND_CLOSING, NET_RECEIVE_CLOSING, NET_CLOSED };
 
 struct NETSocket {
   struct sockaddr addr;
   char* canonname;
-  void (*event_handler)(int, uint32_t);
+  void (*onmessage)(struct NETSocket);
+  void (*onclose)(struct NETSocket);
   socklen_t addrlen;
   enum NETFlags state;
   int flags;

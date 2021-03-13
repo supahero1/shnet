@@ -64,7 +64,7 @@ __nonnull((4))
 extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);
 
 struct ANET_GAILookup {
-  void (*callback)(struct addrinfo*, int);
+  void (*handler)(struct addrinfo*, int);
   char* hostname;
   char* service;
   int flags;
@@ -112,7 +112,7 @@ __nonnull((1))
 extern void FreeConnectionManager(struct NETConnectionManager* const);
 
 struct ANET {
-  void (*callback)(struct NETSocket*, int);
+  void (*handler)(struct NETSocket*, int);
   struct addrinfo* addrinfo;
 };
 

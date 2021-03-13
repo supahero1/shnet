@@ -30,41 +30,13 @@
 #include <semaphore.h>
 #include <sys/epoll.h>
 
-void event_handler(int sfd, uint32_t events) {
-  printf("socket %d received the following events: ", sfd);
-  if((events & EPOLLIN) != 0) {
-    printf("EPOLLIN ");
-    char buf[500];
-    memset(buf, 0, 500);
-    size_t err = recv(sfd, buf, 500, 0);
-    printf("(bytes read: %ld, the message is: %s) ", err, buf);
-  }
-  if((events & EPOLLPRI) != 0) {
-    printf("EPOLLPRI ");
-  }
-  if((events & EPOLLOUT) != 0) {
-    printf("EPOLLOUT ");
-  }
-  if((events & EPOLLMSG) != 0) {
-    printf("EPOLLMSG ");
-  }
-  if((events & EPOLLERR) != 0) {
-    printf("EPOLLERR ");
-    int err;
-    getsockopt(sfd, SOL_SOCKET, SO_ERROR, &err, NULL);
-    printf("(btw the error is: %s) ", strerror(err));
-  }
-  if((events & EPOLLHUP) != 0) {
-    printf("EPOLLHUP ");
-  }
-  if((events & EPOLLRDHUP) != 0) {
-    printf("EPOLLRDHUP ");
-  }
-  printf("\n");
-  if((events & EPOLLHUP) != 0) {
-    puts("quitting bc connection is ded af");
-    exit(1);
-  }
+void onmessage(struct NETSocket socket) {
+  puts("onmessage()");
+}
+
+void onclose(struct NETSocket socket) {
+  puts("onclose()");
+  exit(1);
 }
 
 int main(int argc, char** argv) {
@@ -84,12 +56,6 @@ int main(int argc, char** argv) {
         printf("error lol %d | %s\n", err, strerror(err));
         exit(1);
       }
-      /*struct TIStorage ti = TIStorage(DISTR_ALWAYS);
-      err = DeployTimeout(&ti);
-      if(err != 0) {
-        puts("deploy err");
-        exit(1);
-      }*/
       err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock);
       if(err < -1) {
         printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
@@ -98,7 +64,8 @@ int main(int argc, char** argv) {
         puts("no address succeeded at SyncTCP_GAIConnect");
         exit(1);
       }
-      sock.event_handler = event_handler;
+      sock.onmessage = onmessage;
+      sock.onclose = onclose;
       puts("SyncTCP_GAIConnect succeeded11");
       err = AddSocket(&manager, sock);
       if(err != 0) {
@@ -106,8 +73,8 @@ int main(int argc, char** argv) {
         exit(1);
       }
       puts("AddSocket succeeded11");
-      uint8_t buf[] = { 'G', 'E', 'T', ' ', '/', 'i', 'n', 'd', 'e', 'x', '.', 'h', 't', 'm', 'l', ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '1', '\r', '\n' };
-      printf("sent: %ld\n", send(sock.sfd, buf, 26, MSG_NOSIGNAL));
+      //char buf[] = "GET /index.html HTTP/1.1\r\n";
+      //printf("sent: %ld\n", send(sock.sfd, buf, strlen(buf), MSG_NOSIGNAL));
       (void) getc(stdin);
       break;
     }
