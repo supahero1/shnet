@@ -169,7 +169,7 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
   }
 }
 
-int net_avl_insert(struct net_avl_tree* const tree, const int sfd, void (*callback)(int, uint32_t)) {
+int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socket) {
   void* restrict ptr;
   struct net_avl_node* restrict node = tree->head;
   struct net_avl_node* restrict temp;
@@ -177,12 +177,11 @@ int net_avl_insert(struct net_avl_tree* const tree, const int sfd, void (*callba
   int sign;
   if(tree->count == 0) {
     tree->parts[0][0] = (struct net_avl_node) {
-      .sfd = sfd,
-      .balance = 0,
-      .callback = callback,
       .parent = NULL,
       .left = NULL,
-      .right = NULL
+      .right = NULL,
+      .socket = socket,
+      .balance = 0
     };
     tree->count = 1;
     tree->amount = 1;
@@ -208,17 +207,16 @@ int net_avl_insert(struct net_avl_tree* const tree, const int sfd, void (*callba
   temp = ++tree->last;
   ++tree->count;
   while(1) {
-    if(sfd > node->sfd) {
+    if(socket.sfd > node->socket.sfd) {
       if(node->right != NULL) {
         node = node->right;
       } else {
         *temp = (struct net_avl_node) {
-          .sfd = sfd,
-          .balance = 0,
-          .callback = callback,
           .parent = node,
           .left = NULL,
-          .right = NULL
+          .right = NULL,
+          .socket = socket,
+          .balance = 0
         };
         node->right = temp;
         ++node->balance;
@@ -230,12 +228,11 @@ int net_avl_insert(struct net_avl_tree* const tree, const int sfd, void (*callba
         node = node->left;
       } else {
         *temp = (struct net_avl_node) {
-          .sfd = sfd,
-          .balance = 0,
-          .callback = callback,
           .parent = node,
           .left = NULL,
-          .right = NULL
+          .right = NULL,
+          .socket = socket,
+          .balance = 0
         };
         node->left = temp;
         --node->balance;
@@ -288,12 +285,12 @@ int net_avl_insert(struct net_avl_tree* const tree, const int sfd, void (*callba
 void net_avl_search(struct net_avl_tree* const tree, const int sfd, const uint32_t events) {
   const struct net_avl_node* restrict node = tree->head;
   while(1) {
-    if(sfd > node->sfd) {
+    if(sfd > node->socket.sfd) {
       node = node->right;
-    } else if(sfd < node->sfd) {
+    } else if(sfd < node->socket.sfd) {
       node = node->left;
     } else {
-      node->callback(sfd, events);
+      node->socket.event_handler(sfd, events);
       return;
     }
   }
@@ -330,9 +327,9 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
   uint32_t sign;
   --tree->count;
   while(1) {
-    if(sfd > node->sfd) {
+    if(sfd > node->socket.sfd) {
       node = node->right;
-    } else if(sfd < node->sfd) {
+    } else if(sfd < node->socket.sfd) {
       node = node->left;
     } else {
       if(node->right == NULL) {
@@ -421,8 +418,7 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
                 temp->right->parent = node;
               }
               node->right = temp->right;
-              node->sfd = temp->sfd;
-              node->callback = temp->callback;
+              node->socket = temp->socket;
               if(node != tree->last) {
                 temp2 = node;
                 if(temp != tree->last) {
@@ -441,8 +437,7 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
               if(temp->right != NULL) {
                 temp->left->parent = temp->parent;
               }
-              node->sfd = temp->sfd;
-              node->callback = temp->callback;
+              node->socket = temp->socket;
               if(temp->parent != tree->last) {
                 temp2 = temp->parent;
                 if(temp != tree->last) {
@@ -459,8 +454,7 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
               temp->left->parent = node;
             }
             node->left = temp->left;
-            node->sfd = temp->sfd;
-            node->callback = temp->callback;
+            node->socket = temp->socket;
             if(node != tree->last) {
               temp2 = node;
               if(temp != tree->last) {

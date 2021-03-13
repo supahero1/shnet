@@ -22,12 +22,12 @@ extern "C" {
 #endif
 
 #include "../def.h"
+#include "net_base.h"
 #include "../net/net_avl.h"
 #include "../distr/distr.h"
 
 #include <netdb.h>
 #include <stdint.h>
-#include <signal.h>
 
 /*struct HTTP_URL {
   char* protocol;
@@ -54,8 +54,6 @@ struct HTTPSocket {
   uint8_t state;
 };*/
 
-enum NETFlags { NET_CONNECTING, NET_OPEN, NET_CLOSED };
-
 extern void SocketNoBlock(const int sfd);
 
 __nonnull((4))
@@ -75,18 +73,6 @@ struct ANET_GAIArray {
 
 __nonnull((1))
 extern int AsyncGetAddrInfo(struct ANET_GAIArray* const);
-
-struct NETSocket {
-  struct sockaddr addr;
-  char* canonname;
-  socklen_t addrlen;
-  enum NETFlags state;
-  int flags;
-  int family;
-  int socktype;
-  int protocol;
-  int sfd;
-};
 
 __nonnull((1))
 extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* restrict);
@@ -113,7 +99,7 @@ __nonnull((1))
 extern int InitConnectionManager(struct NETConnectionManager* const, const uint32_t);
 
 __nonnull((1))
-extern int AddSocket(struct NETConnectionManager* const, const int, void (*)(int, uint32_t));
+extern int AddSocket(struct NETConnectionManager* const, const struct NETSocket);
 
 __nonnull((1))
 extern int DeleteSocket(struct NETConnectionManager* const, const int);
