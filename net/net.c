@@ -410,12 +410,22 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
   struct addrinfo* n;
   int sfd;
   int err;
+  sockt->send_buffer = NULL;
+  sockt->length = 0;
   for(n = res; n != NULL; n = n->ai_next) {
+    sockt->addr = *n->ai_addr;
+    sockt->addrlen = n->ai_addrlen;
+    sockt->flags = n->ai_flags;
+    sockt->family = n->ai_family;
+    sockt->socktype = n->ai_socktype;
+    sockt->protocol = n->ai_protocol;
+    sockt->sfd = -1;
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
       continue;
     }
+    sockt->sfd = sfd;
     printf("we connecting at   %ld\n", GetTime(0));
     printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     err = connect(sfd, n->ai_addr, n->ai_addrlen);
@@ -424,16 +434,7 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
       (void) close(sfd);
       continue;
     } else {
-      sockt->addr = *n->ai_addr;
-      sockt->send_buffer = 0;
-      sockt->length = 0;
-      sockt->addrlen = n->ai_addrlen;
       sockt->state = NET_OPEN;
-      sockt->flags = n->ai_flags;
-      sockt->family = n->ai_family;
-      sockt->socktype = n->ai_socktype;
-      sockt->protocol = n->ai_protocol;
-      sockt->sfd = sfd;
       freeaddrinfo(res);
       return 0;
     }
@@ -464,12 +465,23 @@ int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict sockt) 
   struct addrinfo* n;
   int sfd;
   int err;
+  sockt->manager = NULL;
+  sockt->connections = NULL;
+  sockt->conn_count = 0;
   for(n = res; n != NULL; n = n->ai_next) {
+    sockt->addr = *n->ai_addr;
+    sockt->addrlen = n->ai_addrlen;
+    sockt->flags = n->ai_flags;
+    sockt->family = n->ai_family;
+    sockt->socktype = n->ai_socktype;
+    sockt->protocol = n->ai_protocol;
+    sockt->sfd = -1;
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
       continue;
     }
+    sockt->sfd = sfd;
     (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     err = bind(sfd, n->ai_addr, n->ai_addrlen);
     if(err != 0) {
@@ -481,13 +493,6 @@ int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict sockt) 
       (void) close(sfd);
       continue;
     } else {
-      sockt->addr = *n->ai_addr;
-      sockt->addrlen = n->ai_addrlen;
-      sockt->flags = n->ai_flags;
-      sockt->family = n->ai_family;
-      sockt->socktype = n->ai_socktype;
-      sockt->protocol = n->ai_protocol;
-      sockt->sfd = sfd;
       freeaddrinfo(res);
       return 0;
     }
@@ -518,29 +523,31 @@ static void* AsyncTCPConnectThread(void* a) {
   -1 = connect err
   -2 = no socket succeeded
   */
+  nets.onmessage = NULL;
+  nets.onclose = NULL;
+  nets.onerror = NULL;
+  nets.onsent = NULL;
+  nets.send_buffer = 0;
+  nets.length = 0;
   for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    nets.addr = *n->ai_addr;
+    nets.addrlen = n->ai_addrlen;
+    nets.flags = n->ai_flags;
+    nets.family = n->ai_family;
+    nets.socktype = n->ai_socktype;
+    nets.protocol = n->ai_protocol;
+    nets.sfd = -1;
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
+      if(n->ai_next == NULL) {
+        arr->handler(&nets, -2);
+        break;
+      }
       continue;
     }
+    nets.sfd = sfd;
     puts("got socket");
-    nets = (struct NETSocket) {
-      .addr = *n->ai_addr,
-      .onmessage = NULL,
-      .onclose = NULL,
-      .onerror = NULL,
-      .onsent = NULL,
-      .send_buffer = 0,
-      .length = 0,
-      .addrlen = n->ai_addrlen,
-      .state = NET_CLOSED,
-      .flags = n->ai_flags,
-      .family = n->ai_family,
-      .socktype = n->ai_socktype,
-      .protocol = n->ai_protocol,
-      .sfd = sfd
-    };
     printf("we connecting at %ld\n", GetTime(0));
     err = connect(sfd, n->ai_addr, n->ai_addrlen);
     printf("done connecting at %ld\n", GetTime(0));
@@ -548,7 +555,7 @@ static void* AsyncTCPConnectThread(void* a) {
       (void) close(sfd);
       arr->handler(&nets, -1);
       if(n->ai_next == NULL) {
-        arr->handler(&nets, -2);
+        arr->handler(NULL, -2);
         break;
       }
       continue;
@@ -577,27 +584,30 @@ static void* AsyncTCPListenThread(void* a) {
   -2 = listen err
   -3 = no socket succeeded
   */
+  nets.onconnection = NULL;
+  nets.onerror = NULL;
+  nets.manager = NULL;
+  nets.connections = NULL;
+  nets.conn_count = 0;
   for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    nets.addr = *n->ai_addr;
+    nets.addrlen = n->ai_addrlen;
+    nets.flags = n->ai_flags;
+    nets.family = n->ai_family;
+    nets.socktype = n->ai_socktype;
+    nets.protocol = n->ai_protocol;
+    nets.sfd = -1;
     sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
     if(sfd == -1) {
       printf("creating a socket failed with reason: %s\n", strerror(errno));
+      if(n->ai_next == NULL) {
+        arr->handler(&nets, -3);
+        break;
+      }
       continue;
     }
+    nets.sfd = sfd;
     puts("got socket");
-    nets = (struct NETServer) {
-      .addr = *n->ai_addr,
-      .onconnection = NULL,
-      .onerror = NULL,
-      .manager = NULL,
-      .connections = NULL,
-      .conn_count = 0,
-      .addrlen = n->ai_addrlen,
-      .flags = n->ai_flags,
-      .family = n->ai_family,
-      .socktype = n->ai_socktype,
-      .protocol = n->ai_protocol,
-      .sfd = sfd
-    };
     (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     err = bind(sfd, n->ai_addr, n->ai_addrlen);
     if(err != 0) {
@@ -610,7 +620,7 @@ static void* AsyncTCPListenThread(void* a) {
       (void) close(sfd);
       arr->handler(&nets, -2);
       if(n->ai_next == NULL) {
-        arr->handler(&nets, -3);
+        arr->handler(NULL, -3);
         break;
       }
       continue;

@@ -59,24 +59,118 @@ void serveronerror(struct NETServer server) {
   printf("got a server error: %s\n", strerror(errno));
 }
 
-int main(int argc, char** argv) {
-  int err;
-  printf("%ld %ld %ld\n", sizeof(struct NETSocket), sizeof(struct net_avl_node), sizeof(struct sockaddr));
-  if(argc < 2) {
-    puts("Minimum amount of arguments is 1.");
-    return 1;
-  }
-  switch(argv[1][0]) {
-    case 'c': {
-      struct NETSocket sock[100];
+void asyncsocket(struct NETSocket* const socket, const int sfd) {
+  switch(sfd) {
+    case -1: {
+      printf("connection error: %s\n", strerror(errno));
+      break;
+    }
+    case -2: {
+      puts("no socket succeeded");
+      exit(1);
+    }
+    default: {
+      int err;
       struct NETConnManager manager;
       err = InitConnManager(&manager, 5);
       if(err != 0) {
         printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
         exit(1);
       }
-      for(int i = 0; i < 1; ++i) {
-        err = SyncTCP_GAIConnect(argv[2], argv[3], IPv4, &sock[i]);
+      socket->onmessage = onmessage;
+      socket->onclose = onclose;
+      socket->onerror = onerror;
+      socket->onsent = onsent;
+      err = AddSocket(&manager, *socket);
+      if(err != 0) {
+        printf("error at AddSocket %d | %s\n", err, strerror(err));
+        exit(1);
+      }
+      puts("AddSocket succeeded");
+      char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
+      err = TCPSend(socket, buf, sizeof(buf));
+      if(err != 0) {
+        printf("error at TCPSend %d | %s\n", err, strerror(err));
+        exit(1);
+      }
+      (void) getc(stdin);
+      break;
+    }
+  }
+}
+
+void asyncgai(struct addrinfo* info, int status) {
+  if(status == 0) {
+    puts("gai succeeded");
+    struct ANET_C* a = malloc(sizeof(struct ANET_C));
+    if(a == NULL) {
+      puts("cant malloc lol");
+      exit(1);
+    }
+    struct addrinfo* copy = malloc(sizeof(struct addrinfo));
+    if(copy == NULL) {
+      puts("cant malloc lol");
+      exit(1);
+    }
+    *copy = *info;
+    a->handler = asyncsocket;
+    a->addrinfo = copy;
+    status = AsyncTCPConnect(a);
+    if(status != 0) {
+      printf("error at AsyncTCPConnect: %s\n", strerror(status));
+      exit(1);
+    }
+  } else {
+    printf("error at AsyncGetAddrInfo: %s\n", strerror(status));
+    exit(1);
+  }
+}
+
+int main(int argc, char** argv) {
+  int err;
+  if(argc < 3) {
+    puts("Minimum amount of arguments is 2.");
+    return 1;
+  }
+  if(argv[1][0] == 'a') {
+    switch(argv[2][0]) {
+      case 'c': {
+        err = AsyncGetAddrInfo(&((struct ANET_GAIArray) {
+          .arr = &((struct ANET_GAILookup) {
+            .handler = asyncgai,
+            .hostname = argv[3],
+            .service = argv[4],
+            .flags = IPv4
+          }),
+          .count = 1
+        }));
+        if(err != 0) {
+          printf("error at AsyncGetAddrInfo: %s\n", strerror(err));
+          exit(1);
+        }
+        (void) getc(stdin);
+        break;
+      }
+      case 'l': {
+        
+        break;
+      }
+      default: {
+        puts("Option not recognized. The available options: l(isten) <port>, c(onnect) <host> <port>");
+        break;
+      }
+    }
+  } else if(argv[1][0] == 's') {
+    switch(argv[2][0]) {
+      case 'c': {
+        struct NETSocket sock;
+        struct NETConnManager manager;
+        err = InitConnManager(&manager, 5);
+        if(err != 0) {
+          printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
+          exit(1);
+        }
+        err = SyncTCP_GAIConnect(argv[3], argv[4], IPv4, &sock);
         if(err < -1) {
           printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
           exit(1);
@@ -84,35 +178,37 @@ int main(int argc, char** argv) {
           puts("no address succeeded at SyncTCP_GAIConnect");
           exit(1);
         }
-        sock[i].onmessage = onmessage;
-        sock[i].onclose = onclose;
-        sock[i].onerror = onerror;
-        sock[i].onsent = onsent;
+        sock.onmessage = onmessage;
+        sock.onclose = onclose;
+        sock.onerror = onerror;
+        sock.onsent = onsent;
         puts("SyncTCP_GAIConnect succeeded");
-        err = AddSocket(&manager, sock[i]);
+        err = AddSocket(&manager, sock);
         if(err != 0) {
           printf("error at AddSocket %d | %s\n", err, strerror(err));
           exit(1);
         }
         puts("AddSocket succeeded");
         char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
-        err = TCPSend(&sock[i], buf, sizeof(buf));
+        err = TCPSend(&sock, buf, sizeof(buf));
         if(err != 0) {
           printf("error at TCPSend %d | %s\n", err, strerror(err));
           exit(1);
         }
+        (void) getc(stdin);
+        break;
       }
-      (void) getc(stdin);
-      break;
+      case 'l': {
+        
+        break;
+      }
+      default: {
+        puts("Option not recognized. The available options: l(isten) <port>, c(onnect) <host> <port>");
+        break;
+      }
     }
-    case 'l': {
-      
-      break;
-    }
-    default: {
-      puts("Option not recognized. The available options: l <port>, c <host> <port>");
-      break;
-    }
+  } else {
+    puts("Option not recognized. The available options: a(sync), s(ync)");
   }
   return 0;
 }
