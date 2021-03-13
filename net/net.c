@@ -31,7 +31,7 @@
 #include <stdio.h>
 #include <arpa/inet.h> // htons, htonl, etc
 
-void SocketNoBlock(const int sfd) {
+void TCPNoBlock(const int sfd) {
   int err = fcntl(sfd, F_GETFL, 0);
   if(err == -1) {
     err = 0;
@@ -39,19 +39,19 @@ void SocketNoBlock(const int sfd) {
   (void) fcntl(sfd, F_SETFL, err | O_NONBLOCK);
 }
 
-void SocketCorkOn(const int sfd) {
+void TCPCorkOn(const int sfd) {
   (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){1}, sizeof(int));
 }
 
-void SocketCorkOff(const int sfd) {
+void TCPCorkOff(const int sfd) {
   (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){0}, sizeof(int));
 }
 
-void SocketNoDelayOn(const int sfd) {
+void TCPNoDelayOn(const int sfd) {
   (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){1}, sizeof(int));
 }
 
-void SocketNoDelayOff(const int sfd) {
+void TCPNoDelayOff(const int sfd) {
   (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){0}, sizeof(int));
 }
 
@@ -62,7 +62,7 @@ void GetIPAsString(const struct NETSocket socket, char* str) {
   printf("addrlen: %d\n", socket.addrlen);
 }
 
-void FreeSocket(struct NETSocket* const socket) {
+void TCPFree(struct NETSocket* const socket) {
   if(socket->send_buffer != NULL) {
     free(socket->send_buffer);
     socket->send_buffer = NULL;
@@ -71,7 +71,16 @@ void FreeSocket(struct NETSocket* const socket) {
   close(socket->sfd);
 }
 
-int TCPSend(struct NETSocket* restrict socket, void* const buffer, const size_t length) {
+__nonnull((1))
+static void TCPKill(struct NETSocket* const socket) {
+  socket->state = NET_CLOSED;
+  if(socket->onclose != NULL) {
+    socket->onclose(*socket);
+  }
+  TCPFree(socket);
+}
+
+int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const size_t length) {
   void* ptr;
   long bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
   puts("TCPSend()");
@@ -89,11 +98,7 @@ int TCPSend(struct NETSocket* restrict socket, void* const buffer, const size_t 
     } else {
       if(errno == EPIPE && socket->state != NET_CLOSED) {
         puts("connection shut down unexpectedly");
-        socket->state = NET_CLOSED;
-        if(socket->onclose != NULL) {
-          socket->onclose(*socket);
-        }
-        FreeSocket(socket);
+        TCPKill(socket);
       }
       return errno;
     }
@@ -103,6 +108,26 @@ int TCPSend(struct NETSocket* restrict socket, void* const buffer, const size_t 
   } else {
     puts("sent lower amount than requested but no error");
     exit(1);
+  }
+}
+
+void TCPSendShutdown(struct NETSocket* const socket) {
+  if(socket->state == NET_OPEN) {
+    socket->state = NET_SEND_CLOSING;
+    shutdown(socket->sfd, SHUT_WR);
+  }
+}
+
+void TCPReceiveShutdown(struct NETSocket* const socket) {
+  if(socket->state == NET_OPEN) {
+    socket->state = NET_RECEIVE_CLOSING;
+    shutdown(socket->sfd, SHUT_RD);
+  }
+}
+
+void TCPShutdown(struct NETSocket* const socket) {
+  if(socket->state != NET_CLOSED) {
+    shutdown(socket->sfd, SHUT_RDWR);
   }
 }
 
@@ -185,11 +210,7 @@ static void* EPollThread(void* s) {
           puts("the peer doesn't accept messages anymore, connection closing");
         } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
           puts("the peer doesn't accept messages anymore, connection closed");
-          sock->state = NET_CLOSED;
-          if(sock->onclose != NULL) {
-            sock->onclose(*sock);
-          }
-          FreeSocket(sock);
+          TCPKill(sock);
           continue;
         }
       }
@@ -199,11 +220,7 @@ static void* EPollThread(void* s) {
           puts("the peer won't send messages anymore, connection closing");
         } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
           puts("the peer won't send messages anymore, connection closed");
-          sock->state = NET_CLOSED;
-          if(sock->onclose != NULL) {
-            sock->onclose(*sock);
-          }
-          FreeSocket(sock);
+          TCPKill(sock);
           continue;
         }
       }
@@ -216,12 +233,17 @@ static void* EPollThread(void* s) {
         if(bytes == 0) {
           if(sock->state != NET_CLOSED) {
             puts("connection closed, received 0 bytes");
-            sock->state = NET_CLOSED;
-            if(sock->onclose != NULL) {
-              sock->onclose(*sock);
-            }
-            FreeSocket(sock);
+            TCPKill(sock);
             continue;
+          }
+        } else if(bytes == -1) {
+          if((errno == ECONNRESET || errno == ETIMEDOUT) && sock->state != NET_CLOSED) {
+            puts("connection reset or timedout while reading data");
+            TCPKill(sock);
+            continue;
+          } else {
+            printf("recv error %d | %s", errno, strerror(errno));
+            sock->onerror(*sock);
           }
         } else if(sock->onmessage != NULL) {
           sock->onmessage(*sock);
@@ -229,16 +251,11 @@ static void* EPollThread(void* s) {
       }
       if(sock->length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) { // can send
         puts("sending what we have in buffer");
-        //char buf[] = "GET /index.html HTTP/1.1\r\n";
         bytes = send(sock->sfd, sock->send_buffer, sock->length, MSG_NOSIGNAL);
         if(bytes == -1) {
           if(errno == EPIPE && sock->state != NET_CLOSED) {
             puts("connection shut down unexpectedly");
-            sock->state = NET_CLOSED;
-            if(sock->onclose != NULL) {
-              sock->onclose(*sock);
-            }
-            FreeSocket(sock);
+            TCPKill(sock);
             continue;
           }
           sock->onerror(*sock);

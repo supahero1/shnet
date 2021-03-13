@@ -58,23 +58,32 @@ struct HTTPSocket {
 #define IPv6   AF_INET6
 #define IP_ANY AF_UNSPEC
 
-extern void SocketNoBlock(const int);
+extern void TCPNoBlock(const int);
 
-extern void SocketCorkOn(const int);
+extern void TCPCorkOn(const int);
 
-extern void SocketCorkOff(const int);
+extern void TCPCorkOff(const int);
 
-extern void SocketNoDelayOn(const int);
+extern void TCPNoDelayOn(const int);
 
-extern void SocketNoDelayOff(const int);
+extern void TCPNoDelayOff(const int);
 
 extern void GetIPAsString(const struct NETSocket, char*);
 
 __nonnull((1))
-void FreeSocket(struct NETSocket* const);
+void TCPFree(struct NETSocket* const);
 
 __nonnull((2))
-extern int TCPSend(struct NETSocket* restrict, void* const, const size_t);
+extern int TCPSend(struct NETSocket* const restrict, void* const, const size_t);
+
+__nonnull((1))
+extern void TCPSendShutdown(struct NETSocket* const);
+
+__nonnull((1))
+extern void TCPReceiveShutdown(struct NETSocket* const);
+
+__nonnull((1))
+extern void TCPShutdown(struct NETSocket* const);
 
 __nonnull((4))
 extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);

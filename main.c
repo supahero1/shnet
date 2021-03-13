@@ -87,10 +87,25 @@ int main(int argc, char** argv) {
         exit(1);
       }
       puts("AddSocket succeeded");
-      char buf[] = "GET /index.html HTTP/1.1\r\nOrigin: https://google.com\r\n";
-      int err = TCPSend(&sock, buf, sizeof(buf));
+      /*char buf[] = "GET /index.html HTTP/1.0";
+      err = TCPSend(&sock, buf, sizeof(buf));
       if(err != 0) {
         printf("error at TCPSend %d | %s\n", err, strerror(err));
+        exit(1);
+      }*/
+      struct TIStorage ti = TIStorage(DISTR_ALWAYS);
+      err = DeployTimeout(&ti);
+      if(err != 0) {
+        puts("deploy err");
+        exit(1);
+      }
+      err = AddTimeout(&ti, &((struct TIObject) {
+        .time = GetTime(1 * 1000000000),
+        .func = TCPShutdown,
+        .data = &sock
+      }), 1);
+      if(err != 0) {
+        puts("addtimeout err");
         exit(1);
       }
       (void) getc(stdin);
