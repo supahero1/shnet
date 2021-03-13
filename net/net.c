@@ -136,20 +136,20 @@ int InitConnectionManager(struct NETConnectionManager* const manager, const uint
   return err;
 }
 
-int AddSocket(struct NETConnectionManager* const manager, const int sfd, void (*callback)(int, uint32_t)) {
-  int err = net_avl_insert(&manager->avl_tree, sfd, callback);
+int AddSocket(struct NETConnectionManager* const manager, const struct NETSocket socket) {
+  int err = net_avl_insert(&manager->avl_tree, socket);
   if(err != 0) {
     puts("failed to add a socket");
     return err;
   }
-  err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, sfd, &((struct epoll_event) {
+  err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, socket.sfd, &((struct epoll_event) {
     .events = EPOLLIN | EPOLLRDHUP,
     .data = (epoll_data_t) {
-      .fd = sfd
+      .fd = socket.sfd
     }
   }));
   if(err != 0) {
-    net_avl_delete(&manager->avl_tree, sfd);
+    net_avl_delete(&manager->avl_tree, socket.sfd);
     return errno;
   }
   return 0;
@@ -190,6 +190,7 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* restrict sockt)
       *sockt = (struct NETSocket) {
         .addr = *n->ai_addr,
         .canonname = n->ai_canonname,
+        .event_handler = NULL,
         .addrlen = n->ai_addrlen,
         .state = NET_OPEN,
         .flags = n->ai_flags,
@@ -249,6 +250,7 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
       *sockt = (struct NETSocket) {
         .addr = *n->ai_addr,
         .canonname = n->ai_canonname,
+        .event_handler = NULL,
         .addrlen = n->ai_addrlen,
         .state = NET_OPEN,
         .flags = n->ai_flags,
@@ -298,6 +300,7 @@ static void* AsyncTCPConnectThread(void* a) {
     nets = (struct NETSocket) {
       .addr = *n->ai_addr,
       .canonname = n->ai_canonname,
+      .event_handler = NULL,
       .addrlen = n->ai_addrlen,
       .state = NET_CLOSED,
       .flags = n->ai_flags,
@@ -350,6 +353,7 @@ static void* AsyncTCPListenThread(void* a) {
     nets = (struct NETSocket) {
       .addr = *n->ai_addr,
       .canonname = n->ai_canonname,
+      .event_handler = NULL,
       .addrlen = n->ai_addrlen,
       .state = NET_CLOSED,
       .flags = n->ai_flags,

@@ -2,6 +2,7 @@
 #include "def.h"
 
 #include "distr/distr.h"
+#include "net/net_base.h"
 #include "net/net_avl.h"
 #include "net/net.h"
 
@@ -33,6 +34,10 @@ void event_handler(int sfd, uint32_t events) {
   printf("socket %d received the following events: ", sfd);
   if((events & EPOLLIN) != 0) {
     printf("EPOLLIN ");
+    char buf[500];
+    memset(buf, 0, 500);
+    size_t err = recv(sfd, buf, 500, 0);
+    printf("(bytes read: %ld, the message is: %s) ", err, buf);
   }
   if((events & EPOLLPRI) != 0) {
     printf("EPOLLPRI ");
@@ -62,8 +67,9 @@ void event_handler(int sfd, uint32_t events) {
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   int err;
+  printf("%ld %ld\n", sizeof(struct NETSocket), sizeof(struct net_avl_node));
   if(argc < 2) {
     puts("Minimum amount of arguments is 1.");
     return 1;
@@ -92,8 +98,9 @@ int main(int argc, char **argv) {
         puts("no address succeeded at SyncTCP_GAIConnect");
         exit(1);
       }
+      sock.event_handler = event_handler;
       puts("SyncTCP_GAIConnect succeeded11");
-      err = AddSocket(&manager, sock.sfd, event_handler);
+      err = AddSocket(&manager, sock);
       if(err != 0) {
         printf("error at AddSocket %d | %s\n", err, strerror(err));
         exit(1);

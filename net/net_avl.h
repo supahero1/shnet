@@ -22,16 +22,17 @@ extern "C" {
 #endif
 
 #include "../def.h"
+#include "net_base.h"
 
 #include <stdint.h>
 
 struct net_avl_node { // 40
   int sfd;
   int balance;
-  void (*callback)(int, uint32_t);
   struct net_avl_node* restrict parent;
   struct net_avl_node* restrict left;
   struct net_avl_node* restrict right;
+  struct NETSocket socket;
 };
 
 struct net_avl_tree {
@@ -53,7 +54,7 @@ __nonnull((1))
 extern void net_avl_free(struct net_avl_tree* const);
 
 __nonnull((1))
-extern int net_avl_insert(struct net_avl_tree* const, const int, void (*)(int, uint32_t));
+extern int net_avl_insert(struct net_avl_tree* const, const struct NETSocket);
 
 __nonnull((1))
 extern void net_avl_search(struct net_avl_tree* const, const int, const uint32_t);
