@@ -70,7 +70,10 @@ extern void TCPNoDelayOff(const int);
 extern void GetIPAsString(const struct NETSocket, char*);
 
 __nonnull((1))
-void TCPFree(struct NETSocket* const);
+void TCPSocketFree(struct NETSocket* const);
+
+__nonnull((1))
+void TCPServerFree(struct NETServer* const);
 
 __nonnull((2))
 extern int TCPSend(struct NETSocket* const restrict, void* const, const size_t);
@@ -112,39 +115,53 @@ __nonnull((1))
 extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* restrict);
 
 __nonnull((1))
-extern int SyncTCPListen(struct addrinfo* const, struct NETSocket* restrict);
+extern int SyncTCPListen(struct addrinfo* const, struct NETServer* restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETSocket* restrict);
+extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* restrict);
 
-struct NETConnectionManager {
+struct NETConnManager {
   pthread_t thread;
   struct net_avl_tree avl_tree;
   int epoll;
 };
 
 __nonnull((1))
-extern int InitConnectionManager(struct NETConnectionManager* const, const uint32_t);
+extern int InitConnManager(struct NETConnManager* const, const uint32_t);
 
 __nonnull((1))
-extern int AddSocket(struct NETConnectionManager* const, const struct NETSocket);
+extern int InitEventlessConnManager(struct NETConnManager* const, const uint32_t);
 
 __nonnull((1))
-extern int DeleteSocket(struct NETConnectionManager* const, const int);
+extern int AddSocket(struct NETConnManager* const, const struct NETSocket);
 
 __nonnull((1))
-extern void FreeConnectionManager(struct NETConnectionManager* const);
+extern int AddServer(struct NETConnManager* const, const struct NETServer);
 
-struct ANET {
+__nonnull((1))
+extern int DeleteSocket(struct NETConnManager* const, const int);
+
+__nonnull((1))
+extern int DeleteServer(struct NETConnManager* const, const int);
+
+__nonnull((1))
+extern void FreeConnectionManager(struct NETConnManager* const);
+
+struct ANET_C {
   void (*handler)(struct NETSocket*, int);
   struct addrinfo* addrinfo;
 };
 
 __nonnull((1))
-extern int AsyncTCPConnect(struct ANET* const);
+extern int AsyncTCPConnect(struct ANET_C* const);
+
+struct ANET_L {
+  void (*handler)(struct NETServer*, int);
+  struct addrinfo* addrinfo;
+};
 
 __nonnull((1))
-extern int AsyncTCPListen(struct ANET* const);
+extern int AsyncTCPListen(struct ANET_L* const);
 
 #ifdef __cplusplus
 }

@@ -62,13 +62,26 @@ void GetIPAsString(const struct NETSocket socket, char* str) {
   printf("addrlen: %d\n", socket.addrlen);
 }
 
-void TCPFree(struct NETSocket* const socket) {
+void TCPSocketFree(struct NETSocket* const socket) {
   if(socket->send_buffer != NULL) {
     free(socket->send_buffer);
     socket->send_buffer = NULL;
+    socket->length = 0;
   }
-  socket->length = 0;
   close(socket->sfd);
+}
+
+void TCPServerFree(struct NETServer* const server) {
+  size_t i;
+  if(server->connections != NULL) {
+    for(i = 0; i < server->conn_count; ++i) {
+      TCPShutdown(net_avl_search(&server->manager->avl_tree, server->connections[i]));
+    }
+    free(server->connections);
+    server->connections = NULL;
+    server->conn_count = 0;
+  }
+  close(server->sfd);
 }
 
 __nonnull((1))
@@ -77,7 +90,7 @@ static void TCPKill(struct NETSocket* const socket) {
   if(socket->onclose != NULL) {
     socket->onclose(*socket);
   }
-  TCPFree(socket);
+  TCPSocketFree(socket);
 }
 
 int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const size_t length) {
@@ -166,7 +179,7 @@ int AsyncGetAddrInfo(struct ANET_GAIArray* const array) {
 
 static void dummy_signal_handler(__unused int sig) {}
 
-#define manager ((struct NETConnectionManager*) s)
+#define manager ((struct NETConnManager*) s)
 
 __nothrow __nonnull((1))
 static void EPollThreadCleanup(void* s) {
@@ -179,11 +192,15 @@ static void* EPollThread(void* s) {
   sigset_t mask;
   struct epoll_event events[100];
   struct NETSocket* sock;
+  struct NETServer* serv;
+  struct sockaddr addr;
+  socklen_t addr_len;
   int err;
   int i;
   int temp;
   long bytes;
   uint8_t byte[1];
+  int* ptr;
   sigemptyset(&mask);
   sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
@@ -205,70 +222,114 @@ static void* EPollThread(void* s) {
     }
     for(i = 0; i < err; ++i) {
       sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
-      if((events[i].events & EPOLLHUP) != 0) { // they can message us but we can't message them
-        if(sock->state == NET_OPEN) {
-          sock->state = NET_SEND_CLOSING;
-          puts("the peer doesn't accept messages anymore, connection closing");
-        } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
-          puts("the peer doesn't accept messages anymore, connection closed");
-          TCPKill(sock);
-          continue;
-        }
-      }
-      if((events[i].events & EPOLLRDHUP) != 0) { // they can't message us but we can message them
-        if(sock->state == NET_OPEN) {
-          sock->state = NET_RECEIVE_CLOSING;
-          puts("the peer won't send messages anymore, connection closing");
-        } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
-          puts("the peer won't send messages anymore, connection closed");
-          TCPKill(sock);
-          continue;
-        }
-      }
-      if((events[i].events & EPOLLERR) != 0) { // an event
-        getsockopt(sock->sfd, SOL_SOCKET, SO_ERROR, &temp, NULL);
-        printf("got an event, code %d, message: %s\n", temp, strerror(temp));
-      }
-      if((events[i].events & EPOLLIN) != 0) { // can receive
-        bytes = recv(sock->sfd, byte, 1, MSG_PEEK);
-        if(bytes == 0) {
-          if(sock->state != NET_CLOSED) {
-            puts("connection closed, received 0 bytes");
+      if((sock->flags & AI_PASSIVE) == 0) {
+        if((events[i].events & EPOLLHUP) != 0) { // they can message us but we can't message them
+          if(sock->state == NET_OPEN) {
+            sock->state = NET_SEND_CLOSING;
+            puts("the peer doesn't accept messages anymore, connection closing");
+          } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
+            puts("the peer doesn't accept messages anymore, connection closed");
             TCPKill(sock);
             continue;
           }
-        } else if(bytes == -1) {
-          if((errno == ECONNRESET || errno == ETIMEDOUT) && sock->state != NET_CLOSED) {
-            puts("connection reset or timedout while reading data");
+        }
+        if((events[i].events & EPOLLRDHUP) != 0) { // they can't message us but we can message them
+          if(sock->state == NET_OPEN) {
+            sock->state = NET_RECEIVE_CLOSING;
+            puts("the peer won't send messages anymore, connection closing");
+          } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
+            puts("the peer won't send messages anymore, connection closed");
             TCPKill(sock);
             continue;
-          } else {
-            printf("recv error %d | %s", errno, strerror(errno));
+          }
+        }
+        if((events[i].events & EPOLLERR) != 0) { // an event
+          getsockopt(sock->sfd, SOL_SOCKET, SO_ERROR, &temp, NULL);
+          printf("got an event, code %d, message: %s\n", temp, strerror(temp));
+        }
+        if((events[i].events & EPOLLIN) != 0) { // can receive
+          bytes = recv(sock->sfd, byte, 1, MSG_PEEK);
+          if(bytes == 0) {
+            if(sock->state != NET_CLOSED) {
+              puts("connection closed, received 0 bytes");
+              TCPKill(sock);
+              continue;
+            }
+          } else if(bytes == -1) {
+            if((errno == ECONNRESET || errno == ETIMEDOUT) && sock->state != NET_CLOSED) {
+              puts("connection reset or timedout while reading data");
+              TCPKill(sock);
+              continue;
+            } else {
+              printf("recv error %d | %s", errno, strerror(errno));
+              sock->onerror(*sock);
+            }
+          } else if(sock->onmessage != NULL) {
+            sock->onmessage(*sock);
+          }
+        }
+        if(sock->length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) { // can send
+          puts("sending what we have in buffer");
+          bytes = send(sock->sfd, sock->send_buffer, sock->length, MSG_NOSIGNAL);
+          if(bytes == -1) {
+            if(errno == EPIPE && sock->state != NET_CLOSED) {
+              puts("connection shut down unexpectedly");
+              TCPKill(sock);
+              continue;
+            }
             sock->onerror(*sock);
-          }
-        } else if(sock->onmessage != NULL) {
-          sock->onmessage(*sock);
-        }
-      }
-      if(sock->length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) { // can send
-        puts("sending what we have in buffer");
-        bytes = send(sock->sfd, sock->send_buffer, sock->length, MSG_NOSIGNAL);
-        if(bytes == -1) {
-          if(errno == EPIPE && sock->state != NET_CLOSED) {
-            puts("connection shut down unexpectedly");
-            TCPKill(sock);
-            continue;
-          }
-          sock->onerror(*sock);
-        } else {
-          sock->length -= bytes;
-          if(sock->length == 0) {
-            free(sock->send_buffer);
-            sock->send_buffer = NULL;
-            if(sock->onsent != NULL) {
-              sock->onsent(*sock);
+          } else {
+            sock->length -= bytes;
+            if(sock->length == 0) {
+              free(sock->send_buffer);
+              sock->send_buffer = NULL;
+              sock->length = 0;
+              if(sock->onsent != NULL) {
+                sock->onsent(*sock);
+              }
+            } else {
+              (void) memmove(sock->send_buffer, sock->send_buffer + bytes, sock->length);
+              sock->send_buffer = realloc(sock->send_buffer, sock->length);
             }
           }
+        }
+      } else {
+        serv = (struct NETServer*) sock;
+        if((events[i].events & EPOLLHUP) != 0) {
+          puts("EPOLLHUP");
+        }
+        if((events[i].events & EPOLLRDHUP) != 0) {
+          puts("EPOLLRDHUP");
+        }
+        if((events[i].events & EPOLLERR) != 0) {
+          puts("EPOLLERR");
+        }
+        if((events[i].events & EPOLLIN) != 0) {
+          puts("new connection");
+          ptr = realloc(serv->connections, sizeof(int) * (serv->conn_count + 1));
+          if(ptr == NULL) {
+            errno = ENOMEM;
+            serv->onerror(*serv);
+            continue;
+          }
+          serv->connections = ptr;
+          temp = accept(serv->sfd, &addr, &addr_len);
+          if(temp == -1) {
+            if(errno == ECONNABORTED) {
+              puts("nvm aborted lol");
+              continue;
+            } else {
+              serv->onerror(*serv);
+              continue;
+            }
+          }
+          serv->connections[serv->conn_count++] = temp;
+          if(serv->onconnection != NULL) {
+            serv->onconnection(*serv, temp);
+          }
+        }
+        if((events[i].events & EPOLLOUT) != 0) {
+          puts("EPOLLOUT");
         }
       }
     }
@@ -279,7 +340,7 @@ static void* EPollThread(void* s) {
 
 #undef manager
 
-int InitConnectionManager(struct NETConnectionManager* const manager, const uint32_t avg_size) {
+int InitConnManager(struct NETConnManager* const manager, const uint32_t avg_size) {
   int epoll = epoll_create1(0);
   if(epoll == -1) {
     return errno;
@@ -299,7 +360,12 @@ int InitConnectionManager(struct NETConnectionManager* const manager, const uint
   return err;
 }
 
-int AddSocket(struct NETConnectionManager* const manager, const struct NETSocket socket) {
+int InitEventlessConnManager(struct NETConnManager* const manager, const uint32_t avg_size) {
+  manager->avl_tree = net_avl_tree(avg_size);
+  return net_avl_init(&manager->avl_tree);
+}
+
+int AddSocket(struct NETConnManager* const manager, const struct NETSocket socket) {
   int err = net_avl_insert(&manager->avl_tree, socket);
   if(err != 0) {
     puts("failed to add a socket");
@@ -318,7 +384,11 @@ int AddSocket(struct NETConnectionManager* const manager, const struct NETSocket
   return 0;
 }
 
-int DeleteSocket(struct NETConnectionManager* const manager, const int sfd) {
+int AddServer(struct NETConnManager* const manager, const struct NETServer server) {
+  return AddSocket(manager, *((struct NETSocket*)&server));
+}
+
+int DeleteSocket(struct NETConnManager* const manager, const int sfd) {
   net_avl_delete(&manager->avl_tree, sfd);
   int err = epoll_ctl(manager->epoll, EPOLL_CTL_DEL, sfd, (struct epoll_event*) manager);
   if(err != 0) {
@@ -327,7 +397,11 @@ int DeleteSocket(struct NETConnectionManager* const manager, const int sfd) {
   return 0;
 }
 
-void FreeConnectionManager(struct NETConnectionManager* const manager) {
+int DeleteServer(struct NETConnManager* const manager, const int sfd) {
+  return DeleteSocket(manager, sfd);
+}
+
+void FreeConnManager(struct NETConnManager* const manager) {
   (void) pthread_cancel(manager->thread);
   (void) pthread_sigqueue(manager->thread, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
 }
@@ -386,7 +460,7 @@ int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service,
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) {
+int SyncTCPListen(struct addrinfo* const res, struct NETServer* restrict sockt) {
   struct addrinfo* n;
   int sfd;
   int err;
@@ -408,10 +482,7 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
       continue;
     } else {
       sockt->addr = *n->ai_addr;
-      sockt->send_buffer = 0;
-      sockt->length = 0;
       sockt->addrlen = n->ai_addrlen;
-      sockt->state = NET_OPEN;
       sockt->flags = n->ai_flags;
       sockt->family = n->ai_family;
       sockt->socktype = n->ai_socktype;
@@ -425,7 +496,7 @@ int SyncTCPListen(struct addrinfo* const res, struct NETSocket* restrict sockt) 
   return -1;
 }
 
-int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* restrict socket) {
+int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* restrict socket) {
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
   if(err != 0) {
@@ -434,7 +505,7 @@ int SyncTCP_GAIListen(const char* const hostname, const char* const service, con
   return SyncTCPListen(res, socket);
 }
 
-#define arr ((struct ANET*) a)
+#define arr ((struct ANET_C*) a)
 
 __nonnull((1))
 static void* AsyncTCPConnectThread(void* a) {
@@ -491,10 +562,13 @@ static void* AsyncTCPConnectThread(void* a) {
   return NULL;
 }
 
+#undef arr
+#define arr ((struct ANET_L*) a)
+
 __nonnull((1))
 static void* AsyncTCPListenThread(void* a) {
   struct addrinfo* n;
-  struct NETSocket nets;
+  struct NETServer nets;
   int err;
   int sfd;
   /*
@@ -510,16 +584,14 @@ static void* AsyncTCPListenThread(void* a) {
       continue;
     }
     puts("got socket");
-    nets = (struct NETSocket) {
+    nets = (struct NETServer) {
       .addr = *n->ai_addr,
-      .onmessage = NULL,
-      .onclose = NULL,
+      .onconnection = NULL,
       .onerror = NULL,
-      .onsent = NULL,
-      .send_buffer = 0,
-      .length = 0,
+      .manager = NULL,
+      .connections = NULL,
+      .conn_count = 0,
       .addrlen = n->ai_addrlen,
-      .state = NET_CLOSED,
       .flags = n->ai_flags,
       .family = n->ai_family,
       .socktype = n->ai_socktype,
@@ -533,7 +605,6 @@ static void* AsyncTCPListenThread(void* a) {
       arr->handler(&nets, -1);
       continue;
     }
-    puts("bind succeeded");
     err = listen(sfd, 64);
     if(err != 0) {
       (void) close(sfd);
@@ -544,7 +615,6 @@ static void* AsyncTCPListenThread(void* a) {
       }
       continue;
     } else {
-      nets.state = NET_OPEN;
       arr->handler(&nets, sfd);
       break;
     }
@@ -555,12 +625,12 @@ static void* AsyncTCPListenThread(void* a) {
 
 #undef arr
 
-int AsyncTCPConnect(struct ANET* const info) {
+int AsyncTCPConnect(struct ANET_C* const info) {
   pthread_t t;
   return pthread_create(&t, NULL, AsyncTCPConnectThread, info);
 }
 
-int AsyncTCPListen(struct ANET* const info) {
+int AsyncTCPListen(struct ANET_L* const info) {
   pthread_t t;
   return pthread_create(&t, NULL, AsyncTCPListenThread, info);
 }

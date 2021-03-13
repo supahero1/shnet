@@ -42,6 +42,23 @@ struct NETSocket {
   int sfd;
 };
 
+struct NETServer {
+  struct sockaddr addr;
+  void (*onconnection)(struct NETServer, int);
+  long _unused1;
+  void (*onerror)(struct NETServer);
+  struct NETConnManager* manager;
+  int* connections;
+  size_t conn_count;
+  socklen_t addrlen;
+  int _unused3;
+  int flags;
+  int family;
+  int socktype;
+  int protocol;
+  int sfd;
+};
+
 #ifdef __cplusplus
 }
 #endif
