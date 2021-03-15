@@ -45,6 +45,7 @@ void onclose(struct NETSocket socket) {
 
 void onerror(struct NETSocket socket) {
   printf("got a socket error: %s\n", strerror(errno));
+  exit(1);
 }
 
 void onsent(struct NETSocket socket) {
@@ -67,6 +68,7 @@ void onconnection(struct NETServer server, struct NETSocket socket) {
 
 void serveronerror(struct NETServer server) {
   printf("got a server error: %s\n", strerror(errno));
+  exit(1);
 }
 
 void asyncsocket(struct NETSocket* const socket, const int sfd) {
@@ -227,7 +229,7 @@ int main(int argc, char** argv) {
             .handler = asyncgaiserver,
             .hostname = argv[3],
             .service = argv[4],
-            .flags = IPv4
+            .flags = IPv4 | AI_PASSIVE
           }),
           .count = 1
         }));
