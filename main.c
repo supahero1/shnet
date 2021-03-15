@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
             .handler = asyncgaiserver,
             .hostname = argv[3],
             .service = argv[4],
-            .flags = IPv4 | AI_PASSIVE
+            .flags = IPv4 | NET_SERVER
           }),
           .count = 1
         }));

@@ -113,6 +113,7 @@ int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const s
       if(errno == EPIPE && socket->state != NET_CLOSED) {
         puts("connection shut down unexpectedly");
         TCPKill(socket);
+        DeleteEventlessSocket(manager, socket->sfd);
       }
       return errno;
     }
@@ -222,6 +223,7 @@ static void* EPollThread(void* s) {
       return NULL;
     }
     for(i = 0; i < err; ++i) {
+      printf("search for %d\n", events[i].data.fd);
       sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
       if((sock->flags & AI_PASSIVE) == 0) {
         printf("socket event code %x\n", events[i].events);
@@ -232,6 +234,7 @@ static void* EPollThread(void* s) {
           } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
             puts("the peer doesn't accept messages anymore, connection closed");
             TCPKill(sock);
+            DeleteEventlessSocket(manager, sock->sfd);
             continue;
           }
         }
@@ -242,6 +245,7 @@ static void* EPollThread(void* s) {
           } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
             puts("the peer won't send messages anymore, connection closed");
             TCPKill(sock);
+            DeleteEventlessSocket(manager, sock->sfd);
             continue;
           }
         }
@@ -255,12 +259,14 @@ static void* EPollThread(void* s) {
             if(sock->state != NET_CLOSED) {
               puts("connection closed, received 0 bytes");
               TCPKill(sock);
+              DeleteEventlessSocket(manager, sock->sfd);
               continue;
             }
           } else if(bytes == -1) {
             if((errno == ECONNRESET || errno == ETIMEDOUT) && sock->state != NET_CLOSED) {
               puts("connection reset or timedout while reading data");
               TCPKill(sock);
+              DeleteEventlessSocket(manager, sock->sfd);
               continue;
             } else {
               printf("recv error %d | %s\n", errno, strerror(errno));
@@ -277,6 +283,7 @@ static void* EPollThread(void* s) {
             if(errno == EPIPE && sock->state != NET_CLOSED) {
               puts("connection shut down unexpectedly");
               TCPKill(sock);
+              DeleteEventlessSocket(manager, sock->sfd);
               continue;
             }
             sock->onerror(*sock);
@@ -304,14 +311,9 @@ static void* EPollThread(void* s) {
       } else {
         serv = (struct NETServer*) sock;
         printf("server event code %x\n", events[i].events);
-        if((events[i].events & EPOLLHUP) != 0) {
-          puts("EPOLLHUP");
-        }
-        if((events[i].events & EPOLLRDHUP) != 0) {
-          puts("EPOLLRDHUP");
-        }
         if((events[i].events & EPOLLERR) != 0) {
           puts("EPOLLERR");
+          serv->onerror(*serv);
         }
         if((events[i].events & EPOLLIN) != 0) {
           puts("new connection pending");
@@ -351,9 +353,6 @@ static void* EPollThread(void* s) {
               .sfd = temp
             });
           }
-        }
-        if((events[i].events & EPOLLOUT) != 0) {
-          puts("EPOLLOUT");
         }
       }
     }
@@ -434,6 +433,14 @@ int DeleteSocket(struct NETConnManager* const manager, const int sfd) {
 
 int DeleteServer(struct NETConnManager* const manager, const int sfd) {
   return DeleteSocket(manager, sfd);
+}
+
+void DeleteEventlessSocket(struct NETConnManager* const manager, const int sfd) {
+  net_avl_delete(&manager->avl_tree, sfd);
+}
+
+void DeleteEventlessServer(struct NETConnManager* const manager, const int sfd) {
+  return DeleteEventlessSocket(manager, sfd);
 }
 
 void FreeConnManager(struct NETConnManager* const manager) {

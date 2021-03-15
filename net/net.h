@@ -53,9 +53,10 @@ struct HTTPSocket {
   uint8_t state;
 };*/
 
-#define IPv4   AF_INET
-#define IPv6   AF_INET6
-#define IP_ANY AF_UNSPEC
+#define IPv4       AF_INET
+#define IPv6       AF_INET6
+#define IP_ANY     AF_UNSPEC
+#define NET_SERVER AI_PASSIVE
 
 extern void TCPNoBlock(const int);
 
@@ -147,6 +148,12 @@ extern int DeleteSocket(struct NETConnManager* const, const int);
 
 __nonnull((1))
 extern int DeleteServer(struct NETConnManager* const, const int);
+
+__nonnull((1))
+extern void DeleteEventlessSocket(struct NETConnManager* const, const int);
+
+__nonnull((1))
+extern void DeleteEventlessServer(struct NETConnManager* const, const int);
 
 __nonnull((1))
 extern void FreeConnectionManager(struct NETConnManager* const);
