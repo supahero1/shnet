@@ -245,13 +245,6 @@ static void* EPollThread(void* s) {
             continue;
           }
         }
-        if((events[i].events & EPOLLHUP) != 0) { // connection shutdown
-          if(sock->state != NET_CLOSED) {
-            puts("connection shutdown");
-            TCPKill(sock);
-            continue;
-          }
-        }
         if((events[i].events & EPOLLERR) != 0) { // an event
           getsockopt(sock->sfd, SOL_SOCKET, SO_ERROR, &temp, NULL);
           printf("got an event, code %d, message: %s\n", temp, strerror(temp));
