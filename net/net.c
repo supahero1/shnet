@@ -86,7 +86,7 @@ static void TCPKill(struct NETSocket* const socket) {
   TCPSocketFree(socket);
 }
 
-int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const size_t length) {
+int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const size_t length, struct NETConnManager* const restrict manager) {
   void* ptr;
   long bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
   puts("TCPSend()");
@@ -100,6 +100,14 @@ int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const s
       socket->send_buffer = ptr;
       (void) memcpy(socket->send_buffer + socket->length, buffer + bytes, length - bytes);
       socket->length += length - bytes;
+      if(manager != NULL) {
+        epoll_ctl(manager->epoll, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
+          .events = EPOLLIN | EPOLLRDHUP,
+          .data = (epoll_data_t) {
+            .fd = socket->sfd
+          }
+        }));
+      }
       return 0;
     } else {
       if(errno == EPIPE && socket->state != NET_CLOSED) {
@@ -216,6 +224,7 @@ static void* EPollThread(void* s) {
     for(i = 0; i < err; ++i) {
       sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
       if((sock->flags & AI_PASSIVE) == 0) {
+        printf("socket event code %x\n", events[i].events);
         if((events[i].events & EPOLLHUP) != 0) { // they can message us but we can't message them
           if(sock->state == NET_OPEN) {
             sock->state = NET_SEND_CLOSING;
@@ -232,6 +241,13 @@ static void* EPollThread(void* s) {
             puts("the peer won't send messages anymore, connection closing");
           } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
             puts("the peer won't send messages anymore, connection closed");
+            TCPKill(sock);
+            continue;
+          }
+        }
+        if((events[i].events & EPOLLHUP) != 0) { // connection shutdown
+          if(sock->state != NET_CLOSED) {
+            puts("connection shutdown");
             TCPKill(sock);
             continue;
           }
@@ -277,6 +293,12 @@ static void* EPollThread(void* s) {
               free(sock->send_buffer);
               sock->send_buffer = NULL;
               sock->length = 0;
+              epoll_ctl(manager->epoll, EPOLL_CTL_MOD, sock->sfd, &((struct epoll_event) {
+                .events = EPOLLIN | EPOLLRDHUP,
+                .data = (epoll_data_t) {
+                  .fd = sock->sfd
+                }
+              }));
               if(sock->onsent != NULL) {
                 sock->onsent(*sock);
               }
@@ -288,6 +310,7 @@ static void* EPollThread(void* s) {
         }
       } else {
         serv = (struct NETServer*) sock;
+        printf("server event code %x\n", events[i].events);
         if((events[i].events & EPOLLHUP) != 0) {
           puts("EPOLLHUP");
         }
@@ -379,8 +402,11 @@ int AddSocket(struct NETConnManager* const manager, const struct NETSocket socke
     puts("failed to add a socket");
     return err;
   }
+  if(socket.length != 0) {
+    err = EPOLLOUT;
+  }
   err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, socket.sfd, &((struct epoll_event) {
-    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP,
+    .events = EPOLLIN | EPOLLRDHUP | err,
     .data = (epoll_data_t) {
       .fd = socket.sfd
     }

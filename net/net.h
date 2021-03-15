@@ -74,7 +74,7 @@ __nonnull((1))
 void TCPServerFree(struct NETServer* const);
 
 __nonnull((2))
-extern int TCPSend(struct NETSocket* const restrict, void* const, const size_t);
+extern int TCPSend(struct NETSocket* const restrict, void* const, const size_t, struct NETConnManager* const restrict);
 
 __nonnull((1))
 extern void TCPSendShutdown(struct NETSocket* const);

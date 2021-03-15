@@ -53,6 +53,10 @@ void onsent(struct NETSocket socket) {
 
 void onconnection(struct NETServer server, struct NETSocket socket) {
   printf("new socket's sfd: %d\n", socket.sfd);
+  socket.onmessage = onmessage;
+  socket.onclose = onclose;
+  socket.onerror = onerror;
+  socket.onsent = onsent;
   int err = AddSocket(server.manager, socket);
   if(err != 0) {
     printf("error at AddSocket %d | %s\n", err, strerror(err));
@@ -94,7 +98,7 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
       }
       puts("AddSocket succeeded");
       char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
-      err = TCPSend(socket, buf, sizeof(buf));
+      err = TCPSend(socket, buf, sizeof(buf), &manager);
       if(err != 0) {
         printf("error at TCPSend %d | %s\n", err, strerror(err));
         exit(1);
@@ -269,7 +273,7 @@ int main(int argc, char** argv) {
         }
         puts("AddSocket succeeded");
         char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
-        err = TCPSend(&sock, buf, sizeof(buf));
+        err = TCPSend(&sock, buf, sizeof(buf), &manager);
         if(err != 0) {
           printf("error at TCPSend %d | %s\n", err, strerror(err));
           exit(1);
