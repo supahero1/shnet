@@ -27,9 +27,9 @@ extern "C" {
 #include <stdint.h>
 
 struct net_avl_node {
-  struct net_avl_node* restrict parent;
-  struct net_avl_node* restrict left;
-  struct net_avl_node* restrict right;
+  struct net_avl_node* parent;
+  struct net_avl_node* left;
+  struct net_avl_node* right;
   struct NETSocket socket;
   int balance;
 };

@@ -66,7 +66,7 @@ void net_avl_free(struct net_avl_tree* const tree) {
 }
 
 __nonnull((1, 2))
-static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node* const restrict node, struct net_avl_node* const restrict temp, const int sign) {
+static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node* const node, struct net_avl_node* const temp, const int sign) {
   if(sign == -1) {
     node->left = temp->right;
     if(temp->right != NULL) {
@@ -96,8 +96,8 @@ static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node*
 #include <stdio.h>
 
 __nonnull((1, 2))
-static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node* const restrict node, struct net_avl_node* const restrict temp, const int sign) {
-  struct net_avl_node* restrict temp2;
+static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node* const node, struct net_avl_node* const temp, const int sign) {
+  struct net_avl_node* temp2;
   if(sign == -1) {
     temp2 = temp->right;
     node->left = temp2->right;
@@ -134,7 +134,6 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
     temp2->left = temp;
     temp2->balance = 0;
   } else {
-    //printf("right left %d %p | %d %p | %d %p\n", node->socket.sfd, node, temp->socket.sfd, temp, temp->left->socket.sfd, temp->left);
     temp2 = temp->left;
     node->right = temp2->left;
     if(temp2->left != NULL) {
@@ -174,8 +173,8 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
 
 int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socket) {
   void* restrict ptr;
-  struct net_avl_node* restrict node = tree->head;
-  struct net_avl_node* restrict temp;
+  struct net_avl_node* node = tree->head;
+  struct net_avl_node* temp;
   uint_fast32_t i = 0;
   int sign;
   if(tree->count == 0) {
@@ -323,9 +322,9 @@ static void net_avl_swap(struct net_avl_tree* const restrict tree, struct net_av
 }
 
 void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
-  struct net_avl_node* restrict node = tree->head;
-  struct net_avl_node* restrict temp;
-  struct net_avl_node* restrict temp2;
+  struct net_avl_node* node = tree->head;
+  struct net_avl_node* temp;
+  struct net_avl_node* temp2;
   uint32_t sign;
   --tree->count;
   while(1) {

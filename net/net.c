@@ -31,141 +31,6 @@
 #include <stdio.h>
 #include <arpa/inet.h> // htons, htonl, etc
 
-////////////////////////////////////////////////////////////////////////////////
-static uint32_t net_avl_get_max_height(struct net_avl_tree* const tree, struct net_avl_node* const node, uint32_t height) {
-  if(node->left == NULL) {
-    if(node->right == NULL) {
-      return height;
-    } else {
-      return net_avl_get_max_height(tree, node->right, height + 1);
-    }
-  } else {
-    if(node->right == NULL) {
-      return net_avl_get_max_height(tree, node->left, height + 1);
-    } else {
-      uint32_t a = net_avl_get_max_height(tree, node->right, height + 1);
-      uint32_t b = net_avl_get_max_height(tree, node->left, height + 1);
-      if(a > b) {
-        return a;
-      }
-      return b;
-    }
-  }
-}
-
-static int32_t net_avl_get_balance(struct net_avl_tree* const tree, struct net_avl_node* const node) {
-  if(node->left != NULL) {
-    if(node->right != NULL) {
-      return net_avl_get_max_height(tree, node->right, 0) - net_avl_get_max_height(tree, node->left, 0);
-    } else {
-      return -net_avl_get_max_height(tree, node->left, 0) - 1;
-    }
-  } else {
-    if(node->right != NULL) {
-      return net_avl_get_max_height(tree, node->right, 0) + 1;
-    } else {
-      return 0;
-    }
-  }
-}
-
-static void net_avl_integrity_check(struct net_avl_tree* const tree, struct net_avl_node* const node, const int child) {
-  printf("sfd %d, left %p, right %p, parent %p\n", node->socket.sfd, node->left, node->right, node->parent);
-  if(node->parent != NULL) {
-    if(node == node->parent) {
-      printf("(0) broken link at %d\n", node->socket.sfd);
-      exit(1);
-    }
-    if(child == 0 && node->parent->left != node) {
-      printf("(1) broken link %d towards %d\n", node->socket.sfd, node->parent->socket.sfd);
-      exit(1);
-    }
-    if(child == 1 && node->parent->right != node) {
-      printf("(2) broken link %d towards %d\n", node->socket.sfd, node->parent->socket.sfd);
-      exit(1);
-    }
-  }
-  if(node->left != NULL) {
-    if(node->left->parent != node) {
-      printf("(3) broken link %d towards %d\n", node->socket.sfd, node->left->socket.sfd);
-      exit(1);
-    }
-    net_avl_integrity_check(tree, node->left, 0);
-  }
-  if(node->right != NULL) {
-    if(node->right->parent != node) {
-      printf("(4) broken link %d towards %d\n", node->socket.sfd, node->right->socket.sfd);
-      exit(1);
-    }
-    net_avl_integrity_check(tree, node->right, 1);
-  }
-}
-
-static void net_avl_balance_check(struct net_avl_tree* const tree, struct net_avl_node* restrict node) {
-  int balance = net_avl_get_balance(tree, node);
-  if(balance != node->balance) {
-    printf("invalid balance at node value %d (has %d, should have %d)\n", node->socket.sfd, node->balance, balance);
-    exit(1);
-  }
-  if(node->left != NULL) {
-    net_avl_balance_check(tree, node->left);
-  }
-  if(node->right != NULL) {
-    net_avl_balance_check(tree, node->right);
-  }
-}
-struct avl_omg {
-  int sfd;
-  int balance;
-};
-
-static void net_avl_log(struct net_avl_tree* const tree, struct net_avl_node* restrict const node, const uint32_t idx, struct avl_omg* restrict const heap) {
-  heap[idx] = (struct avl_omg) {
-    .sfd = node->socket.sfd,
-    .balance = node->balance
-  };
-  if(node->left == NULL) {
-    if(node->right != NULL) {
-      net_avl_log(tree, node->right, idx << 1 | 1, heap);
-    }
-  } else {
-    if(node->right == NULL) {
-      net_avl_log(tree, node->left, idx << 1, heap);
-    } else {
-      net_avl_log(tree, node->right, idx << 1 | 1, heap);
-      net_avl_log(tree, node->left, idx << 1, heap);
-    }
-  }
-}
-
-static void net_avl_print(struct avl_omg* const heap, const uint32_t height) {
-  uint32_t s1;
-  uint32_t s2;
-  uint32_t i = 0;
-  uint32_t j;
-  uint32_t k;
-  for(; i < height; ++i) {
-    s1 = (1 << (height - i - 1)) - 1;
-    s2 = (1 << i) - 1;
-    for(k = 0; k < s1; ++k) {
-      printf("\t");
-    }
-    for(j = 0; j < s2 + 1; ++j) {
-      if(heap[s2 + 1 + j].sfd != 0) {
-        printf("%d|%d", heap[s2 + 1 + j].sfd, heap[s2 + 1 + j].balance);
-      } else {
-        printf("X");
-      }
-      for(k = 0; k < (s1 + 1) << 1; ++k) {
-        printf("\t");
-      }
-    }
-    puts("");
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
 void TCPNoBlock(const int sfd) {
   int err = fcntl(sfd, F_GETFL, 0);
   if(err == -1) {
@@ -324,18 +189,6 @@ static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NE
       puts("connection closed, received 0 bytes");
       TCPKill(socket);
       DeleteEventlessSocket(manager, socket->sfd);
-      net_avl_integrity_check(&manager->avl_tree, manager->avl_tree.head, 0);
-      net_avl_balance_check(&manager->avl_tree, manager->avl_tree.head);
-      struct avl_omg* a = malloc(sizeof(struct avl_omg) * 50);
-      if(a == NULL) {
-        puts("oom");
-        exit(1);
-      }
-      memset(a, 0, sizeof(struct avl_omg) * 50);
-      net_avl_log(&manager->avl_tree, manager->avl_tree.head, 1, a);
-      net_avl_print(a, net_avl_get_max_height(&manager->avl_tree, manager->avl_tree.head, 1));
-      puts("=======================================================================");
-      free(a);
     }
     return -1;
   } else if(bytes == -1) {
@@ -580,18 +433,6 @@ int AddSocket(struct NETConnManager* const manager, const struct NETSocket socke
     (void) pthread_mutex_unlock(&manager->mutex);
     return errno;
   }
-  net_avl_integrity_check(&manager->avl_tree, manager->avl_tree.head, 0);
-  net_avl_balance_check(&manager->avl_tree, manager->avl_tree.head);
-  struct avl_omg* a = malloc(sizeof(struct avl_omg) * 50);
-  if(a == NULL) {
-    puts("oom");
-    exit(1);
-  }
-  memset(a, 0, sizeof(struct avl_omg) * 50);
-  net_avl_log(&manager->avl_tree, manager->avl_tree.head, 1, a);
-  net_avl_print(a, net_avl_get_max_height(&manager->avl_tree, manager->avl_tree.head, 1));
-  puts("=======================================================================");
-  free(a);
   return 0;
 }
 
