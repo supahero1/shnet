@@ -93,6 +93,8 @@ static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node*
   node->parent = temp;
 }
 
+#include <stdio.h>
+
 __nonnull((1, 2))
 static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node* const restrict node, struct net_avl_node* const restrict temp, const int sign) {
   struct net_avl_node* restrict temp2;
@@ -132,6 +134,7 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
     temp2->left = temp;
     temp2->balance = 0;
   } else {
+    //printf("right left %d %p | %d %p | %d %p\n", node->socket.sfd, node, temp->socket.sfd, temp, temp->left->socket.sfd, temp->left);
     temp2 = temp->left;
     node->right = temp2->left;
     if(temp2->left != NULL) {

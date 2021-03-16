@@ -30,35 +30,34 @@
 #include <semaphore.h>
 #include <sys/epoll.h>
 
-void onmessage(struct NETSocket socket) {
+void onmessage(struct NETSocket* socket) {
   puts("onmessage()");
   char buffer[50000];
   memset(buffer, 0, 50000);
-  long bytes = recv(socket.sfd, buffer, 50000, 0);
+  long bytes = recv(socket->sfd, buffer, 50000, 0);
   printf("nice got %ld bytes\n", bytes);
   printf("%s\n", buffer);
 }
 
-void onclose(struct NETSocket socket) {
+void onclose(struct NETSocket* socket) {
   puts("onclose()");
 }
 
-void onerror(struct NETSocket socket) {
+void onerror(struct NETSocket* socket) {
   printf("got a socket error: %s\n", strerror(errno));
-  exit(1);
 }
 
-void onsent(struct NETSocket socket) {
+void onsent(struct NETSocket* socket) {
   puts("the socket sent all data we wanted it to send");
 }
 
-void onconnection(struct NETServer server, struct NETSocket socket) {
+void onconnection(struct NETServer* server, struct NETSocket socket) {
   printf("new socket's sfd: %d\n", socket.sfd);
   socket.onmessage = onmessage;
   socket.onclose = onclose;
   socket.onerror = onerror;
   socket.onsent = onsent;
-  int err = AddSocket(server.manager, socket);
+  int err = AddSocket(server->manager, socket);
   if(err != 0) {
     printf("error at AddSocket %d | %s\n", err, strerror(err));
     exit(1);
@@ -66,9 +65,8 @@ void onconnection(struct NETServer server, struct NETSocket socket) {
   puts("AddSocket succeeded");
 }
 
-void serveronerror(struct NETServer server) {
+void serveronerror(struct NETServer* server) {
   printf("got a server error: %s\n", strerror(errno));
-  exit(1);
 }
 
 void asyncsocket(struct NETSocket* const socket, const int sfd) {

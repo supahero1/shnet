@@ -26,8 +26,6 @@ extern "C" {
 #include "../net/net_avl.h"
 #include "../distr/distr.h"
 
-#include <stdint.h>
-
 /*struct HTTP_URL {
   char* protocol;
   char* host;
@@ -105,24 +103,25 @@ __nonnull((1))
 extern int AsyncGetAddrInfo(struct ANET_GAIArray* const);
 
 __nonnull((1))
-extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* restrict);
+extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* const restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* restrict);
+extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const restrict);
 
 __nonnull((1))
-extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* restrict);
+extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const restrict);
 
 __nonnull((1))
-extern int SyncTCPListen(struct addrinfo* const, struct NETServer* restrict);
+extern int SyncTCPListen(struct addrinfo* const, struct NETServer* const restrict);
 
 __nonnull((1))
-extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* restrict);
+extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* const restrict);
 
 struct NETConnManager {
   pthread_t thread;
   struct net_avl_tree avl_tree;
   int epoll;
+  pthread_mutex_t mutex;
 };
 
 __nonnull((1))

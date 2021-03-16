@@ -27,12 +27,12 @@ enum NETFlags { NET_OPEN, NET_SEND_CLOSING, NET_RECEIVE_CLOSING, NET_CLOSED };
 
 struct NETSocket {
   struct sockaddr addr;
-  void (*onmessage)(struct NETSocket);
-  void (*onclose)(struct NETSocket);
-  void (*onerror)(struct NETSocket);
-  void (*onsent)(struct NETSocket);
+  void (*onmessage)(struct NETSocket*);
+  void (*onclose)(struct NETSocket*);
+  void (*onerror)(struct NETSocket*);
+  void (*onsent)(struct NETSocket*);
   void* send_buffer;
-  size_t length;
+  size_t send_length;
   socklen_t addrlen;
   int state;
   int flags;
@@ -44,14 +44,14 @@ struct NETSocket {
 
 struct NETServer {
   struct sockaddr addr;
-  void (*onconnection)(struct NETServer, struct NETSocket);
-  long _unused1;
-  void (*onerror)(struct NETServer);
+  void (*onconnection)(struct NETServer*, struct NETSocket);
+  void* _unused1;
+  void (*onerror)(struct NETServer*);
   struct NETConnManager* manager;
   int* connections;
   size_t conn_count;
   socklen_t addrlen;
-  int _unused3;
+  int _unused4;
   int flags;
   int family;
   int socktype;

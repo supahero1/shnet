@@ -26,13 +26,12 @@ extern "C" {
 
 #include <stdint.h>
 
-struct net_avl_node { // 40
-  int sfd;
-  int balance;
+struct net_avl_node {
   struct net_avl_node* restrict parent;
   struct net_avl_node* restrict left;
   struct net_avl_node* restrict right;
   struct NETSocket socket;
+  int balance;
 };
 
 struct net_avl_tree {
