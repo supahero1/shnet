@@ -73,7 +73,7 @@ __nonnull((1))
 void TCPServerFree(struct NETServer* const);
 
 __nonnull((2))
-extern int TCPSend(struct NETSocket* const restrict, void* const, const size_t, struct NETConnManager* const restrict);
+extern int TCPSend(struct NETSocket* const, void* const, const size_t, struct NETConnManager* const);
 
 __nonnull((1))
 extern void TCPSendShutdown(struct NETSocket* const);
@@ -85,7 +85,7 @@ __nonnull((1))
 extern void TCPShutdown(struct NETSocket* const);
 
 __nonnull((4))
-extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const restrict);
+extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const);
 
 struct ANET_GAILookup {
   void (*handler)(struct addrinfo*, int);
@@ -103,19 +103,19 @@ __nonnull((1))
 extern int AsyncGetAddrInfo(struct ANET_GAIArray* const);
 
 __nonnull((1))
-extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* const restrict);
+extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* const);
 
 __nonnull((1))
-extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const restrict);
+extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const);
 
 __nonnull((1))
-extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const restrict);
+extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const);
 
 __nonnull((1))
-extern int SyncTCPListen(struct addrinfo* const, struct NETServer* const restrict);
+extern int SyncTCPListen(struct addrinfo* const, struct NETServer* const);
 
 __nonnull((1))
-extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* const restrict);
+extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* const);
 
 struct NETConnManager {
   pthread_t thread;

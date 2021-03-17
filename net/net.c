@@ -86,7 +86,7 @@ static void TCPKill(struct NETSocket* const socket) {
   TCPSocketFree(socket);
 }
 
-int TCPSend(struct NETSocket* const restrict socket, void* const buffer, const size_t length, struct NETConnManager* const restrict manager) {
+int TCPSend(struct NETSocket* const socket, void* const buffer, const size_t length, struct NETConnManager* const manager) {
   void* ptr;
   long bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
   puts("TCPSend()");
@@ -146,7 +146,7 @@ void TCPShutdown(struct NETSocket* const socket) {
   }
 }
 
-int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const restrict res) {
+int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const res) {
   return getaddrinfo(hostname, service, &((struct addrinfo) {
     .ai_family = flags & (AF_INET | AF_INET6 | AF_UNSPEC),
     .ai_socktype = SOCK_STREAM,
@@ -182,7 +182,7 @@ int AsyncGetAddrInfo(struct ANET_GAIArray* const array) {
 #define MSG_BUFFER_LEN 1024
 
 __nonnull((1))
-static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NETSocket* const restrict socket, uint8_t* const restrict mem, const size_t length) {
+static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NETSocket* const socket, uint8_t* const mem, const size_t length) {
   ssize_t bytes = recv(socket->sfd, mem, length, MSG_PEEK);
   if(bytes == 0) {
     if(socket->state != NET_CLOSED) {
@@ -442,7 +442,7 @@ int AddServer(struct NETConnManager* const manager, const struct NETServer serve
 
 struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd) {
   (void) pthread_mutex_lock(&manager->mutex);
-  struct NETSocket* const restrict s = net_avl_search(&manager->avl_tree, sfd);
+  struct NETSocket* const s = net_avl_search(&manager->avl_tree, sfd);
   (void) pthread_mutex_unlock(&manager->mutex);
   return s;
 }
@@ -481,7 +481,7 @@ void FreeConnManager(struct NETConnManager* const manager) {
   (void) pthread_sigqueue(manager->thread, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
 }
 
-int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const restrict sock) {
+int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
   struct addrinfo* n;
   int sfd;
   int err;
@@ -519,7 +519,7 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const restrict 
   return -1;
 }
 
-int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const restrict socket) {
+int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, which_ip, &res);
   if(err != 0) {
@@ -528,7 +528,7 @@ int SyncTCP_GAIConnect(const char* const hostname, const char* const service, co
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const restrict socket) {
+int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, AI_NUMERICHOST | which_ip, &res);
   if(err != 0) {
@@ -537,7 +537,7 @@ int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service,
   return SyncTCPConnect(res, socket);
 }
 
-int SyncTCPListen(struct addrinfo* const res, struct NETServer* const restrict serv) {
+int SyncTCPListen(struct addrinfo* const res, struct NETServer* const serv) {
   struct addrinfo* n;
   int sfd;
   int err;
@@ -577,7 +577,7 @@ int SyncTCPListen(struct addrinfo* const res, struct NETServer* const restrict s
   return -1;
 }
 
-int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* const restrict server) {
+int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* const server) {
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
   if(err != 0) {

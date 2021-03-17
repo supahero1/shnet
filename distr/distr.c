@@ -33,7 +33,7 @@ struct WorkerCluster WorkerCluster(const uint8_t clean_work) {
   };
 }
 
-int Work(struct WorkerCluster* const restrict cluster, void** const work, const uint32_t amount) {
+int Work(struct WorkerCluster* const cluster, void** const work, const uint32_t amount) {
   const uint8_t count = atomic_load(&cluster->count);
   uint8_t a, i = 0;
   void** ptr;
@@ -283,7 +283,7 @@ uint64_t GetTime(const uint64_t nanoseconds) {
   return nanoseconds + tp.tv_sec * 1000000000 + tp.tv_nsec;
 }
 
-int AddTimeout(struct TIStorage* const restrict storage, const struct TIObject* const restrict work, const uint32_t amount) {
+int AddTimeout(struct TIStorage* const storage, const struct TIObject* const work, const uint32_t amount) {
   struct TIObject* ptr;
   uint32_t i = 0;
   (void) pthread_mutex_lock(&storage->mutex);

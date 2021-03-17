@@ -32,7 +32,7 @@ struct net_avl_tree net_avl_tree(const uint32_t max_items_per_part) {
 }
 
 int net_avl_init(struct net_avl_tree* const tree) {
-  void* restrict ptr;
+  void* ptr;
   uint_fast32_t i = 0;
   ptr = malloc(sizeof(struct net_avl_node*));
   if(ptr == NULL) {
@@ -93,13 +93,10 @@ static void net_avl_rotate(struct net_avl_tree* const tree, struct net_avl_node*
   node->parent = temp;
 }
 
-#include <stdio.h>
-
 __nonnull((1, 2))
 static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node* const node, struct net_avl_node* const temp, const int sign) {
-  struct net_avl_node* temp2;
   if(sign == -1) {
-    temp2 = temp->right;
+    struct net_avl_node* const temp2 = temp->right;
     node->left = temp2->right;
     if(temp2->right != NULL) {
       temp2->right->parent = node;
@@ -134,7 +131,7 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
     temp2->left = temp;
     temp2->balance = 0;
   } else {
-    temp2 = temp->left;
+    struct net_avl_node* const temp2 = temp->left;
     node->right = temp2->left;
     if(temp2->left != NULL) {
       temp2->left->parent = node;
@@ -172,7 +169,7 @@ static void net_avl_rotate2(struct net_avl_tree* const tree, struct net_avl_node
 }
 
 int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socket) {
-  void* restrict ptr;
+  void* ptr;
   struct net_avl_node* node = tree->head;
   struct net_avl_node* temp;
   uint_fast32_t i = 0;
@@ -285,7 +282,7 @@ int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socke
 }
 
 struct NETSocket* net_avl_search(struct net_avl_tree* const tree, const int sfd) {
-  struct net_avl_node* restrict node = tree->head;
+  struct net_avl_node* node = tree->head;
   while(1) {
     if(sfd > node->socket.sfd) {
       node = node->right;
@@ -298,7 +295,7 @@ struct NETSocket* net_avl_search(struct net_avl_tree* const tree, const int sfd)
 }
 
 __nonnull((1, 2))
-static void net_avl_swap(struct net_avl_tree* const restrict tree, struct net_avl_node* restrict node) {
+static void net_avl_swap(struct net_avl_tree* const tree, struct net_avl_node* node) {
   *node = *tree->last;
   if(node->parent != NULL) {
     if(node->parent->right == tree->last) {

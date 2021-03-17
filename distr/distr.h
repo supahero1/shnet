@@ -44,10 +44,10 @@ struct Worker {
 
 struct WorkerCluster {
   pthread_mutex_t mutex;
-  struct Worker* restrict workers;
+  struct Worker* workers;
   void (*onready)(struct WorkerCluster*);
   void (*onclear)(struct WorkerCluster*);
-  void** restrict work;
+  void** work;
   uint32_t work_amount;
   uint32_t max_work_amount;
   uint8_t clear_mode;
@@ -61,7 +61,7 @@ __const
 extern struct WorkerCluster WorkerCluster(const uint8_t);
 
 __nonnull((1, 2))
-extern int Work(struct WorkerCluster* const restrict, void** const, const uint32_t);
+extern int Work(struct WorkerCluster* const, void** const, const uint32_t);
 
 __nonnull((1))
 extern void WorkCleanup(struct WorkerCluster* const);
@@ -103,13 +103,13 @@ extern struct TIStorage TIStorage(const uint8_t);
 extern uint64_t GetTime(const uint64_t);
 
 __nonnull((1, 2))
-extern int AddTimeout(struct TIStorage* const restrict, const struct TIObject* const restrict, const uint32_t);
+extern int AddTimeout(struct TIStorage* const, const struct TIObject* const, const uint32_t);
 
 __nonnull((1))
 extern void TICleanup(struct TIStorage* const);
 
 __nonnull((1))
-extern void ClearStorage(struct TIStorage* const restrict, const uint8_t);
+extern void ClearStorage(struct TIStorage* const, const uint8_t);
 
 extern int DeployTimeout(struct TIStorage* const);
 
