@@ -36,7 +36,10 @@ struct NETSocket {
   socklen_t addrlen;
   int state;
   int flags;
-  int family;
+  union {
+    int server;
+    int family;
+  };
   int socktype;
   int protocol;
   int sfd;

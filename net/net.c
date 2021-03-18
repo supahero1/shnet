@@ -257,11 +257,9 @@ static void* EPollThread(void* s) {
     }
     for(i = 0; i < err; ++i) {
       (void) pthread_mutex_lock(&manager->mutex);
-      printf("search for %d\n", events[i].data.fd);
       sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
       (void) pthread_mutex_unlock(&manager->mutex);
       if((sock->flags & AI_PASSIVE) == 0) {
-        printf("socket event code %x\n", events[i].events);
         if((events[i].events & EPOLLHUP) != 0) { // they can message us but we can't message them
           if(sock->state == NET_OPEN) {
             sock->state = NET_SEND_CLOSING;
@@ -325,7 +323,6 @@ static void* EPollThread(void* s) {
         }
       } else {
         serv = (struct NETServer*) sock;
-        printf("server event code %x\n", events[i].events);
         if((events[i].events & EPOLLERR) != 0) {
           puts("EPOLLERR");
           serv->onerror(serv);
@@ -362,7 +359,7 @@ static void* EPollThread(void* s) {
               .addrlen = addr_len,
               .state = NET_OPEN,
               .flags = serv->flags ^ AI_PASSIVE,
-              .family = serv->family,
+              .server = serv->sfd,
               .socktype = serv->socktype,
               .protocol = serv->protocol,
               .sfd = temp
@@ -378,8 +375,8 @@ static void* EPollThread(void* s) {
   return NULL;
 }
 
-#undef manager
 #undef MSG_BUFFER_LEN
+#undef manager
 
 int InitConnManager(struct NETConnManager* const manager, const uint32_t avg_size) {
   const int epoll = epoll_create1(0);
@@ -410,7 +407,8 @@ int InitEventlessConnManager(struct NETConnManager* const manager, const uint32_
   return pthread_mutex_init(&manager->mutex, NULL);
 }
 
-int AddSocket(struct NETConnManager* const manager, const struct NETSocket socket) {
+__nonnull((1))
+static int NETConnManagerAdd(struct NETConnManager* const manager, const struct NETSocket socket, const int flags) {
   (void) pthread_mutex_lock(&manager->mutex);
   int err = net_avl_insert(&manager->avl_tree, socket);
   (void) pthread_mutex_unlock(&manager->mutex);
@@ -422,7 +420,7 @@ int AddSocket(struct NETConnManager* const manager, const struct NETSocket socke
     err = EPOLLOUT;
   }
   err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, socket.sfd, &((struct epoll_event) {
-    .events = EPOLLIN | EPOLLRDHUP | err,
+    .events = EPOLLIN | EPOLLRDHUP | err | flags,
     .data = (epoll_data_t) {
       .fd = socket.sfd
     }
@@ -436,8 +434,16 @@ int AddSocket(struct NETConnManager* const manager, const struct NETSocket socke
   return 0;
 }
 
+int AddSocket(struct NETConnManager* const manager, const struct NETSocket socket) {
+  if(socket.send_length != 0) {
+    return NETConnManagerAdd(manager, socket, EPOLLOUT);
+  } else {
+    return NETConnManagerAdd(manager, socket, 0);
+  }
+}
+
 int AddServer(struct NETConnManager* const manager, const struct NETServer server) {
-  return AddSocket(manager, *((struct NETSocket*)&server));
+  return NETConnManagerAdd(manager, *((struct NETSocket*)&server), EPOLLET);
 }
 
 struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd) {
