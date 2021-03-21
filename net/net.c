@@ -55,6 +55,14 @@ void TCPNoDelayOff(const int sfd) {
   (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){0}, sizeof(int));
 }
 
+uint16_t TCPGetHandshakeTimeout(struct NETServer* const server) {
+  return server->handshake_timeout;
+}
+
+void TCPSetHandshakeTimeout(struct NETServer* const server, const uint16_t timeout) {
+  server->handshake_timeout = timeout;
+}
+
 void TCPSocketFree(struct NETSocket* const socket) {
   if(socket->send_buffer != NULL) {
     free(socket->send_buffer);
@@ -73,6 +81,7 @@ void TCPServerFree(struct NETServer* const server) {
     free(server->connections);
     server->connections = NULL;
     server->conn_count = 0;
+    server->max_conn_count = 0;
   }
   close(server->sfd);
 }
@@ -226,15 +235,12 @@ static void* EPollThread(void* s) {
   struct epoll_event events[100];
   struct NETSocket* sock;
   struct NETServer* serv;
-  struct sockaddr addr;
-  socklen_t addr_len;
   int err;
   int i;
   int temp;
   long bytes;
   uint8_t mem[MSG_BUFFER_LEN];
   int* ptr;
-  sigemptyset(&mask);
   sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
   sigemptyset(&mask);
@@ -260,7 +266,7 @@ static void* EPollThread(void* s) {
       sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
       (void) pthread_mutex_unlock(&manager->mutex);
       if((sock->flags & AI_PASSIVE) == 0) {
-        if((events[i].events & EPOLLHUP) != 0) { // they can message us but we can't message them
+        if((events[i].events & EPOLLHUP) != 0) {
           if(sock->state == NET_OPEN) {
             sock->state = NET_SEND_CLOSING;
             puts("the peer doesn't accept messages anymore, connection closing");
@@ -271,7 +277,7 @@ static void* EPollThread(void* s) {
             continue;
           }
         }
-        if((events[i].events & EPOLLRDHUP) != 0) { // they can't message us but we can message them
+        if((events[i].events & EPOLLRDHUP) != 0) {
           if(sock->state == NET_OPEN) {
             sock->state = NET_RECEIVE_CLOSING;
             puts("the peer won't send messages anymore, connection closing");
@@ -282,14 +288,14 @@ static void* EPollThread(void* s) {
             continue;
           }
         }
-        if((events[i].events & EPOLLERR) != 0) { // an event
+        if((events[i].events & EPOLLERR) != 0) {
           getsockopt(sock->sfd, SOL_SOCKET, SO_ERROR, &temp, NULL);
           printf("got an event, code %d, message: %s\n", temp, strerror(temp));
         }
-        if((events[i].events & EPOLLIN) != 0) { // can receive
+        if((events[i].events & EPOLLIN) != 0) {
           (void) EPollSocketGetMessage(manager, sock, mem, 1);
         }
-        if(sock->send_length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) { // can send
+        if(sock->send_length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) {
           puts("sending what we have in buffer");
           bytes = send(sock->sfd, sock->send_buffer, sock->send_length, MSG_NOSIGNAL);
           if(bytes == -1) {
@@ -329,42 +335,7 @@ static void* EPollThread(void* s) {
         }
         if((events[i].events & EPOLLIN) != 0) {
           puts("new connection pending");
-          ptr = realloc(serv->connections, sizeof(int) * (serv->conn_count + 1));
-          if(ptr == NULL) {
-            errno = ENOMEM;
-            serv->onerror(serv);
-            continue;
-          }
-          serv->connections = ptr;
-          temp = accept(serv->sfd, &addr, &addr_len);
-          if(temp == -1) {
-            if(errno == ECONNABORTED) {
-              puts("nvm aborted lol");
-              continue;
-            } else {
-              serv->onerror(serv);
-              continue;
-            }
-          }
-          serv->connections[serv->conn_count++] = temp;
-          if(serv->onconnection != NULL) {
-            serv->onconnection(serv, (struct NETSocket) {
-              .addr = addr,
-              .onmessage = NULL,
-              .onclose = NULL,
-              .onerror = NULL,
-              .onsent = NULL,
-              .send_buffer = NULL,
-              .send_length = 0,
-              .addrlen = addr_len,
-              .state = NET_OPEN,
-              .flags = serv->flags ^ AI_PASSIVE,
-              .server = serv->sfd,
-              .socktype = serv->socktype,
-              .protocol = serv->protocol,
-              .sfd = temp
-            });
-          }
+          (void) sem_post(&serv->pool->semaphore);
         }
       }
     }
@@ -487,13 +458,180 @@ void FreeConnManager(struct NETConnManager* const manager) {
   (void) pthread_sigqueue(manager->thread, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
 }
 
+#define pool info->si_value.sigval_ptr
+
+__nonnull((1))
+static void ServerThreadHandler(int sig, siginfo_t* info, void* ucontext) {
+  if(atomic_fetch(&pool->state) == 1) {
+    if(atomic_fetch_sub(&pool->amount, 1) == 1) {
+      (void) pthread_mutex_destroy(&pool->mutex);
+      (void) sem_destroy(&pool->semaphore);
+      free(pool->threads);
+      if(pool->onclose != NULL) {
+        pool->onclose(pool);
+      }
+    }
+    pthread_exit(NULL);
+  }
+}
+
+#undef pool
+#define pool ((struct NETServerThreadPool*) a)
+
+__nonnull((1))
+static void ServerThreadCleanup(void* a) {
+  if(atomic_fetch_sub(&pool->amount, 1) == 1) {
+    (void) sem_destroy(&pool->semaphore);
+    free(pool->threads);
+    if(pool->onclose != NULL) {
+      pool->onclose(pool);
+    }
+  }
+}
+
+__nonnull((1))
+static void* ServerThread(void* a) {
+  struct sockaddr addr;
+  sigset_t mask;
+  int* ptr;
+  socklen_t addr_len;
+  int sfd;
+  sigfillset(&mask);
+  (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGRTMAX);
+  (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+  (void) sigaction(SIGRTMAX, &((struct sigaction) {
+    .sa_flags = SA_SIGINFO,
+    .sa_handler = ServerThreadHandler
+  }), NULL);
+  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+  (void) sigsuspend(&mask);
+  (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+  pthread_cleanup_push(ServerThreadCleanup, a);
+  while(1) {
+    (void) sem_wait(&pool->semaphore);
+    (void) pthread_mutex_lock(&pool->server->mutex);
+    if(pool->server->conn_count == pool->server->max_conn_count - 1) {
+      ptr = realloc(pool->server->connections, sizeof(int) * (pool->server->max_conn_count + pool->growth));
+      if(ptr == NULL) {
+        errno = ENOMEM;
+        pool->server->onerror(pool->server);
+        (void) pthread_mutex_unlock(&pool->server->mutex);
+        (void) sem_post(&pool->semaphore);
+        goto out;
+      }
+      pool->server->connections = ptr;
+      pool->server->max_conn_count += pool->growth;
+    }
+    (void) pthread_mutex_unlock(&pool->server->mutex);
+    sfd = accept(pool->server->sfd, &addr, &addr_len);
+    (void) pthread_mutex_lock(&pool->server->mutex);
+    if(sfd == -1) {
+      if(errno != ECONNABORTED) {
+        pool->server->onerror(pool->server);
+      }
+      (void) pthread_mutex_unlock(&pool->server->mutex);
+      goto out;
+    }
+    pool->server->connections[pool->server->conn_count++] = sfd;
+    (void) pthread_mutex_unlock(&pool->server->mutex);
+    if(pool->server->onconnection != NULL) {
+      pool->server->onconnection(pool->server, (struct NETSocket) {
+        .addr = addr,
+        .onmessage = NULL,
+        .onclose = NULL,
+        .onerror = NULL,
+        .onsent = NULL,
+        .send_buffer = NULL,
+        .send_length = 0,
+        .addrlen = addr_len,
+        .state = NET_OPEN,
+        .flags = pool->server->flags ^ AI_PASSIVE,
+        .server = pool->server->sfd,
+        .family = pool->server->family,
+        .socktype = pool->server->socktype,
+        .protocol = pool->server->protocol,
+        .sfd = sfd
+      });
+    }
+    out:
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_testcancel();
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+  }
+  pthread_cleanup_pop(1);
+  return NULL;
+}
+
+__nonnull((1))
+static void ReadyServerThreadPool(struct NETServerThreadPool* const pool) {
+  for(uint32_t i = 0; i < atomic_load(&pool->amount); ++i) {
+    (void) pthread_sigqueue(pool->threads[i], SIGRTMAX, (union sigval) { .sival_ptr = pool });
+  }
+}
+
+int InitServerThreadPool(struct NETServerThreadPool* const pool, const uin32_t amount, const uint32_t growth, const int server_fd) {
+  pthread_attr_t* attr;
+  pool->sfd = server_fd;
+  pool->growth = growth;
+  int err = pthread_mutex_init(&pool->mutex, NULL);
+  if(err != 0) {
+    return err;
+  }
+  err = sem_init(&pool->semaphore, 0, 0);
+  if(err != 0) {
+    (void) pthread_mutex_destroy(&pool->mutex);
+    return ENOMEM;
+  }
+  if(pthread_attr_init(attr) != 0) {
+    (void) pthread_mutex_destroy(&pool->mutex);
+    (void) sem_destroy(&pool->semaphore);
+    return ENOMEM;
+  }
+  (void) pthread_attr_setstacksize(attr, 525312);
+  // (void) pthread_attr_setschedpolicy(attr, SCHED_FIFO);
+  pool->threads = malloc(sizeof(pthread_t) * amount);
+  if(pool->threads == NULL) {
+    (void) pthread_attr_destroy(attr);
+    (void) pthread_mutex_destroy(&pool->mutex);
+    (void) sem_destroy(&pool->semaphore);
+    return ENOMEM;
+  }
+  for(uint32_t i = 0; i < amount; ++i) {
+    err = pthread_create(&pool->threads[i], attr, ServerThread, pool);
+    if(err != 0) {
+      (void) pthread_attr_destroy(attr);
+      atomic_store(&pool->state, 1);
+      atomic_store(&pool->amount, i + 1);
+      ReadyServerThreadPool(pool);
+      return err;
+    }
+  }
+  (void) pthread_attr_destroy(attr);
+  atomic_store(&pool->state, 0);
+  atomic_store(&pool->amount, amount);
+  ReadyServerThreadPool(pool);
+  return 0;
+}
+
+void FreeServerThreadPool(struct NETServerThreadPool* const pool) {
+  atomic_store(&pool->state, 1);
+  for(uint32_t i = 0; i < atomic_load(&pool->amount); ++i) {
+    (void) pthread_cancel(pool->threads[i]);
+  }
+}
+
 int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
-  struct addrinfo* n;
   int sfd;
   int err;
+  sock->onmessage = NULL;
+  sock->onclose = NULL;
+  sock->onerror = NULL;
+  sock->onsent = NULL;
   sock->send_buffer = NULL;
   sock->send_length = 0;
-  for(n = res; n != NULL; n = n->ai_next) {
+  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
     sock->addr = *n->ai_addr;
     sock->addrlen = n->ai_addrlen;
     sock->flags = n->ai_flags;
@@ -544,13 +682,18 @@ int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service,
 }
 
 int SyncTCPListen(struct addrinfo* const res, struct NETServer* const serv) {
-  struct addrinfo* n;
   int sfd;
   int err;
-  serv->manager = NULL;
-  serv->connections = NULL;
-  serv->conn_count = 0;
-  for(n = res; n != NULL; n = n->ai_next) {
+  serv.onconnection = NULL;
+  serv.pool = NULL;
+  serv.onerror = NULL;
+  serv.manager = NULL;
+  serv.connections = NULL;
+  serv.conn_count = 0;
+  serv.max_conn_count = 0;
+  serv.handshake_timeout = 0;
+  serv.http_request_timeout = 0;
+  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
     serv->addr = *n->ai_addr;
     serv->addrlen = n->ai_addrlen;
     serv->flags = n->ai_flags;
@@ -596,7 +739,6 @@ int SyncTCP_GAIListen(const char* const hostname, const char* const service, con
 
 __nonnull((1))
 static void* AsyncTCPConnectThread(void* a) {
-  struct addrinfo* n;
   struct NETSocket sock;
   int err;
   int sfd;
@@ -611,7 +753,7 @@ static void* AsyncTCPConnectThread(void* a) {
   sock.onsent = NULL;
   sock.send_buffer = 0;
   sock.send_length = 0;
-  for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
     sock.addr = *n->ai_addr;
     sock.addrlen = n->ai_addrlen;
     sock.flags = n->ai_flags;
@@ -656,7 +798,6 @@ static void* AsyncTCPConnectThread(void* a) {
 
 __nonnull((1))
 static void* AsyncTCPListenThread(void* a) {
-  struct addrinfo* n;
   struct NETServer serv;
   int err;
   int sfd;
@@ -667,11 +808,15 @@ static void* AsyncTCPListenThread(void* a) {
   -3 = no socket succeeded
   */
   serv.onconnection = NULL;
+  serv.pool = NULL;
   serv.onerror = NULL;
   serv.manager = NULL;
   serv.connections = NULL;
   serv.conn_count = 0;
-  for(n = arr->addrinfo; n != NULL; n = n->ai_next) {
+  serv.max_conn_count = 0;
+  serv.handshake_timeout = 0;
+  serv.http_request_timeout = 0;
+  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
     serv.addr = *n->ai_addr;
     serv.addrlen = n->ai_addrlen;
     serv.flags = n->ai_flags;

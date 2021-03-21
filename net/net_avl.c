@@ -45,7 +45,7 @@ int net_avl_init(struct net_avl_tree* const tree) {
     return ENOMEM;
   }
   for(; i < sizeof(struct net_avl_tree) * tree->max_items_per_part; i += 4096) {
-    memset(ptr + i, 0, sizeof(long));
+    (void) memset(ptr + i, 0, sizeof(long));
   }
   tree->parts[0] = ptr;
   return 0;
@@ -198,7 +198,7 @@ int net_avl_insert(struct net_avl_tree* const tree, const struct NETSocket socke
       return ENOMEM;
     }
     for(; i < sizeof(struct net_avl_tree) * tree->max_items_per_part; i += 4096) {
-      memset(ptr + i, 0, sizeof(long));
+      (void) memset(ptr + i, 0, sizeof(long));
     }
     tree->parts[tree->amount++] = ptr;
     tree->last = ptr - 1;

@@ -24,32 +24,9 @@ extern "C" {
 #include "../def.h"
 #include "net_base.h"
 #include "../net/net_avl.h"
-#include "../distr/distr.h"
+#include "../timeout/timeout.h"
 
-/*struct HTTP_URL {
-  char* protocol;
-  char* host;
-  char* origin;
-  char* port;
-  char* pathname;
-  char* query;
-  char* hash;
-  
-  uint16_t origin_len;
-  uint16_t pathname_len;
-  uint16_t query_len;
-  uint16_t hash_len;
-  uint8_t protocol_len;
-  uint8_t host_len;
-  uint8_t port_len;
-};
-
-__nonnull((1))
-extern struct HTTP_URL ParseHTTP_URL(const char* const);
-
-struct HTTPSocket {
-  uint8_t state;
-};*/
+#include <semaphore.h>
 
 #define IPv4       AF_INET
 #define IPv6       AF_INET6
@@ -65,6 +42,10 @@ extern void TCPCorkOff(const int);
 extern void TCPNoDelayOn(const int);
 
 extern void TCPNoDelayOff(const int);
+
+extern uint16_t TCPGetHandshakeTimeout(struct NETServer* const);
+
+extern void TCPSetHandshakeTimeout(struct NETServer* const, const uint16_t);
 
 __nonnull((1))
 void TCPSocketFree(struct NETSocket* const);
@@ -156,6 +137,22 @@ extern void DeleteEventlessServer(struct NETConnManager* const, const int);
 
 __nonnull((1))
 extern void FreeConnectionManager(struct NETConnManager* const);
+
+struct NETServerThreadPool {
+  pthread_t* threads;
+  void (*onclose)(struct NETServerThreadPool*);
+  struct NETServer* server;
+  sem_t semaphore;
+  _Atomic uint32_t amount;
+  _Atomic uint32_t state;
+  uint32_t growth;
+};
+
+__nonnull((1))
+extern int InitServerThreadPool(struct NETServerThreadPool* const, const uint32_t, const uint32_t, const int);
+
+__nonnull((1))
+extern void FreeServerThreadPool(struct NETServerThreadPool* const);
 
 struct ANET_C {
   void (*handler)(struct NETSocket*, int);

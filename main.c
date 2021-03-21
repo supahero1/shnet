@@ -1,7 +1,7 @@
 #include "check.h"
 #include "def.h"
 
-#include "distr/distr.h"
+#include "timeout/timeout.h"
 #include "net/net_base.h"
 #include "net/net_avl.h"
 #include "net/net.h"
@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <semaphore.h>
 #include <sys/epoll.h>
+#include <limits.h>
 
 void onmessage(struct NETSocket* socket) {
   puts("onmessage()");
@@ -198,8 +199,9 @@ void asyncgaiserver(struct addrinfo* info, int status) {
 
 int main(int argc, char** argv) {
   int err;
-  if(argc < 3) {
-    puts("Minimum amount of arguments is 2.");
+  printf("%ld\n", sizeof(pthread_mutex_t));
+  if(argc < 5) {
+    puts("Minimum amount of arguments is 4.");
     return 1;
   }
   if(argv[1][0] == 'a') {

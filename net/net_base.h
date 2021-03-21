@@ -36,10 +36,8 @@ struct NETSocket {
   socklen_t addrlen;
   int state;
   int flags;
-  union {
-    int server;
-    int family;
-  };
+  int server;
+  int family;
   int socktype;
   int protocol;
   int sfd;
@@ -48,13 +46,15 @@ struct NETSocket {
 struct NETServer {
   struct sockaddr addr;
   void (*onconnection)(struct NETServer*, struct NETSocket);
-  void* _unused1;
+  struct NETServerThreadPool* pool;
   void (*onerror)(struct NETServer*);
   struct NETConnManager* manager;
   int* connections;
-  size_t conn_count;
+  uint32_t conn_count;
+  uint32_t max_conn_count;
   socklen_t addrlen;
-  int _unused4;
+  uint16_t handshake_timeout;
+  uint16_t http_request_timeout;
   int flags;
   int family;
   int socktype;
