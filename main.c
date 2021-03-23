@@ -2,9 +2,9 @@
 #include "def.h"
 
 #include "timeout/timeout.h"
-#include "net/net_base.h"
-#include "net/net_avl.h"
-#include "net/net.h"
+//#include "net/net_base.h"
+//#include "net/net_avl.h"
+//#include "net/net.h"
 
 #include <math.h>
 #include <sched.h>
@@ -31,7 +31,41 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-void onmessage(struct NETSocket* socket) {
+#define amount 1000
+
+void timeout_callback(void* data) {
+  uint32_t num = atomic_fetch_add((_Atomic uint32_t*) data, 1);
+  printf("callback nr %u bro", num);
+}
+
+int main() {
+  _Atomic uint32_t incred = 1;
+  struct Timeout timeout = Timeout();
+  int err = StartTimeoutThread(&timeout, TIME_ALWAYS);
+  if(err != 0) {
+    puts("0");
+    exit(1);
+  }
+  (void) getc(stdin);
+  struct TimeoutObject work[amount];
+  for(uint32_t i = 0; i < amount; ++i) {
+    work[i] = (struct TimeoutObject) {
+      .func = timeout_callback,
+      .data = &incred,
+      .time = GetTime(i * 1000000)
+    };
+  }
+  (void) getc(stdin);
+  err = AddTimeout(&timeout, work, amount);
+  if(err != 0) {
+    puts("1");
+    exit(1);
+  }
+  (void) getc(stdin);
+  return 0;
+}
+
+/*void onmessage(struct NETSocket* socket) {
   puts("onmessage()");
   char buffer[50000];
   memset(buffer, 0, 50000);
@@ -321,4 +355,4 @@ int main(int argc, char** argv) {
     puts("Option not recognized. The available options: a(sync), s(ync)");
   }
   return 0;
-}
+}*/

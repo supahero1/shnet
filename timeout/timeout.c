@@ -23,6 +23,8 @@
 #include <signal.h>
 #include <stdbool.h>
 
+#include <stdio.h>
+
 uint64_t GetTime(const uint64_t nanoseconds) {
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
   (void) clock_gettime(CLOCK_MONOTONIC, &tp);
@@ -81,27 +83,33 @@ static struct TimeoutObject TimeoutHeapPop(struct Timeout* const timeout) {
 }
 
 int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const work, const uint32_t amount) {
-  (void) pthread_mutex_lock(&timeout->mutex);
+  int locked = pthread_mutex_trylock(&timeout->mutex);
   uint32_t old = timeout->timeouts;
   if(timeout->max_timeouts - timeout->timeouts < amount) {
     struct TimeoutObject* ptr = realloc(timeout->heap, sizeof(struct TimeoutObject) * (timeout->timeouts + amount));
     if(ptr == NULL) {
-      (void) pthread_mutex_unlock(&timeout->mutex);
+      if(locked == EBUSY) {
+        (void) pthread_mutex_unlock(&timeout->mutex);
+      }
       return ENOMEM;
     }
     timeout->heap = ptr;
     timeout->max_timeouts = timeout->timeouts + amount;
   }
-  struct TimeoutObject object = timeout->heap[1];
+  uint64_t time = timeout->heap[1].time;
   uint32_t i = 0;
   for(; i < amount; ++i) {
     TimeoutHeapInsert(timeout, work[i]);
   }
   timeout->timeouts += amount;
-  if(timeout->heap[1] != object || old == 1) {
-    (void) pthread_mutex_unlock(&timeout->mutex);
+  if(timeout->heap[1].time != time || old == 1) {
+    if(locked == EBUSY) {
+      (void) pthread_mutex_unlock(&timeout->mutex);
+    }
+    puts("gonna send a signal bc new lowest time or first time");
     (void) pthread_sigqueue(timeout->worker, SIGRTMAX, (union sigval) { .sival_ptr = timeout });
-  } else {
+  } else if(locked == EBUSY) {
+    puts("not gonna send any signal!");
     (void) pthread_mutex_unlock(&timeout->mutex);
   }
   return 0;
@@ -116,11 +124,12 @@ void TimeoutCleanup(struct Timeout* const timeout) {
   (void) pthread_mutex_unlock(&timeout->mutex);
 }
 
-#define timeout ((struct Timeout*) t)
+#define timeout ((struct Timeout*) info->si_value.sival_ptr)
 
-__nonnull((1))
-static void TimeoutWorkerHandler(void* t) {
-  if(t == NULL) {
+static void TimeoutWorkerHandler(int sig, siginfo_t* info, void* ucontext) {
+  puts("signal handler");
+  if(timeout == NULL) {
+    puts("timeout is null wtf");
     (void) pthread_mutex_destroy(&timeout->mutex);
     if(timeout->onclear != NULL) {
       timeout->onclear(timeout);
@@ -135,30 +144,40 @@ static void TimeoutWorkerHandler(void* t) {
   }
 }
 
+#undef timeout
+#define timeout ((struct Timeout*) t)
+
 __nonnull((1))
 static void* TimeoutThread(void* t) {
-  struct timespec t;
+  struct timespec time;
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGRTMAX);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
   (void) sigaction(SIGRTMAX, &((struct sigaction) {
-    .sa_flags = 0,
-    .sa_handler = TimeoutWorkerHandler
+    .sa_flags = SA_SIGINFO,
+    .sa_sigaction = TimeoutWorkerHandler
   }), NULL);
+  puts("thread started wohoo!");
   while(1) {
+    puts("sleepin bc no work");
     (void) sigsuspend(&mask);
+    puts("woke up");
     (void) pthread_mutex_lock(&timeout->mutex);
     while(timeout->timeouts != 1) {
       timeout->heap[0] = timeout->heap[1];
-      t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+      time = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
       (void) pthread_mutex_unlock(&timeout->mutex);
-      while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL) != 0) {
+      puts("sleepin");
+      while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &time, NULL) != 0) {
+        puts("signal woke up");
         (void) pthread_mutex_lock(&timeout->mutex);
         timeout->heap[0] = timeout->heap[1];
-        t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+        time = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
         (void) pthread_mutex_unlock(&timeout->mutex);
+        puts("going to sleep");
       }
+      puts("end of sleeping");
       (void) pthread_mutex_lock(&timeout->mutex);
       (void) TimeoutHeapPop(timeout);
       if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
@@ -168,7 +187,6 @@ static void* TimeoutThread(void* t) {
       timeout->heap[0].func(timeout->heap[0].data);
       (void) pthread_mutex_unlock(&timeout->mutex);
     }
-    (void) pthread_mutex_unlock(&timeout->mutex);
   }
   return NULL;
 }

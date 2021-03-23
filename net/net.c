@@ -503,7 +503,7 @@ static void* ServerThread(void* a) { // this will get an update too probably
   (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
   (void) sigaction(SIGRTMAX, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
-    .sa_handler = ServerThreadHandler
+    .sa_sigaction = ServerThreadHandler
   }), NULL);
   (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
   (void) sigsuspend(&mask);
