@@ -490,7 +490,7 @@ static void ServerThreadCleanup(void* a) {
 }
 
 __nonnull((1))
-static void* ServerThread(void* a) {
+static void* ServerThread(void* a) { // this will get an update too probably
   struct sockaddr addr;
   sigset_t mask;
   int* ptr;
@@ -590,7 +590,6 @@ int InitServerThreadPool(struct NETServerThreadPool* const pool, const uin32_t a
     return ENOMEM;
   }
   (void) pthread_attr_setstacksize(attr, 525312);
-  // (void) pthread_attr_setschedpolicy(attr, SCHED_FIFO);
   pool->threads = malloc(sizeof(pthread_t) * amount);
   if(pool->threads == NULL) {
     (void) pthread_attr_destroy(attr);

@@ -27,9 +27,6 @@ extern "C" {
 #include <pthread.h>
 #include <stdatomic.h>
 
-#define TIME_DEAD     0
-#define TIME_ALIVE    1
-
 #define TIME_NEVER    0
 #define TIME_DEPENDS  1
 #define TIME_ALWAYS   2
@@ -43,14 +40,13 @@ struct TimeoutObject {
 };
 
 struct Timeout {
-  void (*onready)(struct Timeout*);
+  void (*onerror)(struct Timeout*);
   void (*onclear)(struct Timeout*);
   pthread_t worker;
   struct TimeoutObject* heap;
   pthread_mutex_t mutex;
   uint32_t timeouts;
   uint32_t max_timeouts;
-  _Atomic uint32_t state;
   uint32_t clear_mode;
   _Atomic uint32_t clean_work;
 };

@@ -38,7 +38,7 @@ struct Timeout Timeout() {
 }
 
 __nonnull((1))
-static void TimeoutHeap_insert(struct Timeout* const timeout, const struct TimeoutObject obj) {
+static void TimeoutHeapInsert(struct Timeout* const timeout, const struct TimeoutObject obj) {
   uint32_t idx = timeout->timeouts++;
   uint32_t parent = idx >> 1;
   if(idx == 1) {
@@ -59,7 +59,7 @@ static void TimeoutHeap_insert(struct Timeout* const timeout, const struct Timeo
 }
 
 __nonnull((1))
-static struct TimeoutObject TimeoutHeap_pop(struct Timeout* const timeout) {
+static struct TimeoutObject TimeoutHeapPop(struct Timeout* const timeout) {
   const struct TimeoutObject obj = timeout->heap[1];
   uint32_t idx = 1;
   --timeout->timeouts;
@@ -82,6 +82,7 @@ static struct TimeoutObject TimeoutHeap_pop(struct Timeout* const timeout) {
 
 int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const work, const uint32_t amount) {
   (void) pthread_mutex_lock(&timeout->mutex);
+  uint32_t old = timeout->timeouts;
   if(timeout->max_timeouts - timeout->timeouts < amount) {
     struct TimeoutObject* ptr = realloc(timeout->heap, sizeof(struct TimeoutObject) * (timeout->timeouts + amount));
     if(ptr == NULL) {
@@ -91,13 +92,18 @@ int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const 
     timeout->heap = ptr;
     timeout->max_timeouts = timeout->timeouts + amount;
   }
+  struct TimeoutObject object = timeout->heap[1];
   uint32_t i = 0;
   for(; i < amount; ++i) {
-    TimeoutHeap_insert(timeout, work[i]);
+    TimeoutHeapInsert(timeout, work[i]);
   }
   timeout->timeouts += amount;
-  (void) pthread_mutex_unlock(&timeout->mutex);
-  (void) pthread_sigqueue(timeout->worker, SIGRTMAX, (union sigval) { .sival_int = 0 });
+  if(timeout->heap[1] != object || old == 1) {
+    (void) pthread_mutex_unlock(&timeout->mutex);
+    (void) pthread_sigqueue(timeout->worker, SIGRTMAX, (union sigval) { .sival_ptr = timeout });
+  } else {
+    (void) pthread_mutex_unlock(&timeout->mutex);
+  }
   return 0;
 }
 
@@ -113,78 +119,56 @@ void TimeoutCleanup(struct Timeout* const timeout) {
 #define timeout ((struct Timeout*) t)
 
 __nonnull((1))
-static void TimeoutWorkerCleanup(void* t) {
-  (void) pthread_mutex_destroy(&timeout->mutex);
-  if(timeout->onclear != NULL) {
-    timeout->onclear(timeout);
+static void TimeoutWorkerHandler(void* t) {
+  if(t == NULL) {
+    (void) pthread_mutex_destroy(&timeout->mutex);
+    if(timeout->onclear != NULL) {
+      timeout->onclear(timeout);
+    }
+    if((timeout->clear_mode == TIME_DEPENDS && atomic_load(&timeout->clean_work) == TIME_ALWAYS) || timeout->clear_mode == TIME_ALWAYS) {
+      timeout->timeouts = 1;
+      timeout->max_timeouts = 1;
+      free(timeout->heap);
+      timeout->heap = NULL;
+    }
+    pthread_exit(NULL);
   }
-  if((timeout->clear_mode == TIME_DEPENDS && atomic_load(&timeout->clean_work) == TIME_ALWAYS) || timeout->clear_mode == TIME_ALWAYS) {
-    timeout->timeouts = 1;
-    timeout->max_timeouts = 1;
-    free(timeout->heap);
-    timeout->heap = NULL;
-  }
-  atomic_store(&timeout->state, TIME_DEAD);
 }
 
 __nonnull((1))
 static void* TimeoutThread(void* t) {
   struct timespec t;
-  struct TimeoutObject obj;
-  void (*callback)(void*);
-  void* data;
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGRTMAX);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-  (void) sigemptyset(&mask);
-  (void) sigaddset(&mask, SIGRTMAX);
-  atomic_store(&timeout->state, TIME_ALIVE);
-  if(timeout->onready != NULL) {
-    timeout->onready(timeout);
-  }
+  (void) sigaction(SIGRTMAX, &((struct sigaction) {
+    .sa_flags = 0,
+    .sa_handler = TimeoutWorkerHandler
+  }), NULL);
   while(1) {
     (void) sigsuspend(&mask);
     (void) pthread_mutex_lock(&timeout->mutex);
     while(timeout->timeouts != 1) {
-      timeout->heap[0] = TimeoutHeap_pop(timeout);
-      callback = timeout->heap[0].func;
-      data = timeout->heap[0].data;
-      if(atomic_load(&timeout->clean_work) == TIME_ALWAYS && timeout->max_timeouts != timeout->timeouts) {
+      timeout->heap[0] = timeout->heap[1];
+      t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+      (void) pthread_mutex_unlock(&timeout->mutex);
+      while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL) != 0) {
+        (void) pthread_mutex_lock(&timeout->mutex);
+        timeout->heap[0] = timeout->heap[1];
+        t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+        (void) pthread_mutex_unlock(&timeout->mutex);
+      }
+      (void) pthread_mutex_lock(&timeout->mutex);
+      (void) TimeoutHeapPop(timeout);
+      if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
         timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
         timeout->max_timeouts = timeout->timeouts;
       }
-      t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+      timeout->heap[0].func(timeout->heap[0].data);
       (void) pthread_mutex_unlock(&timeout->mutex);
-      // 
-      while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL) != 0) {
-        (void) pthread_mutex_lock(&timeout->mutex);
-        atomic_store(&timeout->state, TIME_RUNNING);
-        if(timeout->heap[1].time < timeout->heap[0].time) {
-          obj = TimeoutHeap_pop(timeout);
-          TimeoutHeap_insert(timeout, timeout->heap[0]);
-          timeout->heap[0] = obj;
-          callback = timeout->heap[0].func;
-          data = timeout->heap[0].data;
-          if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
-            timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
-            timeout->max_timeouts = timeout->timeouts;
-          }
-          (void) pthread_mutex_unlock(&timeout->mutex);
-          t = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
-        } else {
-          (void) pthread_mutex_unlock(&timeout->mutex);
-        }
-      }
-      atomic_store(&timeout->state, TIME_RUNNING);
-      callback(data);
     }
     (void) pthread_mutex_unlock(&timeout->mutex);
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-    atomic_store(&timeout->state, TIME_SLEEPING);
-    (void) sigsuspend(&rt_mask);
-    (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
-    atomic_store(&timeout->state, TIME_RUNNING);
   }
   return NULL;
 }
@@ -193,25 +177,17 @@ static void* TimeoutThread(void* t) {
 
 void StopTimeoutThread(struct Timeout* const timeout, const uint32_t clear_mode) {
   timeout->clear_mode = clear_mode;
-  atomic_store(&timeout->state, TIME_DEAD);
   (void) pthread_sigqueue(timeout->worker, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
 }
 
 int StartTimeoutThread(struct Timeout* const timeout, const uint32_t clean_work) {
   atomic_store(&timeout->clean_work, clean_work);
-  pthread_attr_t* attr;
-  if(pthread_attr_init(attr) != 0) {
-    return ENOMEM;
-  }
   int err = pthread_mutex_init(&timeout->mutex, NULL);
   if(err != 0) {
-    (void) pthread_attr_destroy(attr);
     return err;
   }
-  (void) pthread_attr_setschedpolicy(attr, SCHED_FIFO);
-  err = pthread_create(&timeout->worker, attr, TimeoutThread, timeout);
+  err = pthread_create(&timeout->worker, NULL, TimeoutThread, timeout);
   if(err != 0) {
-    (void) pthread_attr_destroy(attr);
     (void) pthread_mutex_destroy(&timeout->mutex);
   }
   return err;
