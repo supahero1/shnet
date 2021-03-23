@@ -40,7 +40,6 @@ struct TimeoutObject {
 };
 
 struct Timeout {
-  void (*onerror)(struct Timeout*);
   void (*onclear)(struct Timeout*);
   pthread_t worker;
   struct TimeoutObject* heap;
