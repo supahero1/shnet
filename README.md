@@ -4,4 +4,4 @@ current status is: TCP layer kind of finished, can create sockets sync and async
 oh and also no support for out of band messages bc they are basically unused  
 to use `build` to build this, pls first do `chmod 755 build` so that it's set to executable, else it will prompt you an error.
 # License
-No license. You don't have right to touch the files and use them on your own, even though there is a license at the top of some of them (this has priority).
+No license. You don't have right to use the code, even though there is a license at the top of some of the files (this has priority).
