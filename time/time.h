@@ -21,15 +21,13 @@
 extern "C" {
 #endif
 
-#include "../def.h"
-
 #include <stdint.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
-#define TIME_NEVER    0
-#define TIME_DEPENDS  1
-#define TIME_ALWAYS   2
+#define TIME_NEVER    2
+#define TIME_DEPENDS  4
+#define TIME_ALWAYS   6
 
 extern uint64_t GetTime(const uint64_t);
 
@@ -40,26 +38,23 @@ struct TimeoutObject {
 };
 
 struct Timeout {
-  void (*onclear)(struct Timeout*);
+  void (*onstart)(struct Timeout*);
+  void (*onstop)(struct Timeout*);
   pthread_t worker;
   struct TimeoutObject* heap;
   pthread_mutex_t mutex;
   uint32_t timeouts;
   uint32_t max_timeouts;
-  uint32_t clear_mode;
+  _Atomic uint32_t clear_mode;
   _Atomic uint32_t clean_work;
 };
 
-__const
 extern struct Timeout Timeout(void);
 
-__nonnull((1, 2))
 extern int AddTimeout(struct Timeout* const, const struct TimeoutObject* const, const uint32_t);
 
-__nonnull((1))
 extern void TimeoutCleanup(struct Timeout* const);
 
-__nonnull((1))
 extern void StopTimeoutThread(struct Timeout* const, const uint32_t);
 
 extern int StartTimeoutThread(struct Timeout* const, const uint32_t);

@@ -1,7 +1,7 @@
 #include "check.h"
 #include "def.h"
 
-#include "timeout/timeout.h"
+#include "time/time.h"
 //#include "net/net_base.h"
 //#include "net/net_avl.h"
 //#include "net/net.h"
@@ -31,34 +31,58 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-#define amount 1000
+#define amount 10000
+
+static struct TimeoutObject work[amount];
+static struct Timeout timeout;
+static uint64_t lastTime = 0;
 
 void timeout_callback(void* data) {
   uint32_t num = atomic_fetch_add((_Atomic uint32_t*) data, 1);
-  printf("callback nr %u bro", num);
+  //printf("t %u\n", num);
+  if(lastTime == 0) {
+    lastTime = GetTime(0);
+  } else {
+    uint64_t diff = GetTime(0) - lastTime;
+    lastTime = GetTime(0);
+    printf("new frame rolled in: %Lf\n", diff / (long double) 1000000.0);
+  }
+  if(num == amount) {
+    puts("stopping the timeout");
+    StopTimeoutThread(&timeout, TIME_ALWAYS);
+  }
+}
+
+void start(struct Timeout* ti) {
+  puts("thread started wohoo!");
+  int err = AddTimeout(ti, work, amount);
+  if(err != 0) {
+    puts("1");
+    exit(1);
+  }
+  puts("successfully scheduled timeouts");
+}
+
+void stop(struct Timeout* a) {
+  puts("successfully stopped!");
+  exit(1);
 }
 
 int main() {
   _Atomic uint32_t incred = 1;
-  struct Timeout timeout = Timeout();
-  int err = StartTimeoutThread(&timeout, TIME_ALWAYS);
-  if(err != 0) {
-    puts("0");
-    exit(1);
-  }
-  (void) getc(stdin);
-  struct TimeoutObject work[amount];
-  for(uint32_t i = 0; i < amount; ++i) {
+  for(uint64_t i = 0; i < amount; ++i) {
     work[i] = (struct TimeoutObject) {
       .func = timeout_callback,
       .data = &incred,
-      .time = GetTime(i * 1000000)
+      .time = GetTime(i * 16666666) // 60 fps111
     };
   }
-  (void) getc(stdin);
-  err = AddTimeout(&timeout, work, amount);
+  timeout = Timeout();
+  timeout.onstart = start;
+  timeout.onstop = stop;
+  int err = StartTimeoutThread(&timeout, TIME_ALWAYS);
   if(err != 0) {
-    puts("1");
+    puts("0");
     exit(1);
   }
   (void) getc(stdin);
