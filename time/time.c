@@ -93,8 +93,7 @@ int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const 
     timeout->max_timeouts = timeout->timeouts + amount;
   }
   uint64_t time = timeout->heap[1].time;
-  uint32_t i = 0;
-  for(; i < amount; ++i) {
+  for(uint32_t i = 0; i < amount; ++i) {
     TimeoutHeapInsert(timeout, work[i]);
   }
   if(timeout->heap[1].time != time || old == 1) {

@@ -31,7 +31,7 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-#define amount 10000
+#define amount 1000
 
 static struct TimeoutObject work[amount];
 static struct Timeout timeout;
@@ -39,18 +39,24 @@ static uint64_t lastTime = 0;
 
 void timeout_callback(void* data) {
   uint32_t num = atomic_fetch_add((_Atomic uint32_t*) data, 1);
-  //printf("t %u\n", num);
   if(lastTime == 0) {
     lastTime = GetTime(0);
   } else {
     uint64_t diff = GetTime(0) - lastTime;
     lastTime = GetTime(0);
-    printf("new frame rolled in: %Lf\n", diff / (long double) 1000000.0);
+    printf("new frame rolled in: %Lf (%u, %lu)\n", diff / (long double) 1000000.0, num, lastTime / 1000000);
   }
-  if(num == amount) {
+  if(num % 2 == 0) {
+    int err = AddTimeout(&timeout, &work[0], 1);
+    if(err != 0) {
+      puts("1");
+      exit(1);
+    }
+  }
+  /*if(num == amount * 2) {
     puts("stopping the timeout");
     StopTimeoutThread(&timeout, TIME_ALWAYS);
-  }
+  }*/
 }
 
 void start(struct Timeout* ti) {
@@ -74,7 +80,7 @@ int main() {
     work[i] = (struct TimeoutObject) {
       .func = timeout_callback,
       .data = &incred,
-      .time = GetTime(i * 16666666) // 60 fps111
+      .time = GetTime(i * 40000000)
     };
   }
   timeout = Timeout();
