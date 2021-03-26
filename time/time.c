@@ -186,6 +186,7 @@ static void* TimeoutThread(void* t) {
       if(timeout->timeouts == 1) {
         break;
       }
+      atomic_store(&timeout->latest, timeout->heap[1].time);
       UNLOCK;
     }
     UNLOCK;
