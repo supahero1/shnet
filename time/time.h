@@ -42,6 +42,8 @@ struct Timeout {
   void (*onstop)(struct Timeout*);
   pthread_t worker;
   struct TimeoutObject* heap;
+  _Atomic uint64_t latest;
+  struct timespec local;
   pthread_mutex_t mutex;
   uint32_t timeouts;
   uint32_t max_timeouts;

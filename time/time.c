@@ -22,6 +22,7 @@
 #include <string.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 uint64_t GetTime(const uint64_t nanoseconds) {
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
@@ -62,6 +63,7 @@ static void TimeoutHeapInsert(struct Timeout* const timeout, const struct Timeou
 static void TimeoutHeapPop(struct Timeout* const timeout) {
   uint32_t idx = 1;
   --timeout->timeouts;
+  timeout->heap[0] = timeout->heap[1];
   if((idx << 1) <= timeout->timeouts) {
     do {
       if((idx << 1) + 1 <= timeout->timeouts && timeout->heap[(idx << 1) + 1].time < timeout->heap[timeout->timeouts].time && timeout->heap[(idx << 1) + 1].time < timeout->heap[idx << 1].time) {
@@ -97,6 +99,7 @@ int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const 
     TimeoutHeapInsert(timeout, work[i]);
   }
   if(timeout->heap[1].time != time || old == 1) {
+    atomic_store(&timeout->latest, timeout->heap[1].time);
     if(locked != EBUSY) {
       (void) pthread_mutex_unlock(&timeout->mutex);
     }
@@ -118,7 +121,10 @@ void TimeoutCleanup(struct Timeout* const timeout) {
 
 #define timeout ((struct Timeout*) info->si_value.sival_ptr)
 
-static void TimeoutWorkerHandler(int sig) {}
+static void TimeoutWorkerHandler(int sig, siginfo_t* info, void* ucontext) {
+  uint64_t time = atomic_load(&timeout->latest);
+  timeout->local = (struct timespec) { .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 };
+}
 
 #undef timeout
 #define timeout ((struct Timeout*) t)
@@ -135,7 +141,7 @@ do {                                               \
 } while(0)
 
 static void* TimeoutThread(void* t) {
-  struct timespec time;
+  uint64_t time;
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGRTMAX);
@@ -143,8 +149,8 @@ static void* TimeoutThread(void* t) {
   (void) sigemptyset(&mask);
   (void) sigaddset(&mask, SIGRTMAX);
   (void) sigaction(SIGRTMAX, &((struct sigaction) {
-    .sa_flags = 0,
-    .sa_handler = TimeoutWorkerHandler
+    .sa_flags = SA_SIGINFO,
+    .sa_sigaction = TimeoutWorkerHandler
   }), NULL);
   if(timeout->onstart != NULL) {
     timeout->onstart(timeout);
@@ -161,26 +167,28 @@ static void* TimeoutThread(void* t) {
       UNLOCK;
       continue;
     }
-    while(timeout->timeouts != 1) {
-      skip:
-      timeout->heap[0] = timeout->heap[1];
-      time = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
-      UNLOCK;
-      while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &time, NULL) != 0) {
+    skip:
+    UNLOCK;
+    while(1) {
+      do {
         LOCK;
-        timeout->heap[0] = timeout->heap[1];
-        time = (struct timespec) { .tv_sec = timeout->heap[0].time / 1000000000, .tv_nsec = timeout->heap[0].time % 1000000000 };
+        time = atomic_load(&timeout->latest);
+        timeout->local = (struct timespec) { .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 };
         UNLOCK;
-      }
+      } while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timeout->local, NULL) != 0);
       LOCK;
-      (void) TimeoutHeapPop(timeout);
+      TimeoutHeapPop(timeout);
       if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
         timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
         timeout->max_timeouts = timeout->timeouts;
       }
       timeout->heap[0].func(timeout->heap[0].data);
+      if(timeout->timeouts == 1) {
+        break;
+      }
       UNLOCK;
     }
+    UNLOCK;
   }
   terminate:
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
