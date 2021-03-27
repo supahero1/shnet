@@ -24,6 +24,7 @@ extern "C" {
 #include <stdint.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <semaphore.h>
 
 #define TIME_NEVER    2
 #define TIME_DEPENDS  4
@@ -43,8 +44,9 @@ struct Timeout {
   pthread_t worker;
   struct TimeoutObject* heap;
   _Atomic uint64_t latest;
-  struct timespec local;
   pthread_mutex_t mutex;
+  sem_t work;
+  sem_t amount;
   uint32_t timeouts;
   uint32_t max_timeouts;
   _Atomic uint32_t clear_mode;

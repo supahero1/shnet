@@ -31,7 +31,7 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-#define amount 1000
+#define amount 100
 
 static struct TimeoutObject work[amount];
 static struct Timeout timeout;
@@ -53,10 +53,6 @@ void timeout_callback(void* data) {
       exit(1);
     }
   }
-  /*if(num == amount * 2) {
-    puts("stopping the timeout");
-    StopTimeoutThread(&timeout, TIME_ALWAYS);
-  }*/
 }
 
 void start(struct Timeout* ti) {
@@ -71,16 +67,17 @@ void start(struct Timeout* ti) {
 
 void stop(struct Timeout* a) {
   puts("successfully stopped!");
-  exit(1);
 }
 
 int main() {
-  _Atomic uint32_t incred = 1;
+  _Atomic uint32_t incred;
+  beginning:
+  atomic_store(&incred, 1);
   for(uint64_t i = 0; i < amount; ++i) {
     work[i] = (struct TimeoutObject) {
       .func = timeout_callback,
       .data = &incred,
-      .time = GetTime(i * 40000000)
+      .time = GetTime(i * 10000000)
     };
   }
   timeout = Timeout();
@@ -92,6 +89,10 @@ int main() {
     exit(1);
   }
   (void) getc(stdin);
+  puts("stopping the timeout");
+  StopTimeoutThread(&timeout, TIME_ALWAYS);
+  (void) getc(stdin);
+  goto beginning;
   return 0;
 }
 
