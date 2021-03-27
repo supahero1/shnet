@@ -157,10 +157,10 @@ static void* TimeoutThread(void* t) {
     (void) sem_wait(&timeout->amount);
     while(1) {
       time = atomic_load(&timeout->latest);
+      (void) sem_timedwait(&timeout->work, &((struct timespec) { .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 }));
       if(GetTime(0) >= time) {
         break;
       }
-      (void) sem_timedwait(&timeout->work, &((struct timespec) { .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 }));
     }
     (void) pthread_mutex_lock(&timeout->mutex);
     TimeoutHeapPop(timeout);
