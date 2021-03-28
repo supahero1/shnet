@@ -40,11 +40,11 @@ void TCPNoBlock(const int sfd) {
 }
 
 void TCPCorkOn(const int sfd) {
-  (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){1}, sizeof(int));
+  (void) setsockopt(sfd, IPPROTO_TCP, TCP_CORK, &(int){1}, sizeof(int));
 }
 
 void TCPCorkOff(const int sfd) {
-  (void) setsockopt(sfd, SOL_TCP, TCP_CORK, &(int){0}, sizeof(int));
+  (void) setsockopt(sfd, IPPROTO_TCP, TCP_CORK, &(int){0}, sizeof(int));
 }
 
 void TCPNoDelayOn(const int sfd) {
@@ -55,12 +55,8 @@ void TCPNoDelayOff(const int sfd) {
   (void) setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, &(int){0}, sizeof(int));
 }
 
-uint16_t TCPGetHandshakeTimeout(struct NETServer* const server) {
-  return server->handshake_timeout;
-}
-
-void TCPSetHandshakeTimeout(struct NETServer* const server, const uint16_t timeout) {
-  server->handshake_timeout = timeout;
+void TCPIdleTimeout(const int sfd, const int seconds) {
+  (void) setsockopt(sfd, IPROTO_TCP, TCP_KEEPIDLE, &seconds, sizeof(int));
 }
 
 void TCPSocketFree(struct NETSocket* const socket) {
@@ -69,13 +65,12 @@ void TCPSocketFree(struct NETSocket* const socket) {
     socket->send_buffer = NULL;
     socket->send_length = 0;
   }
-  close(socket->sfd);
+  (void) close(socket->sfd);
 }
 
 void TCPServerFree(struct NETServer* const server) {
-  size_t i;
   if(server->connections != NULL) {
-    for(i = 0; i < server->conn_count; ++i) {
+    for(uint32_t i = 0; i < server->conn_count; ++i) {
       TCPShutdown(GetSocket(server->manager, server->connections[i]));
     }
     free(server->connections);
@@ -83,10 +78,9 @@ void TCPServerFree(struct NETServer* const server) {
     server->conn_count = 0;
     server->max_conn_count = 0;
   }
-  close(server->sfd);
+  (void) close(server->sfd);
 }
 
-__nonnull((1))
 static void TCPKill(struct NETSocket* const socket) {
   socket->state = NET_CLOSED;
   if(socket->onclose != NULL) {
@@ -95,14 +89,13 @@ static void TCPKill(struct NETSocket* const socket) {
   TCPSocketFree(socket);
 }
 
-int TCPSend(struct NETSocket* const socket, void* const buffer, const size_t length, struct NETConnManager* const manager) {
-  void* ptr;
-  long bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
+int TCPSend(struct NETSocket* const socket, void* const buffer, const ssize_t length, struct NETConnManager* const manager) {
   puts("TCPSend()");
+  ssize_t bytes = send(socket->sfd, buffer, length, MSG_NOSIGNAL);
   if(bytes == -1) {
     if(errno == EAGAIN) {
       puts("not everything sent");
-      ptr = realloc(socket->send_buffer, socket->send_length + length - bytes);
+      void* const ptr = realloc(socket->send_buffer, socket->send_length + length - bytes);
       if(ptr == NULL) {
         return ENOMEM;
       }
@@ -117,7 +110,6 @@ int TCPSend(struct NETSocket* const socket, void* const buffer, const size_t len
           }
         }));
       }
-      return 0;
     } else {
       if(errno == EPIPE && socket->state != NET_CLOSED) {
         puts("connection shut down unexpectedly");
@@ -128,11 +120,11 @@ int TCPSend(struct NETSocket* const socket, void* const buffer, const size_t len
     }
   } else if(bytes == length) {
     puts("everything sent");
-    return 0;
   } else {
     puts("sent lower amount than requested but no error");
     exit(1);
   }
+  return 0;
 }
 
 void TCPSendShutdown(struct NETSocket* const socket) {
@@ -170,11 +162,9 @@ int GetAddrInfo(const char* const hostname, const char* const service, const int
 
 #define arra ((struct ANET_GAIArray*) a)
 
-__nonnull((1))
 static void* AsyncGAIThread(void* a) {
   struct addrinfo* res;
-  uint_fast32_t i = 0;
-  for(; i < arra->count; ++i) {
+  for(uint_fast32_t i = 0; i < arra->count; ++i) {
     arra->arr[i].handler(res, GetAddrInfo(arra->arr[i].hostname, arra->arr[i].service, arra->arr[i].flags, &res));
     freeaddrinfo(res);
   }
@@ -188,9 +178,263 @@ int AsyncGetAddrInfo(struct ANET_GAIArray* const array) {
   return pthread_create(&t, NULL, AsyncGAIThread, array);
 }
 
-#define MSG_BUFFER_LEN 1024
+int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
+  sock->onmessage = NULL;
+  sock->onclose = NULL;
+  sock->onerror = NULL;
+  sock->onsent = NULL;
+  sock->send_buffer = NULL;
+  sock->send_length = 0;
+  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
+    sock->addr = *n->ai_addr;
+    sock->addrlen = n->ai_addrlen;
+    sock->flags = n->ai_flags;
+    sock->family = n->ai_family;
+    sock->socktype = n->ai_socktype;
+    sock->protocol = n->ai_protocol;
+    sock->sfd = -1;
+    int sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    printf("addrlen: %d\n", sock->addrlen);
+    sock->sfd = sfd;
+    printf("we connecting at   %ld\n", GetTime(0));
+    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
+    int err = connect(sfd, n->ai_addr, n->ai_addrlen);
+    printf("done connecting at %ld\n", GetTime(0));
+    if(err != 0) {
+      (void) close(sfd);
+      continue;
+    } else {
+      sock->state = NET_OPEN;
+      freeaddrinfo(res);
+      return 0;
+    }
+  }
+  freeaddrinfo(res);
+  return -1;
+}
 
-__nonnull((1))
+int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
+  struct addrinfo* res;
+  int err = GetAddrInfo(hostname, service, which_ip, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPConnect(res, socket);
+}
+
+int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
+  struct addrinfo* res;
+  int err = GetAddrInfo(hostname, service, AI_NUMERICHOST | which_ip, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPConnect(res, socket);
+}
+
+int SyncTCPListen(struct addrinfo* const res, struct NETServer* const serv) {
+  serv.onconnection = NULL;
+  serv.pool = NULL;
+  serv.onerror = NULL;
+  serv.manager = NULL;
+  serv.connections = NULL;
+  serv.conn_count = 0;
+  serv.max_conn_count = 0;
+  serv.handshake_timeout = 0;
+  serv.http_request_timeout = 0;
+  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
+    serv->addr = *n->ai_addr;
+    serv->addrlen = n->ai_addrlen;
+    serv->flags = n->ai_flags;
+    serv->family = n->ai_family;
+    serv->socktype = n->ai_socktype;
+    serv->protocol = n->ai_protocol;
+    serv->sfd = -1;
+    int sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      continue;
+    }
+    serv->sfd = sfd;
+    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    int err = bind(sfd, n->ai_addr, n->ai_addrlen);
+    if(err != 0) {
+      (void) close(sfd);
+      continue;
+    }
+    err = listen(sfd, 64);
+    if(err != 0) {
+      (void) close(sfd);
+      continue;
+    } else {
+      freeaddrinfo(res);
+      return 0;
+    }
+  }
+  freeaddrinfo(res);
+  return -1;
+}
+
+int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* const server) {
+  struct addrinfo* res;
+  int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
+  if(err != 0) {
+    return err;
+  }
+  return SyncTCPListen(res, server);
+}
+
+#define arr ((struct ANET_C*) a)
+
+static void* AsyncTCPConnectThread(void* a) {
+  /*
+  >0 = success
+  -1 = connect err
+  -2 = no socket succeeded
+  */
+  struct NETSocket sock;
+  sock.onmessage = NULL;
+  sock.onclose = NULL;
+  sock.onerror = NULL;
+  sock.onsent = NULL;
+  sock.send_buffer = 0;
+  sock.send_length = 0;
+  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    sock.addr = *n->ai_addr;
+    sock.addrlen = n->ai_addrlen;
+    sock.flags = n->ai_flags;
+    sock.family = n->ai_family;
+    sock.socktype = n->ai_socktype;
+    sock.protocol = n->ai_protocol;
+    sock.sfd = -1;
+    int sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      if(n->ai_next == NULL) {
+        arr->handler(&sock, -2);
+        break;
+      }
+      continue;
+    }
+    sock.sfd = sfd;
+    puts("got socket");
+    printf("we connecting at %ld\n", GetTime(0));
+    int err = connect(sfd, n->ai_addr, n->ai_addrlen);
+    printf("done connecting at %ld\n", GetTime(0));
+    if(err != 0) {
+      (void) close(sfd);
+      arr->handler(&sock, -1);
+      if(n->ai_next == NULL) {
+        arr->handler(NULL, -2);
+        break;
+      }
+      continue;
+    } else {
+      sock.state = NET_OPEN;
+      arr->handler(&sock, sfd);
+      break;
+    }
+  }
+  freeaddrinfo(arr->addrinfo);
+  return NULL;
+}
+
+#undef arr
+#define arr ((struct ANET_L*) a)
+
+static void* AsyncTCPListenThread(void* a) {
+  /*
+  >0 = success
+  -1 = bind err
+  -2 = listen err
+  -3 = no socket succeeded
+  */
+  struct NETServer serv;
+  serv.onconnection = NULL;
+  serv.pool = NULL;
+  serv.onerror = NULL;
+  serv.manager = NULL;
+  serv.connections = NULL;
+  serv.conn_count = 0;
+  serv.max_conn_count = 0;
+  serv.handshake_timeout = 0;
+  serv.http_request_timeout = 0;
+  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
+    serv.addr = *n->ai_addr;
+    serv.addrlen = n->ai_addrlen;
+    serv.flags = n->ai_flags;
+    serv.family = n->ai_family;
+    serv.socktype = n->ai_socktype;
+    serv.protocol = n->ai_protocol;
+    serv.sfd = -1;
+    int sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
+    if(sfd == -1) {
+      printf("creating a socket failed with reason: %s\n", strerror(errno));
+      if(n->ai_next == NULL) {
+        arr->handler(&serv, -3);
+        break;
+      }
+      continue;
+    }
+    serv.sfd = sfd;
+    puts("got socket");
+    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    int err = bind(sfd, n->ai_addr, n->ai_addrlen);
+    if(err != 0) {
+      (void) close(sfd);
+      arr->handler(&serv, -1);
+      continue;
+    }
+    err = listen(sfd, 64);
+    if(err != 0) {
+      (void) close(sfd);
+      arr->handler(&serv, -2);
+      if(n->ai_next == NULL) {
+        arr->handler(NULL, -3);
+        break;
+      }
+      continue;
+    } else {
+      arr->handler(&serv, sfd);
+      break;
+    }
+  }
+  freeaddrinfo(arr->addrinfo);
+  return NULL;
+}
+
+#undef arr
+
+int AsyncTCPConnect(struct ANET_C* const info) {
+  pthread_t t;
+  return pthread_create(&t, NULL, AsyncTCPConnectThread, info);
+}
+
+int AsyncTCPListen(struct ANET_L* const info) {
+  pthread_t t;
+  return pthread_create(&t, NULL, AsyncTCPListenThread, info);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define MSG_BUFFER_LEN 16384
+
 static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NETSocket* const socket, uint8_t* const mem, const size_t length) {
   ssize_t bytes = recv(socket->sfd, mem, length, MSG_PEEK);
   if(bytes == 0) {
@@ -218,19 +462,20 @@ static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NE
   return 0;
 }
 
-static void dummy_signal_handler(__unused int sig) {}
+#define manager ((struct NETConnManager*) info->si_value.sival_ptr)
 
-#define manager ((struct NETConnManager*) s)
-
-__nothrow __nonnull((1))
-static void EPollThreadCleanup(void* s) {
-  close(manager->epoll);
+static void EPollThreadHandler(int sig, siginfo_t* info, void* ucontext) {
+  /*
+  (void) close(manager->epoll);
   net_avl_free(&manager->avl_tree);
   (void) pthread_mutex_destroy(&manager->mutex);
+  */
 }
 
-__nonnull((1))
-static void* EPollThread(void* s) {
+#undef manager
+#define manager ((struct NETConnManager*) s)
+
+static void* EPollThread(void* s) { // PENDING A REWRITE, DEPRECATED
   sigset_t mask;
   struct epoll_event events[100];
   struct NETSocket* sock;
@@ -241,25 +486,21 @@ static void* EPollThread(void* s) {
   long bytes;
   uint8_t mem[MSG_BUFFER_LEN];
   int* ptr;
-  sigfillset(&mask);
+  (void) sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-  sigemptyset(&mask);
-  sigaddset(&mask, SIGRTMAX);
+  (void) sigemptyset(&mask);
+  (void) sigaddset(&mask, SIGUSR1);
   (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
-  (void) sigaction(SIGRTMAX, &((struct sigaction) {
-    .sa_flags = 0,
-    .sa_handler = dummy_signal_handler
+  (void) sigaction(SIGUSR1, &((struct sigaction) {
+    .sa_flags = SA_SIGINFO,
+    .sa_sigaction = EPollThreadHandler
   }), NULL);
-  pthread_cleanup_push(EPollThreadCleanup, s);
   while(1) {
     err = epoll_wait(manager->epoll, events, 100, -1);
-    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
     if(err == -1) {
       printf("epoll_wait err: %s\n", strerror(errno));
-      close(manager->epoll);
-      net_avl_free(&manager->avl_tree);
-      (void) pthread_mutex_destroy(&manager->mutex);
-      return NULL;
+      goto terminate;
     }
     for(i = 0; i < err; ++i) {
       (void) pthread_mutex_lock(&manager->mutex);
@@ -339,10 +580,18 @@ static void* EPollThread(void* s) {
         }
       }
     }
-    (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    pthread_testcancel();
+    (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+    (void) sigpending(&mask);
+    if(sigismember(&mask, SIGUSR1)) {
+      goto terminate;
+    }
+    (void) sigemptyset(&mask);
+    (void) sigaddset(&mask, SIGUSR1);
   }
-  pthread_cleanup_pop(1);
+  terminate:
+  (void) close(manager->epoll);
+  net_avl_free(&manager->avl_tree);
+  (void) pthread_mutex_destroy(&manager->mutex);
   return NULL;
 }
 
@@ -354,44 +603,51 @@ int InitConnManager(struct NETConnManager* const manager, const uint32_t avg_siz
   if(epoll == -1) {
     return errno;
   }
-  int err = pthread_create(&manager->thread, NULL, EPollThread, manager);
+  manager->avl_tree = net_avl_tree(avg_size);
+  int err = net_avl_init(&manager->avl_tree);
   if(err != 0) {
-    close(epoll);
+    (void) close(epoll);
     return err;
   }
-  manager->avl_tree = net_avl_tree(avg_size);
-  err = net_avl_init(&manager->avl_tree);
+  err = pthread_mutex_init(&manager->mutex, NULL);
   if(err != 0) {
-    close(epoll);
+    (void) close(epoll);
+    net_avl_free(&manager->avl_tree);
+    return err;
+  }
+  err = pthread_create(&manager->thread, NULL, EPollThread, manager);
+  if(err != 0) {
+    (void) close(epoll);
+    net_avl_free(&manager->avl_tree);
+    (void) pthread_mutex_destroy(&manager->mutex);
     return err;
   }
   manager->epoll = epoll;
-  return pthread_mutex_init(&manager->mutex, NULL);
+  return 0;
 }
 
 int InitEventlessConnManager(struct NETConnManager* const manager, const uint32_t avg_size) {
   manager->avl_tree = net_avl_tree(avg_size);
-  const int err = net_avl_init(&manager->avl_tree);
+  const int err = pthread_mutex_init(&manager->mutex, NULL);
   if(err != 0) {
     return err;
   }
-  return pthread_mutex_init(&manager->mutex, NULL);
+  err = net_avl_init(&manager->avl_tree);
+  if(err != 0) {
+    (void) pthread_mutex_destroy(&manager->mutex);
+  }
+  return err;
 }
 
-__nonnull((1))
 static int NETConnManagerAdd(struct NETConnManager* const manager, const struct NETSocket socket, const int flags) {
   (void) pthread_mutex_lock(&manager->mutex);
   int err = net_avl_insert(&manager->avl_tree, socket);
   (void) pthread_mutex_unlock(&manager->mutex);
   if(err != 0) {
-    puts("failed to add a socket");
     return err;
   }
-  if(socket.send_length != 0) {
-    err = EPOLLOUT;
-  }
   err = epoll_ctl(manager->epoll, EPOLL_CTL_ADD, socket.sfd, &((struct epoll_event) {
-    .events = EPOLLIN | EPOLLRDHUP | err | flags,
+    .events = EPOLLIN | EPOLLRDHUP | flags,
     .data = (epoll_data_t) {
       .fd = socket.sfd
     }
@@ -400,9 +656,9 @@ static int NETConnManagerAdd(struct NETConnManager* const manager, const struct 
     (void) pthread_mutex_lock(&manager->mutex);
     net_avl_delete(&manager->avl_tree, socket.sfd);
     (void) pthread_mutex_unlock(&manager->mutex);
-    return errno;
+    err = errno;
   }
-  return 0;
+  return err;
 }
 
 int AddSocket(struct NETConnManager* const manager, const struct NETSocket socket) {
@@ -418,7 +674,7 @@ int AddServer(struct NETConnManager* const manager, const struct NETServer serve
 }
 
 struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd) {
-  (void) pthread_mutex_lock(&manager->mutex);
+  (void) pthread_mutex_lock(&manager->mutex); // TODO: remove locks from simultaneous search operations, only lock inserting and deletion (but lock searching if any of these are currently happening)
   struct NETSocket* const s = net_avl_search(&manager->avl_tree, sfd);
   (void) pthread_mutex_unlock(&manager->mutex);
   return s;
@@ -426,21 +682,6 @@ struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd)
 
 struct NETServer* GetServer(struct NETConnManager* const manager, const int sfd) {
   return (struct NETServer*) GetSocket(manager, sfd);
-}
-
-int DeleteSocket(struct NETConnManager* const manager, const int sfd) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  net_avl_delete(&manager->avl_tree, sfd);
-  (void) pthread_mutex_unlock(&manager->mutex);
-  int err = epoll_ctl(manager->epoll, EPOLL_CTL_DEL, sfd, (struct epoll_event*) manager);
-  if(err != 0) {
-    err = errno;
-  }
-  return err;
-}
-
-int DeleteServer(struct NETConnManager* const manager, const int sfd) {
-  return DeleteSocket(manager, sfd);
 }
 
 void DeleteEventlessSocket(struct NETConnManager* const manager, const int sfd) {
@@ -453,14 +694,26 @@ void DeleteEventlessServer(struct NETConnManager* const manager, const int sfd) 
   return DeleteEventlessSocket(manager, sfd);
 }
 
-void FreeConnManager(struct NETConnManager* const manager) {
-  (void) pthread_cancel(manager->thread);
-  (void) pthread_sigqueue(manager->thread, SIGRTMAX, (union sigval) { .sival_ptr = NULL });
+int DeleteSocket(struct NETConnManager* const manager, const int sfd) {
+  DeleteEventlessSocket(manager, sfd);
+  int err = epoll_ctl(manager->epoll, EPOLL_CTL_DEL, sfd, (struct epoll_event*) manager);
+  if(err != 0) {
+    err = errno;
+  }
+  return err;
 }
 
-#define pool info->si_value.sigval_ptr
+int DeleteServer(struct NETConnManager* const manager, const int sfd) {
+  return DeleteSocket(manager, sfd);
+}
 
-__nonnull((1))
+void FreeConnManager(struct NETConnManager* const manager) {
+  (void) pthread_cancel(manager->thread);
+  (void) pthread_sigqueue(manager->thread, SIGUSR1, (union sigval) { .sival_ptr = NULL });
+}
+
+#define pool ((struct NETServerThreadPool*) info->si_value.sigval_ptr)
+
 static void ServerThreadHandler(int sig, siginfo_t* info, void* ucontext) {
   if(atomic_fetch(&pool->state) == 1) {
     if(atomic_fetch_sub(&pool->amount, 1) == 1) {
@@ -478,7 +731,6 @@ static void ServerThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #undef pool
 #define pool ((struct NETServerThreadPool*) a)
 
-__nonnull((1))
 static void ServerThreadCleanup(void* a) {
   if(atomic_fetch_sub(&pool->amount, 1) == 1) {
     (void) sem_destroy(&pool->semaphore);
@@ -489,8 +741,7 @@ static void ServerThreadCleanup(void* a) {
   }
 }
 
-__nonnull((1))
-static void* ServerThread(void* a) { // this will get an update too probably
+static void* ServerThread(void* a) { // PENDING A REWRITE, DEPRECATED
   struct sockaddr addr;
   sigset_t mask;
   int* ptr;
@@ -499,9 +750,9 @@ static void* ServerThread(void* a) { // this will get an update too probably
   sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
   sigemptyset(&mask);
-  sigaddset(&mask, SIGRTMAX);
+  sigaddset(&mask, SIGUSR1);
   (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
-  (void) sigaction(SIGRTMAX, &((struct sigaction) {
+  (void) sigaction(SIGUSR1, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = ServerThreadHandler
   }), NULL);
@@ -564,10 +815,11 @@ static void* ServerThread(void* a) { // this will get an update too probably
   return NULL;
 }
 
-__nonnull((1))
+#undef pool
+
 static void ReadyServerThreadPool(struct NETServerThreadPool* const pool) {
   for(uint32_t i = 0; i < atomic_load(&pool->amount); ++i) {
-    (void) pthread_sigqueue(pool->threads[i], SIGRTMAX, (union sigval) { .sival_ptr = pool });
+    (void) pthread_sigqueue(pool->threads[i], SIGUSR1, (union sigval) { .sival_ptr = pool });
   }
 }
 
@@ -614,259 +866,9 @@ int InitServerThreadPool(struct NETServerThreadPool* const pool, const uin32_t a
   return 0;
 }
 
-void FreeServerThreadPool(struct NETServerThreadPool* const pool) {
+void FreeServerThreadPool(struct NETServerThreadPool* const pool) { // PENDING A REWRITE, DEPRECATED
   atomic_store(&pool->state, 1);
   for(uint32_t i = 0; i < atomic_load(&pool->amount); ++i) {
     (void) pthread_cancel(pool->threads[i]);
   }
-}
-
-int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
-  int sfd;
-  int err;
-  sock->onmessage = NULL;
-  sock->onclose = NULL;
-  sock->onerror = NULL;
-  sock->onsent = NULL;
-  sock->send_buffer = NULL;
-  sock->send_length = 0;
-  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
-    sock->addr = *n->ai_addr;
-    sock->addrlen = n->ai_addrlen;
-    sock->flags = n->ai_flags;
-    sock->family = n->ai_family;
-    sock->socktype = n->ai_socktype;
-    sock->protocol = n->ai_protocol;
-    sock->sfd = -1;
-    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-    if(sfd == -1) {
-      printf("creating a socket failed with reason: %s\n", strerror(errno));
-      continue;
-    }
-    printf("addrlen: %d\n", sock->addrlen);
-    sock->sfd = sfd;
-    printf("we connecting at   %ld\n", GetTime(0));
-    printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
-    err = connect(sfd, n->ai_addr, n->ai_addrlen);
-    printf("done connecting at %ld\n", GetTime(0));
-    if(err != 0) {
-      (void) close(sfd);
-      continue;
-    } else {
-      sock->state = NET_OPEN;
-      freeaddrinfo(res);
-      return 0;
-    }
-  }
-  freeaddrinfo(res);
-  return -1;
-}
-
-int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
-  struct addrinfo* res;
-  int err = GetAddrInfo(hostname, service, which_ip, &res);
-  if(err != 0) {
-    return err;
-  }
-  return SyncTCPConnect(res, socket);
-}
-
-int SyncTCP_IP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
-  struct addrinfo* res;
-  int err = GetAddrInfo(hostname, service, AI_NUMERICHOST | which_ip, &res);
-  if(err != 0) {
-    return err;
-  }
-  return SyncTCPConnect(res, socket);
-}
-
-int SyncTCPListen(struct addrinfo* const res, struct NETServer* const serv) {
-  int sfd;
-  int err;
-  serv.onconnection = NULL;
-  serv.pool = NULL;
-  serv.onerror = NULL;
-  serv.manager = NULL;
-  serv.connections = NULL;
-  serv.conn_count = 0;
-  serv.max_conn_count = 0;
-  serv.handshake_timeout = 0;
-  serv.http_request_timeout = 0;
-  for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
-    serv->addr = *n->ai_addr;
-    serv->addrlen = n->ai_addrlen;
-    serv->flags = n->ai_flags;
-    serv->family = n->ai_family;
-    serv->socktype = n->ai_socktype;
-    serv->protocol = n->ai_protocol;
-    serv->sfd = -1;
-    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-    if(sfd == -1) {
-      printf("creating a socket failed with reason: %s\n", strerror(errno));
-      continue;
-    }
-    serv->sfd = sfd;
-    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-    err = bind(sfd, n->ai_addr, n->ai_addrlen);
-    if(err != 0) {
-      (void) close(sfd);
-      continue;
-    }
-    err = listen(sfd, 64);
-    if(err != 0) {
-      (void) close(sfd);
-      continue;
-    } else {
-      freeaddrinfo(res);
-      return 0;
-    }
-  }
-  freeaddrinfo(res);
-  return -1;
-}
-
-int SyncTCP_GAIListen(const char* const hostname, const char* const service, const int which_ip, struct NETServer* const server) {
-  struct addrinfo* res;
-  int err = GetAddrInfo(hostname, service, AI_PASSIVE | which_ip, &res);
-  if(err != 0) {
-    return err;
-  }
-  return SyncTCPListen(res, server);
-}
-
-#define arr ((struct ANET_C*) a)
-
-__nonnull((1))
-static void* AsyncTCPConnectThread(void* a) {
-  struct NETSocket sock;
-  int err;
-  int sfd;
-  /*
-  >0 = success
-  -1 = connect err
-  -2 = no socket succeeded
-  */
-  sock.onmessage = NULL;
-  sock.onclose = NULL;
-  sock.onerror = NULL;
-  sock.onsent = NULL;
-  sock.send_buffer = 0;
-  sock.send_length = 0;
-  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
-    sock.addr = *n->ai_addr;
-    sock.addrlen = n->ai_addrlen;
-    sock.flags = n->ai_flags;
-    sock.family = n->ai_family;
-    sock.socktype = n->ai_socktype;
-    sock.protocol = n->ai_protocol;
-    sock.sfd = -1;
-    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-    if(sfd == -1) {
-      printf("creating a socket failed with reason: %s\n", strerror(errno));
-      if(n->ai_next == NULL) {
-        arr->handler(&sock, -2);
-        break;
-      }
-      continue;
-    }
-    sock.sfd = sfd;
-    puts("got socket");
-    printf("we connecting at %ld\n", GetTime(0));
-    err = connect(sfd, n->ai_addr, n->ai_addrlen);
-    printf("done connecting at %ld\n", GetTime(0));
-    if(err != 0) {
-      (void) close(sfd);
-      arr->handler(&sock, -1);
-      if(n->ai_next == NULL) {
-        arr->handler(NULL, -2);
-        break;
-      }
-      continue;
-    } else {
-      sock.state = NET_OPEN;
-      arr->handler(&sock, sfd);
-      break;
-    }
-  }
-  freeaddrinfo(arr->addrinfo);
-  return NULL;
-}
-
-#undef arr
-#define arr ((struct ANET_L*) a)
-
-__nonnull((1))
-static void* AsyncTCPListenThread(void* a) {
-  struct NETServer serv;
-  int err;
-  int sfd;
-  /*
-  >0 = success
-  -1 = bind err
-  -2 = listen err
-  -3 = no socket succeeded
-  */
-  serv.onconnection = NULL;
-  serv.pool = NULL;
-  serv.onerror = NULL;
-  serv.manager = NULL;
-  serv.connections = NULL;
-  serv.conn_count = 0;
-  serv.max_conn_count = 0;
-  serv.handshake_timeout = 0;
-  serv.http_request_timeout = 0;
-  for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
-    serv.addr = *n->ai_addr;
-    serv.addrlen = n->ai_addrlen;
-    serv.flags = n->ai_flags;
-    serv.family = n->ai_family;
-    serv.socktype = n->ai_socktype;
-    serv.protocol = n->ai_protocol;
-    serv.sfd = -1;
-    sfd = socket(n->ai_family, n->ai_socktype, n->ai_protocol);
-    if(sfd == -1) {
-      printf("creating a socket failed with reason: %s\n", strerror(errno));
-      if(n->ai_next == NULL) {
-        arr->handler(&serv, -3);
-        break;
-      }
-      continue;
-    }
-    serv.sfd = sfd;
-    puts("got socket");
-    (void) setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-    err = bind(sfd, n->ai_addr, n->ai_addrlen);
-    if(err != 0) {
-      (void) close(sfd);
-      arr->handler(&serv, -1);
-      continue;
-    }
-    err = listen(sfd, 64);
-    if(err != 0) {
-      (void) close(sfd);
-      arr->handler(&serv, -2);
-      if(n->ai_next == NULL) {
-        arr->handler(NULL, -3);
-        break;
-      }
-      continue;
-    } else {
-      arr->handler(&serv, sfd);
-      break;
-    }
-  }
-  freeaddrinfo(arr->addrinfo);
-  return NULL;
-}
-
-#undef arr
-
-int AsyncTCPConnect(struct ANET_C* const info) {
-  pthread_t t;
-  return pthread_create(&t, NULL, AsyncTCPConnectThread, info);
-}
-
-int AsyncTCPListen(struct ANET_L* const info) {
-  pthread_t t;
-  return pthread_create(&t, NULL, AsyncTCPListenThread, info);
 }

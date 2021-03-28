@@ -21,7 +21,6 @@
 extern "C" {
 #endif
 
-#include "../def.h"
 #include "net_base.h"
 
 #include <stdint.h>
@@ -43,22 +42,16 @@ struct net_avl_tree {
   uint32_t max_items_per_part;
 };
 
-__const
 extern struct net_avl_tree net_avl_tree(const uint32_t);
 
-__nonnull((1))
 extern int net_avl_init(struct net_avl_tree* const);
 
-__nonnull((1))
 extern void net_avl_free(struct net_avl_tree* const);
 
-__nonnull((1))
 extern int net_avl_insert(struct net_avl_tree* const, const struct NETSocket);
 
-__nonnull((1))
 extern struct NETSocket* net_avl_search(struct net_avl_tree* const, const int);
 
-__nonnull((1))
 extern void net_avl_delete(struct net_avl_tree* const, const int);
 
 #ifdef __cplusplus

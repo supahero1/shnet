@@ -21,12 +21,8 @@
 extern "C" {
 #endif
 
-#include "../def.h"
-#include "net_base.h"
-#include "../net/net_avl.h"
-#include "../timeout/timeout.h"
-
-#include <semaphore.h>
+#include "net_avl.h"
+#include "../time/time.h"
 
 #define IPv4       AF_INET
 #define IPv6       AF_INET6
@@ -43,29 +39,27 @@ extern void TCPNoDelayOn(const int);
 
 extern void TCPNoDelayOff(const int);
 
-extern uint16_t TCPGetHandshakeTimeout(struct NETServer* const);
+extern void TCPIdleTimeout(const int, const int);
 
-extern void TCPSetHandshakeTimeout(struct NETServer* const, const uint16_t);
+extern void TCPSocketFree(struct NETSocket* const);
 
-__nonnull((1))
-void TCPSocketFree(struct NETSocket* const);
+extern void TCPServerFree(struct NETServer* const);
 
-__nonnull((1))
-void TCPServerFree(struct NETServer* const);
+struct NETConnManager {
+  pthread_t thread;
+  struct net_avl_tree avl_tree;
+  int epoll;
+  pthread_mutex_t mutex;
+};
 
-__nonnull((2))
-extern int TCPSend(struct NETSocket* const, void* const, const size_t, struct NETConnManager* const);
+extern int TCPSend(struct NETSocket* const, void* const, const ssize_t, struct NETConnManager* const);
 
-__nonnull((1))
 extern void TCPSendShutdown(struct NETSocket* const);
 
-__nonnull((1))
 extern void TCPReceiveShutdown(struct NETSocket* const);
 
-__nonnull((1))
 extern void TCPShutdown(struct NETSocket* const);
 
-__nonnull((4))
 extern int GetAddrInfo(const char* const, const char* const, const int, struct addrinfo** const);
 
 struct ANET_GAILookup {
@@ -80,62 +74,52 @@ struct ANET_GAIArray {
   uint_fast32_t count;
 };
 
-__nonnull((1))
 extern int AsyncGetAddrInfo(struct ANET_GAIArray* const);
 
-__nonnull((1))
 extern int SyncTCPConnect(struct addrinfo* const, struct NETSocket* const);
 
-__nonnull((1))
 extern int SyncTCP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const);
 
-__nonnull((1))
 extern int SyncTCP_IP_GAIConnect(const char* const, const char* const, const int, struct NETSocket* const);
 
-__nonnull((1))
 extern int SyncTCPListen(struct addrinfo* const, struct NETServer* const);
 
-__nonnull((1))
 extern int SyncTCP_GAIListen(const char* const, const char* const, const int, struct NETServer* const);
 
-struct NETConnManager {
-  pthread_t thread;
-  struct net_avl_tree avl_tree;
-  int epoll;
-  pthread_mutex_t mutex;
+struct ANET_C {
+  void (*handler)(struct NETSocket*, int);
+  struct addrinfo* addrinfo;
 };
 
-__nonnull((1))
+extern int AsyncTCPConnect(struct ANET_C* const);
+
+struct ANET_L {
+  void (*handler)(struct NETServer*, int);
+  struct addrinfo* addrinfo;
+};
+
+extern int AsyncTCPListen(struct ANET_L* const);
+
 extern int InitConnManager(struct NETConnManager* const, const uint32_t);
 
-__nonnull((1))
 extern int InitEventlessConnManager(struct NETConnManager* const, const uint32_t);
 
-__nonnull((1))
 extern int AddSocket(struct NETConnManager* const, const struct NETSocket);
 
-__nonnull((1))
 extern int AddServer(struct NETConnManager* const, const struct NETServer);
 
-__nonnull((1))
 extern struct NETSocket* GetSocket(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern struct NETServer* GetServer(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern int DeleteSocket(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern int DeleteServer(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern void DeleteEventlessSocket(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern void DeleteEventlessServer(struct NETConnManager* const, const int);
 
-__nonnull((1))
 extern void FreeConnectionManager(struct NETConnManager* const);
 
 struct NETServerThreadPool {
@@ -148,27 +132,9 @@ struct NETServerThreadPool {
   uint32_t growth;
 };
 
-__nonnull((1))
 extern int InitServerThreadPool(struct NETServerThreadPool* const, const uint32_t, const uint32_t, const int);
 
-__nonnull((1))
 extern void FreeServerThreadPool(struct NETServerThreadPool* const);
-
-struct ANET_C {
-  void (*handler)(struct NETSocket*, int);
-  struct addrinfo* addrinfo;
-};
-
-__nonnull((1))
-extern int AsyncTCPConnect(struct ANET_C* const);
-
-struct ANET_L {
-  void (*handler)(struct NETServer*, int);
-  struct addrinfo* addrinfo;
-};
-
-__nonnull((1))
-extern int AsyncTCPListen(struct ANET_L* const);
 
 #ifdef __cplusplus
 }

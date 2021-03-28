@@ -1,10 +1,6 @@
 #include "check.h"
-#include "def.h"
 
-#include "time/time.h"
-//#include "net/net_base.h"
-//#include "net/net_avl.h"
-//#include "net/net.h"
+#include "net/net.h"
 
 #include <math.h>
 #include <sched.h>
@@ -31,45 +27,7 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-#define amount 100
-
-static struct TimeoutObject work[amount];
-static struct Timeout timeout;
-static uint64_t lastTime = 0;
-
-void timeout_callback(void* data) {
-  uint32_t num = atomic_fetch_add((_Atomic uint32_t*) data, 1);
-  if(lastTime == 0) {
-    lastTime = GetTime(0);
-  } else {
-    uint64_t diff = GetTime(0) - lastTime;
-    lastTime = GetTime(0);
-    printf("new frame rolled in: %Lf (%u, %lu)\n", diff / (long double) 1000000.0, num, lastTime / 1000000);
-  }
-  if(num % 2 == 0) {
-    int err = AddTimeout(&timeout, &work[0], 1);
-    if(err != 0) {
-      puts("1");
-      exit(1);
-    }
-  }
-}
-
-void start(struct Timeout* ti) {
-  puts("thread started wohoo!");
-  int err = AddTimeout(ti, work, amount);
-  if(err != 0) {
-    puts("1");
-    exit(1);
-  }
-  puts("successfully scheduled timeouts");
-}
-
-void stop(struct Timeout* a) {
-  puts("successfully stopped!");
-}
-
-int main() {
+/*int main() {
   _Atomic uint32_t incred;
   beginning:
   atomic_store(&incred, 1);
@@ -94,9 +52,9 @@ int main() {
   (void) getc(stdin);
   goto beginning;
   return 0;
-}
+}*/
 
-/*void onmessage(struct NETSocket* socket) {
+void onmessage(struct NETSocket* socket) {
   puts("onmessage()");
   char buffer[50000];
   memset(buffer, 0, 50000);
@@ -386,4 +344,4 @@ int main(int argc, char** argv) {
     puts("Option not recognized. The available options: a(sync), s(ync)");
   }
   return 0;
-}*/
+}

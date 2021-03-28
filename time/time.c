@@ -22,7 +22,6 @@
 #include <string.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdio.h>
 
 uint64_t GetTime(const uint64_t nanoseconds) {
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
@@ -41,11 +40,11 @@ struct Timeout Timeout() {
 }
 
 static void TimeoutHeapInsert(struct Timeout* const timeout, const struct TimeoutObject obj) {
-  uint32_t idx = timeout->timeouts++;
-  uint32_t parent = idx >> 1;
-  if(idx == 1) {
+  if(timeout->timeouts == 1) {
     timeout->heap[1] = obj;
   } else {
+    uint32_t idx = timeout->timeouts++;
+    uint32_t parent = idx >> 1;
     while(timeout->heap[parent].time > obj.time) {
       timeout->heap[idx] = timeout->heap[parent];
       if(parent == 1) {
@@ -139,7 +138,6 @@ static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #define timeout ((struct Timeout*) t)
 
 static void* TimeoutThread(void* t) {
-  uint64_t time;
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
@@ -156,7 +154,7 @@ static void* TimeoutThread(void* t) {
   while(1) {
     (void) sem_wait(&timeout->amount);
     while(1) {
-      time = atomic_load(&timeout->latest);
+      uint64_t time = atomic_load(&timeout->latest);
       (void) sem_timedwait(&timeout->work, &((struct timespec) { .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 }));
       if(GetTime(0) >= time) {
         break;
@@ -188,6 +186,8 @@ static void* TimeoutThread(void* t) {
       }
       pthread_exit(NULL);
     }
+    (void) sigemptyset(&mask);
+    (void) sigaddset(&mask, SIGUSR1);
     atomic_store(&timeout->latest, timeout->heap[1].time);
     (void) pthread_mutex_unlock(&timeout->mutex);
   }
