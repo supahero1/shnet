@@ -58,7 +58,7 @@ struct net_avl_multithread_tree {
   pthread_mutex_t mutex;
   struct net_avl_tree tree;
   pthread_mutex_t protect;
-  _Atomic uint32_t counter;
+  uint32_t counter;
 };
 
 extern int net_avl_multithread_init(struct net_avl_multithread_tree* const);

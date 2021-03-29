@@ -561,13 +561,13 @@ int net_avl_multithread_insert(struct net_avl_multithread_tree* const tree, cons
 
 struct NETSocket* net_avl_multithread_search(struct net_avl_multithread_tree* const tree, const int sfd) {
   (void) pthread_mutex_lock(&tree->protect);
-  if(atomic_fetch_add(&tree->counter, 1) == 0) {
+  if(++tree->counter == 1) {
     (void) pthread_mutex_lock(&tree->mutex);
   }
   (void) pthread_mutex_unlock(&tree->protect);
   struct NETSocket* socket = net_avl_search(&tree->tree, sfd);
   (void) pthread_mutex_lock(&tree->protect);
-  if(atomic_fetch_sub(&tree->counter, 1) == 1) {
+  if(--tree->counter == 0) {
     (void) pthread_mutex_unlock(&tree->mutex);
   }
   (void) pthread_mutex_unlock(&tree->protect);
