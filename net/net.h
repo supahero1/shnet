@@ -124,6 +124,7 @@ extern void FreeConnectionManager(struct NETConnManager* const);
 struct NETAcceptThreadPool {
   pthread_t* threads;
   void (*onstop)(struct NETAcceptThreadPool*);
+  void (*onerror)(struct NETAcceptThreadPool*, int);
   struct NETServer* server;
   pthread_mutex_t mutex;
   _Atomic uint32_t amount;

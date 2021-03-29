@@ -726,21 +726,6 @@ static void* AcceptThread(void* a) {
   struct sockaddr addr;
   socklen_t addr_len;
   while(1) {
-    realloc:
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-    (void) pthread_mutex_lock(&pool->mutex);
-    if(pool->server->conn_count == pool->server->max_conn_count - 1) {
-      int* const ptr = realloc(pool->server->connections, sizeof(int) * (pool->server->max_conn_count + pool->growth));
-      if(ptr == NULL) {
-        errno = ENOMEM;
-        pool->server->onerror(pool->server);
-        AcceptThreadTerminationCheck(pool);
-        goto realloc;
-      }
-      pool->server->connections = ptr;
-      pool->server->max_conn_count += pool->growth;
-    }
-    AcceptThreadTerminationCheck(pool);
     addr_len = sizeof(struct sockaddr);
     accept:;
     int sfd = accept(pool->server->sfd, &addr, &addr_len);
@@ -748,10 +733,22 @@ static void* AcceptThread(void* a) {
     (void) pthread_mutex_lock(&pool->mutex);
     if(sfd == -1) {
       if(errno != ECONNABORTED) {
-        pool->server->onerror(pool->server);
+        pool->onerror(pool, sfd);
       }
       AcceptThreadTerminationCheck(pool);
       goto accept;
+    }
+    if(pool->server->conn_count == pool->server->max_conn_count - 1) {
+      realloc:;
+      int* const ptr = realloc(pool->server->connections, sizeof(int) * (pool->server->max_conn_count + pool->growth));
+      if(ptr == NULL) {
+        errno = ENOMEM;
+        pool->onerror(pool, sfd);
+        AcceptThreadTerminationCheck(pool);
+        goto realloc;
+      }
+      pool->server->connections = ptr;
+      pool->server->max_conn_count += pool->growth;
     }
     pool->server->connections[pool->server->conn_count++] = sfd;
     if(pool->server->onconnection != NULL) {
