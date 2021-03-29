@@ -24,6 +24,7 @@ extern "C" {
 #include "net_base.h"
 
 #include <stdint.h>
+#include <pthread.h>
 
 struct net_avl_node {
   struct net_avl_node* parent;
@@ -60,6 +61,8 @@ struct net_avl_multithread_tree {
   pthread_mutex_t protect;
   uint32_t counter;
 };
+
+extern struct net_avl_multithread_tree net_avl_multithread_tree(const uint32_t);
 
 extern int net_avl_multithread_init(struct net_avl_multithread_tree* const);
 

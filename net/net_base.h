@@ -32,7 +32,7 @@ struct NETSocket {
   void (*onerror)(struct NETSocket*);
   void (*onsent)(struct NETSocket*);
   void* send_buffer;
-  size_t send_length;
+  ssize_t send_length;
   socklen_t addrlen;
   int state;
   int flags;

@@ -121,19 +121,18 @@ extern void DeleteEventlessServer(struct NETConnManager* const, const int);
 
 extern void FreeConnectionManager(struct NETConnManager* const);
 
-struct NETServerThreadPool {
+struct NETAcceptThreadPool {
   pthread_t* threads;
-  void (*onclose)(struct NETServerThreadPool*);
+  void (*onstop)(struct NETAcceptThreadPool*);
   struct NETServer* server;
-  sem_t semaphore;
+  pthread_mutex_t mutex;
   _Atomic uint32_t amount;
-  _Atomic uint32_t state;
   uint32_t growth;
 };
 
-extern int InitServerThreadPool(struct NETServerThreadPool* const, const uint32_t, const uint32_t, const int);
+extern int InitAcceptThreadPool(struct NETAcceptThreadPool* const, const uint32_t, const uint32_t, const int);
 
-extern void FreeServerThreadPool(struct NETServerThreadPool* const);
+extern void FreeAcceptThreadPool(struct NETAcceptThreadPool* const);
 
 #ifdef __cplusplus
 }

@@ -526,12 +526,18 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
   }
 }
 
-int net_avl_multithread_init(struct net_avl_tree* const tree) {
-  int err = pthread_mutex_init(&tree->mutex);
+struct net_avl_multithread_tree net_avl_multithread_tree(const uint32_t max_items_per_part) {
+  return (struct net_avl_multithread_tree) {
+    .tree = net_avl_tree(max_items_per_part)
+  };
+}
+
+int net_avl_multithread_init(struct net_avl_multithread_tree* const tree) {
+  int err = pthread_mutex_init(&tree->mutex, NULL);
   if(err != 0) {
     return err;
   }
-  err = pthread_mutex_init(&tree->protect);
+  err = pthread_mutex_init(&tree->protect, NULL);
   if(err != 0) {
     (void) pthread_mutex_destroy(&tree->mutex);
     return err;
@@ -541,7 +547,7 @@ int net_avl_multithread_init(struct net_avl_tree* const tree) {
     (void) pthread_mutex_destroy(&tree->mutex);
     (void) pthread_mutex_destroy(&tree->protect);
   } else {
-    atomic_store(&tree->counter, 0);
+    tree->counter = 0;
   }
   return err;
 }

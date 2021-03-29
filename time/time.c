@@ -140,10 +140,10 @@ static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 static void* TimeoutThread(void* t) {
   sigset_t mask;
   (void) sigfillset(&mask);
-  (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+  (void) sigdelset(&mask, SIGUSR1);
+  (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigemptyset(&mask);
   (void) sigaddset(&mask, SIGUSR1);
-  (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
   (void) sigaction(SIGUSR1, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = TimeoutThreadHandler
