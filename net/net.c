@@ -83,7 +83,7 @@ void TCPServerFree(struct NETServer* const server) {
 
 static void TCPKill(struct NETSocket* const socket) {
   socket->state = NET_CLOSED;
-  if(socket != NULL) {
+  if(socket->onclose != NULL) {
     socket->onclose(socket);
   }
   TCPSocketFree(socket);
