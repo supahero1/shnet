@@ -525,3 +525,57 @@ void net_avl_delete(struct net_avl_tree* const tree, const int sfd) {
     }
   }
 }
+
+int net_avl_multithread_init(struct net_avl_tree* const tree) {
+  int err = pthread_mutex_init(&tree->mutex);
+  if(err != 0) {
+    return err;
+  }
+  err = pthread_mutex_init(&tree->protect);
+  if(err != 0) {
+    (void) pthread_mutex_destroy(&tree->mutex);
+    return err;
+  }
+  err = net_avl_init(&tree->tree);
+  if(err != 0) {
+    (void) pthread_mutex_destroy(&tree->mutex);
+    (void) pthread_mutex_destroy(&tree->protect);
+  } else {
+    atomic_store(&tree->counter, 0);
+  }
+  return err;
+}
+
+void net_avl_multithread_free(struct net_avl_multithread_tree* const tree) {
+  net_avl_free(&tree->tree);
+  (void) pthread_mutex_destroy(&tree->mutex);
+  (void) pthread_mutex_destroy(&tree->protect);
+}
+
+int net_avl_multithread_insert(struct net_avl_multithread_tree* const tree, const struct NETSocket socket) {
+  (void) pthread_mutex_lock(&tree->mutex);
+  int err = net_avl_insert(&tree->tree, socket);
+  (void) pthread_mutex_unlock(&tree->mutex);
+  return err;
+}
+
+struct NETSocket* net_avl_multithread_search(struct net_avl_multithread_tree* const tree, const int sfd) {
+  (void) pthread_mutex_lock(&tree->protect);
+  if(atomic_fetch_add(&tree->counter, 1) == 0) {
+    (void) pthread_mutex_lock(&tree->mutex);
+  }
+  (void) pthread_mutex_unlock(&tree->protect);
+  struct NETSocket* socket = net_avl_search(&tree->tree, sfd);
+  (void) pthread_mutex_lock(&tree->protect);
+  if(atomic_fetch_sub(&tree->counter, 1) == 1) {
+    (void) pthread_mutex_unlock(&tree->mutex);
+  }
+  (void) pthread_mutex_unlock(&tree->protect);
+  return socket;
+}
+
+void net_avl_multithread_delete(struct net_avl_multithread_tree* const tree, const int sfd) {
+  (void) pthread_mutex_lock(&tree->mutex);
+  net_avl_delete(&tree->tree, sfd);
+  (void) pthread_mutex_unlock(&tree->mutex);
+}

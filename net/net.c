@@ -467,7 +467,7 @@ static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NE
 static void EPollThreadHandler(int sig, siginfo_t* info, void* ucontext) {
   /*
   (void) close(manager->epoll);
-  net_avl_free(&manager->avl_tree);
+  net_avl_multithread_free(&manager->tree);
   (void) pthread_mutex_destroy(&manager->mutex);
   */
 }
@@ -476,16 +476,12 @@ static void EPollThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #define manager ((struct NETConnManager*) s)
 
 static void* EPollThread(void* s) { // PENDING A REWRITE, DEPRECATED
-  sigset_t mask;
-  struct epoll_event events[100];
   struct NETSocket* sock;
   struct NETServer* serv;
-  int err;
-  int i;
   int temp;
   long bytes;
-  uint8_t mem[MSG_BUFFER_LEN];
   int* ptr;
+  sigset_t mask;
   (void) sigfillset(&mask);
   (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
   (void) sigemptyset(&mask);
@@ -495,17 +491,16 @@ static void* EPollThread(void* s) { // PENDING A REWRITE, DEPRECATED
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = EPollThreadHandler
   }), NULL);
+  struct epoll_event events[100];
+  uint8_t mem[MSG_BUFFER_LEN];
   while(1) {
-    err = epoll_wait(manager->epoll, events, 100, -1);
+    int count = epoll_wait(manager->epoll, events, 100, -1);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-    if(err == -1) {
-      printf("epoll_wait err: %s\n", strerror(errno));
+    if(count == -1) {
       goto terminate;
     }
-    for(i = 0; i < err; ++i) {
-      (void) pthread_mutex_lock(&manager->mutex);
-      sock = net_avl_search(&manager->avl_tree, events[i].data.fd);
-      (void) pthread_mutex_unlock(&manager->mutex);
+    for(int i = 0; i < count; ++i) {
+      sock = net_avl_multithread_search(&manager->tree, events[i].data.fd);
       if((sock->flags & AI_PASSIVE) == 0) {
         if((events[i].events & EPOLLHUP) != 0) {
           if(sock->state == NET_OPEN) {
@@ -590,7 +585,7 @@ static void* EPollThread(void* s) { // PENDING A REWRITE, DEPRECATED
   }
   terminate:
   (void) close(manager->epoll);
-  net_avl_free(&manager->avl_tree);
+  net_avl_free(&manager->tree);
   (void) pthread_mutex_destroy(&manager->mutex);
   return NULL;
 }
@@ -603,23 +598,16 @@ int InitConnManager(struct NETConnManager* const manager, const uint32_t avg_siz
   if(epoll == -1) {
     return errno;
   }
-  manager->avl_tree = net_avl_tree(avg_size);
-  int err = net_avl_init(&manager->avl_tree);
+  manager->tree = net_avl_tree(avg_size);
+  int err = net_avl_multithread_init(&manager->tree);
   if(err != 0) {
     (void) close(epoll);
-    return err;
-  }
-  err = pthread_mutex_init(&manager->mutex, NULL);
-  if(err != 0) {
-    (void) close(epoll);
-    net_avl_free(&manager->avl_tree);
     return err;
   }
   err = pthread_create(&manager->thread, NULL, EPollThread, manager);
   if(err != 0) {
     (void) close(epoll);
-    net_avl_free(&manager->avl_tree);
-    (void) pthread_mutex_destroy(&manager->mutex);
+    net_avl_multithread_free(&manager->tree);
     return err;
   }
   manager->epoll = epoll;
@@ -627,22 +615,12 @@ int InitConnManager(struct NETConnManager* const manager, const uint32_t avg_siz
 }
 
 int InitEventlessConnManager(struct NETConnManager* const manager, const uint32_t avg_size) {
-  manager->avl_tree = net_avl_tree(avg_size);
-  const int err = pthread_mutex_init(&manager->mutex, NULL);
-  if(err != 0) {
-    return err;
-  }
-  err = net_avl_init(&manager->avl_tree);
-  if(err != 0) {
-    (void) pthread_mutex_destroy(&manager->mutex);
-  }
-  return err;
+  manager->tree = net_avl_tree(avg_size);
+  return net_avl_multithread_init(&manager->tree);
 }
 
 static int NETConnManagerAdd(struct NETConnManager* const manager, const struct NETSocket socket, const int flags) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  int err = net_avl_insert(&manager->avl_tree, socket);
-  (void) pthread_mutex_unlock(&manager->mutex);
+  int err = net_avl_multithread_insert(&manager->tree, socket);
   if(err != 0) {
     return err;
   }
@@ -653,9 +631,7 @@ static int NETConnManagerAdd(struct NETConnManager* const manager, const struct 
     }
   }));
   if(err != 0) {
-    (void) pthread_mutex_lock(&manager->mutex);
-    net_avl_delete(&manager->avl_tree, socket.sfd);
-    (void) pthread_mutex_unlock(&manager->mutex);
+    net_avl_multithread_delete(&manager->tree, socket.sfd);
     err = errno;
   }
   return err;
@@ -674,10 +650,7 @@ int AddServer(struct NETConnManager* const manager, const struct NETServer serve
 }
 
 struct NETSocket* GetSocket(struct NETConnManager* const manager, const int sfd) {
-  (void) pthread_mutex_lock(&manager->mutex); // TODO: remove locks from simultaneous search operations, only lock inserting and deletion (but lock searching if any of these are currently happening)
-  struct NETSocket* const s = net_avl_search(&manager->avl_tree, sfd);
-  (void) pthread_mutex_unlock(&manager->mutex);
-  return s;
+  return net_avl_multithread_search(&manager->tree, sfd);
 }
 
 struct NETServer* GetServer(struct NETConnManager* const manager, const int sfd) {
@@ -685,9 +658,7 @@ struct NETServer* GetServer(struct NETConnManager* const manager, const int sfd)
 }
 
 void DeleteEventlessSocket(struct NETConnManager* const manager, const int sfd) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  net_avl_delete(&manager->avl_tree, sfd);
-  (void) pthread_mutex_unlock(&manager->mutex);
+  net_avl_multithread_delete(&manager->tree, sfd);
 }
 
 void DeleteEventlessServer(struct NETConnManager* const manager, const int sfd) {

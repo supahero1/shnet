@@ -54,6 +54,23 @@ extern struct NETSocket* net_avl_search(struct net_avl_tree* const, const int);
 
 extern void net_avl_delete(struct net_avl_tree* const, const int);
 
+struct net_avl_multithread_tree {
+  pthread_mutex_t mutex;
+  struct net_avl_tree tree;
+  pthread_mutex_t protect;
+  _Atomic uint32_t counter;
+};
+
+extern int net_avl_multithread_init(struct net_avl_multithread_tree* const);
+
+extern void net_avl_multithread_free(struct net_avl_multithread_tree* const);
+
+extern int net_avl_multithread_insert(struct net_avl_multithread_tree* const, const struct NETSocket);
+
+extern struct NETSocket* net_avl_multithread_search(struct net_avl_multithread_tree* const, const int);
+
+extern void net_avl_multithread_delete(struct net_avl_multithread_tree* const, const int);
+
 #ifdef __cplusplus
 }
 #endif

@@ -47,9 +47,8 @@ extern void TCPServerFree(struct NETServer* const);
 
 struct NETConnManager {
   pthread_t thread;
-  struct net_avl_tree avl_tree;
+  struct net_avl_multithread_tree tree;
   int epoll;
-  pthread_mutex_t mutex;
 };
 
 extern int TCPSend(struct NETSocket* const, void* const, const ssize_t, struct NETConnManager* const);
