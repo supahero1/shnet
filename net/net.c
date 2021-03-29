@@ -200,10 +200,12 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
     }
     printf("addrlen: %d\n", sock->addrlen);
     sock->sfd = sfd;
-    printf("we connecting at   %ld\n", GetTime(0));
+    uint64_t time = GetTime(0);
+    printf("we connecting at   %ld\n", time);
     printf("ip: %s\n", inet_ntoa(((struct sockaddr_in*) n->ai_addr)->sin_addr));
     int err = connect(sfd, n->ai_addr, n->ai_addrlen);
-    printf("done connecting at %ld\n", GetTime(0));
+    uint64_t time2 = GetTime(0);
+    printf("done connecting at %ld (took %f ms)\n", time2, (float)(time2 - time) / 1000000);
     if(err != 0) {
       (void) close(sfd);
       continue;
@@ -243,8 +245,6 @@ int SyncTCPListen(struct addrinfo* const res, struct NETServer* const serv) {
   serv->connections = NULL;
   serv->conn_count = 0;
   serv->max_conn_count = 0;
-  serv->handshake_timeout = 0;
-  serv->http_request_timeout = 0;
   for(struct addrinfo* n = res; n != NULL; n = n->ai_next) {
     serv->addr = *n->ai_addr;
     serv->addrlen = n->ai_addrlen;
@@ -321,9 +321,11 @@ static void* AsyncTCPConnectThread(void* a) {
     }
     sock.sfd = sfd;
     puts("got socket");
-    printf("we connecting at %ld\n", GetTime(0));
+    uint64_t time = GetTime(0);
+    printf("we connecting at   %ld\n", time);
     int err = connect(sfd, n->ai_addr, n->ai_addrlen);
-    printf("done connecting at %ld\n", GetTime(0));
+    uint64_t time2 = GetTime(0);
+    printf("done connecting at %ld (took %f ms)\n", time2, (float)(time2 - time) / 1000000);
     if(err != 0) {
       (void) close(sfd);
       arr->handler(&sock, -1);
@@ -360,8 +362,6 @@ static void* AsyncTCPListenThread(void* a) {
   serv.connections = NULL;
   serv.conn_count = 0;
   serv.max_conn_count = 0;
-  serv.handshake_timeout = 0;
-  serv.http_request_timeout = 0;
   for(struct addrinfo* n = arr->addrinfo; n != NULL; n = n->ai_next) {
     serv.addr = *n->ai_addr;
     serv.addrlen = n->ai_addrlen;
@@ -417,21 +417,6 @@ int AsyncTCPListen(struct ANET_L* const info) {
   pthread_t t;
   return pthread_create(&t, NULL, AsyncTCPListenThread, info);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #define MSG_BUFFER_LEN 16384
 
@@ -677,7 +662,9 @@ void FreeConnManager(struct NETConnManager* const manager) {
 
 static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
   if(pool != NULL) {
+    puts("exit");
     if(atomic_fetch_sub(&pool->amount, 1) == 1) {
+      puts("last to exit");
       (void) pthread_mutex_destroy(&pool->mutex);
       free(pool->threads);
       if(pool->onstop != NULL) {
@@ -685,13 +672,14 @@ static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
       }
     }
     pthread_exit(NULL);
+  } else {
+    puts("readied");
   }
 }
 
 #undef pool
 
 static void AcceptThreadTerminationCheck(struct NETAcceptThreadPool* const pool) {
-  (void) pthread_mutex_unlock(&pool->mutex);
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGUSR1);
@@ -713,24 +701,47 @@ static void AcceptThreadTerminationCheck(struct NETAcceptThreadPool* const pool)
 
 static void* AcceptThread(void* a) {
   sigset_t mask;
-  (void) sigfillset(&mask);
-  (void) sigdelset(&mask, SIGUSR1);
-  (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigemptyset(&mask);
   (void) sigaddset(&mask, SIGUSR1);
   (void) sigaction(SIGUSR1, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = AcceptThreadHandler
   }), NULL);
-  (void) sigsuspend(&mask);
+  (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+  switch(atomic_load(&pool->event)) {
+    case 0: {
+      (void) pause();
+      break;
+    }
+    case 1: {
+      puts("exit");
+      if(atomic_fetch_sub(&pool->amount, 1) == 1) {
+        puts("last to exit");
+        (void) pthread_mutex_destroy(&pool->mutex);
+        free(pool->threads);
+        if(pool->onstop != NULL) {
+          pool->onstop(pool);
+        }
+      }
+      return NULL;
+    }
+    case 2: break;
+  }
+  if(atomic_fetch_add(&pool->amount2, 1) == atomic_load(&pool->amount) && pool->onstart != NULL) {
+    pool->onstart(pool);
+  }
   struct sockaddr addr;
   socklen_t addr_len;
   while(1) {
     addr_len = sizeof(struct sockaddr);
+    puts("running");
     accept:;
     int sfd = accept(pool->server->sfd, &addr, &addr_len);
+    puts("accepted");
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+    puts("1");
     (void) pthread_mutex_lock(&pool->mutex);
+    puts("1");
     if(sfd == -1) {
       if(errno != ECONNABORTED) {
         pool->onerror(pool, sfd);
@@ -738,7 +749,8 @@ static void* AcceptThread(void* a) {
       AcceptThreadTerminationCheck(pool);
       goto accept;
     }
-    if(pool->server->conn_count == pool->server->max_conn_count - 1) {
+    puts("1");
+    if(pool->server->conn_count == pool->server->max_conn_count) {
       realloc:;
       int* const ptr = realloc(pool->server->connections, sizeof(int) * (pool->server->max_conn_count + pool->growth));
       if(ptr == NULL) {
@@ -750,7 +762,9 @@ static void* AcceptThread(void* a) {
       pool->server->connections = ptr;
       pool->server->max_conn_count += pool->growth;
     }
+    puts("1");
     pool->server->connections[pool->server->conn_count++] = sfd;
+    puts("1");
     if(pool->server->onconnection != NULL) {
       pool->server->onconnection(pool->server, (struct NETSocket) {
         .addr = addr,
@@ -770,7 +784,10 @@ static void* AcceptThread(void* a) {
         .sfd = sfd
       });
     }
+    puts("1");
+    (void) pthread_mutex_unlock(&pool->mutex);
     AcceptThreadTerminationCheck(pool);
+    puts("1");
   }
   return NULL;
 }
@@ -778,13 +795,14 @@ static void* AcceptThread(void* a) {
 #undef pool
 
 static void ReadyAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
+  atomic_store(&pool->event, 2);
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {
     (void) pthread_sigqueue(pool->threads[i], SIGUSR1, (union sigval) { .sival_ptr = NULL });
   }
 }
 
-int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t amount, const uint32_t growth, const int server_fd) {
+int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t amount, const uint32_t growth) {
   int err = pthread_mutex_init(&pool->mutex, NULL);
   if(err != 0) {
     return err;
@@ -802,15 +820,22 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
     return ENOMEM;
   }
   pool->growth = growth;
+  atomic_store(&pool->event, 0);
+  sigset_t mask;
+  sigset_t oldmask;
+  (void) sigfillset(&mask);
+  (void) pthread_sigmask(SIG_SETMASK, &mask, &oldmask);
   for(uint32_t i = 0; i < amount; ++i) {
     err = pthread_create(&pool->threads[i], &attr, AcceptThread, pool);
     if(err != 0) {
+      (void) pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
       (void) pthread_attr_destroy(&attr);
       atomic_store(&pool->amount, i + 1);
       FreeAcceptThreadPool(pool);
       return err;
     }
   }
+  (void) pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
   (void) pthread_attr_destroy(&attr);
   atomic_store(&pool->amount, amount);
   ReadyAcceptThreadPool(pool);
@@ -818,6 +843,7 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
 }
 
 void FreeAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
+  atomic_store(&pool->event, 1);
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {
     (void) pthread_sigqueue(pool->threads[i], SIGUSR1, (union sigval) { .sival_ptr = pool });

@@ -27,32 +27,18 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-/*int main() {
-  _Atomic uint32_t incred;
-  beginning:
-  atomic_store(&incred, 1);
-  for(uint64_t i = 0; i < amount; ++i) {
-    work[i] = (struct TimeoutObject) {
-      .func = timeout_callback,
-      .data = &incred,
-      .time = GetTime(i * 10000000)
-    };
-  }
-  timeout = Timeout();
-  timeout.onstart = start;
-  timeout.onstop = stop;
-  int err = StartTimeoutThread(&timeout, TIME_ALWAYS);
-  if(err != 0) {
-    puts("0");
-    exit(1);
-  }
-  (void) getc(stdin);
-  puts("stopping the timeout");
-  StopTimeoutThread(&timeout, TIME_ALWAYS);
-  (void) getc(stdin);
-  goto beginning;
-  return 0;
-}*/
+void threadpoolonstart(struct NETAcceptThreadPool* a) {
+  puts("NETAcceptThreadPool started");
+}
+
+void threadpoolonerror(struct NETAcceptThreadPool* pool, int sfd) {
+  printf("got a threadpool error (sfd %d): %s\n", sfd, strerror(errno));
+  FreeAcceptThreadPool(pool);
+}
+
+void threadpoolonstop(struct NETAcceptThreadPool* a) {
+  puts("NETAcceptThreadPool stopped");
+}
 
 void onmessage(struct NETSocket* socket) {
   puts("onmessage()");
@@ -104,6 +90,7 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
       exit(1);
     }
     default: {
+      printf("sfd is %d\n", sfd);
       int err;
       struct NETConnManager manager;
       err = InitConnManager(&manager, 5);
@@ -171,6 +158,7 @@ void asyncserver(struct NETServer* const server, const int sfd) {
       exit(1);
     }
     default: {
+      printf("sfd is %d\n", sfd);
       int err;
       struct NETConnManager manager;
       err = InitConnManager(&manager, 5);
@@ -187,6 +175,18 @@ void asyncserver(struct NETServer* const server, const int sfd) {
         exit(1);
       }
       puts("AddServer succeeded");
+      struct NETAcceptThreadPool pool;
+      pool.onstart = threadpoolonstart;
+      pool.onerror = threadpoolonerror;
+      pool.onstop = threadpoolonstop;
+      pool.server = server;
+      err = InitAcceptThreadPool(&pool, 10, 1);
+      if(err != 0) {
+        printf("error at InitAcceptThreadPool %d | %s\n", err, strerror(err));
+        exit(1);
+      }
+      puts("InitAcceptThreadPool succeeded");
+      server->pool = &pool;
       (void) getc(stdin);
       break;
     }
@@ -222,7 +222,7 @@ void asyncgaiserver(struct addrinfo* info, int status) {
 
 int main(int argc, char** argv) {
   int err;
-  printf("%ld\n", sizeof(pthread_mutex_t));
+  printf("%ld %ld\n", sizeof(struct NETSocket), sizeof(struct NETServer));
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
     return 1;
@@ -332,6 +332,18 @@ int main(int argc, char** argv) {
           exit(1);
         }
         puts("AddServer succeeded");
+        struct NETAcceptThreadPool pool;
+        pool.onstart = threadpoolonstart;
+        pool.onerror = threadpoolonerror;
+        pool.onstop = threadpoolonstop;
+        pool.server = &serv;
+        err = InitAcceptThreadPool(&pool, 10, 1);
+        if(err != 0) {
+          printf("error at InitAcceptThreadPool %d | %s\n", err, strerror(err));
+          exit(1);
+        }
+        puts("InitAcceptThreadPool succeeded");
+        serv.pool = &pool;
         (void) getc(stdin);
         break;
       }

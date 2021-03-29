@@ -43,24 +43,48 @@ struct NETSocket {
   int sfd;
 };
 
+#if __WORDSIZE == 64
+
 struct NETServer {
   struct sockaddr addr;
   void (*onconnection)(struct NETServer*, struct NETSocket);
-  struct NETServerThreadPool* pool;
+  struct NETAcceptThreadPool* pool;
   void (*onerror)(struct NETServer*);
   struct NETConnManager* manager;
   int* connections;
   uint32_t conn_count;
   uint32_t max_conn_count;
   socklen_t addrlen;
-  uint16_t handshake_timeout;
-  uint16_t http_request_timeout;
+  int _unused1;
   int flags;
+  int _unused2;
   int family;
   int socktype;
   int protocol;
   int sfd;
 };
+
+#elif __WORDSIZE == 32
+
+struct NETServer {
+  struct sockaddr addr;
+  void (*onconnection)(struct NETServer*, struct NETSocket);
+  struct NETAcceptThreadPool* pool;
+  void (*onerror)(struct NETServer*);
+  struct NETConnManager* manager;
+  int* connections;
+  uint32_t conn_count;
+  socklen_t addrlen;
+  uint32_t max_conn_count;
+  int flags;
+  int _unused1;
+  int family;
+  int socktype;
+  int protocol;
+  int sfd;
+};
+
+#endif
 
 #ifdef __cplusplus
 }

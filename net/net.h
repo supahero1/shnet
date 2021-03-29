@@ -123,15 +123,18 @@ extern void FreeConnectionManager(struct NETConnManager* const);
 
 struct NETAcceptThreadPool {
   pthread_t* threads;
+  void (*onstart)(struct NETAcceptThreadPool*);
   void (*onstop)(struct NETAcceptThreadPool*);
   void (*onerror)(struct NETAcceptThreadPool*, int);
   struct NETServer* server;
   pthread_mutex_t mutex;
   _Atomic uint32_t amount;
+  _Atomic uint32_t amount2;
+  _Atomic uint32_t event;
   uint32_t growth;
 };
 
-extern int InitAcceptThreadPool(struct NETAcceptThreadPool* const, const uint32_t, const uint32_t, const int);
+extern int InitAcceptThreadPool(struct NETAcceptThreadPool* const, const uint32_t, const uint32_t);
 
 extern void FreeAcceptThreadPool(struct NETAcceptThreadPool* const);
 
