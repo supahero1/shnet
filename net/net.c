@@ -661,10 +661,9 @@ void FreeConnManager(struct NETConnManager* const manager) {
 #define pool ((struct NETAcceptThreadPool*) info->si_value.sival_ptr)
 
 static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
+  puts("a");
   if(pool != NULL) {
-    puts("exit");
     if(atomic_fetch_sub(&pool->amount, 1) == 1) {
-      puts("last to exit");
       (void) pthread_mutex_destroy(&pool->mutex);
       free(pool->threads);
       if(pool->onstop != NULL) {
@@ -672,14 +671,13 @@ static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
       }
     }
     pthread_exit(NULL);
-  } else {
-    puts("readied");
   }
 }
 
 #undef pool
 
 static void AcceptThreadTerminationCheck(struct NETAcceptThreadPool* const pool) {
+  puts("a");
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGUSR1);
@@ -714,9 +712,7 @@ static void* AcceptThread(void* a) {
       break;
     }
     case 1: {
-      puts("exit");
       if(atomic_fetch_sub(&pool->amount, 1) == 1) {
-        puts("last to exit");
         (void) pthread_mutex_destroy(&pool->mutex);
         free(pool->threads);
         if(pool->onstop != NULL) {
@@ -734,14 +730,10 @@ static void* AcceptThread(void* a) {
   socklen_t addr_len;
   while(1) {
     addr_len = sizeof(struct sockaddr);
-    puts("running");
     accept:;
     int sfd = accept(pool->server->sfd, &addr, &addr_len);
-    puts("accepted");
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-    puts("1");
     (void) pthread_mutex_lock(&pool->mutex);
-    puts("1");
     if(sfd == -1) {
       if(errno != ECONNABORTED) {
         pool->onerror(pool, sfd);
@@ -749,7 +741,6 @@ static void* AcceptThread(void* a) {
       AcceptThreadTerminationCheck(pool);
       goto accept;
     }
-    puts("1");
     if(pool->server->conn_count == pool->server->max_conn_count) {
       realloc:;
       int* const ptr = realloc(pool->server->connections, sizeof(int) * (pool->server->max_conn_count + pool->growth));
@@ -762,9 +753,7 @@ static void* AcceptThread(void* a) {
       pool->server->connections = ptr;
       pool->server->max_conn_count += pool->growth;
     }
-    puts("1");
     pool->server->connections[pool->server->conn_count++] = sfd;
-    puts("1");
     if(pool->server->onconnection != NULL) {
       pool->server->onconnection(pool->server, (struct NETSocket) {
         .addr = addr,
@@ -784,10 +773,8 @@ static void* AcceptThread(void* a) {
         .sfd = sfd
       });
     }
-    puts("1");
     (void) pthread_mutex_unlock(&pool->mutex);
     AcceptThreadTerminationCheck(pool);
-    puts("1");
   }
   return NULL;
 }
@@ -843,6 +830,7 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
 }
 
 void FreeAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
+  puts("freeacceptthreadpool");
   atomic_store(&pool->event, 1);
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {

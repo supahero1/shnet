@@ -79,7 +79,7 @@ static void TimeoutHeapPop(struct Timeout* const t) {
   }
 }
 
-int AddTimeout(struct Timeout* const timeout, const struct TimeoutObject* const work, const uint32_t amount) {
+int SetTimeout(struct Timeout* const timeout, const struct TimeoutObject* const work, const uint32_t amount) {
   int locked = pthread_mutex_trylock(&timeout->mutex);
   if(timeout->max_timeouts - timeout->timeouts < amount) {
     struct TimeoutObject* ptr = realloc(timeout->heap, sizeof(struct TimeoutObject) * (timeout->timeouts + amount));
@@ -138,16 +138,16 @@ static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #define timeout ((struct Timeout*) t)
 
 static void* TimeoutThread(void* t) {
+  (void) sigaction(SIGUSR1, &((struct sigaction) {
+    .sa_flags = SA_SIGINFO,
+    .sa_sigaction = TimeoutThreadHandler
+  }), NULL);
   sigset_t mask;
   (void) sigfillset(&mask);
   (void) sigdelset(&mask, SIGUSR1);
   (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigemptyset(&mask);
   (void) sigaddset(&mask, SIGUSR1);
-  (void) sigaction(SIGUSR1, &((struct sigaction) {
-    .sa_flags = SA_SIGINFO,
-    .sa_sigaction = TimeoutThreadHandler
-  }), NULL);
   if(timeout->onstart != NULL) {
     timeout->onstart(timeout);
   }
@@ -160,14 +160,20 @@ static void* TimeoutThread(void* t) {
         break;
       }
     }
+    puts("1");
     (void) pthread_mutex_lock(&timeout->mutex);
+    puts("1");
     TimeoutHeapPop(timeout);
+    puts("1");
     if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
       timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
       timeout->max_timeouts = timeout->timeouts;
     }
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+    puts("1");
+    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL); // ok another break ig
+    printf("%p %p\n", timeout->heap[0].func, timeout->heap[0].data);
     timeout->heap[0].func(timeout->heap[0].data);
+    puts("haha");
     (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
     (void) sigpending(&mask);
     if(sigismember(&mask, SIGUSR1)) {

@@ -344,6 +344,22 @@ int main(int argc, char** argv) {
         }
         puts("InitAcceptThreadPool succeeded");
         serv.pool = &pool;
+        struct Timeout timeout = Timeout();
+        struct TimeoutObject work = (struct TimeoutObject) {
+          .time = GetTime(1000000000UL * 10),
+          .func = FreeAcceptThreadPool,
+          .data = &pool
+        };
+        int err = StartTimeoutThread(&timeout, TIME_ALWAYS);
+        if(err != 0) {
+          puts("timeout");
+          exit(1);
+        }
+        err = SetTimeout(&timeout, &work, 1);
+        if(err != 0) {
+          puts("SetTimeout");
+          exit(1);
+        }
         (void) getc(stdin);
         break;
       }

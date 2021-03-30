@@ -55,7 +55,7 @@ struct Timeout {
 
 extern struct Timeout Timeout(void);
 
-extern int AddTimeout(struct Timeout* const, const struct TimeoutObject* const, const uint32_t);
+extern int SetTimeout(struct Timeout* const, const struct TimeoutObject* const, const uint32_t);
 
 extern void TimeoutCleanup(struct Timeout* const);
 
