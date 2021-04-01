@@ -100,7 +100,7 @@ int TCPSend(struct NETSocket* const socket, void* const buffer, const ssize_t le
         return ENOMEM;
       }
       socket->send_buffer = ptr;
-      (void) memcpy(socket->send_buffer + socket->send_length, buffer + bytes, length - bytes);
+      (void) memcpy((char*) socket->send_buffer + socket->send_length, (char*) buffer + bytes, length - bytes);
       socket->send_length += length - bytes;
       if(manager != NULL) {
         epoll_ctl(manager->epoll, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
@@ -537,7 +537,7 @@ static void* EPollThread(void* s) {
                 sock->onsent(sock);
               }
             } else {
-              (void) memmove(sock->send_buffer, sock->send_buffer + bytes, sock->send_length);
+              (void) memmove((char*) sock->send_buffer, (char*) sock->send_buffer + bytes, sock->send_length);
               sock->send_buffer = realloc(sock->send_buffer, sock->send_length);
             }
           }
@@ -594,7 +594,7 @@ int InitEventlessConnManager(struct NETConnManager* const manager, const uint32_
   return net_avl_multithread_init(&manager->tree);
 }
 
-static int NETConnManagerAdd(struct NETConnManager* const manager, const struct NETSocket socket, const int flags) {
+static int NETConnManagerAdd(struct NETConnManager* const manager, const struct NETSocket socket, const unsigned int flags) {
   int err = net_avl_multithread_insert(&manager->tree, socket);
   if(err != 0) {
     return err;
@@ -637,7 +637,7 @@ void DeleteEventlessSocket(struct NETConnManager* const manager, const int sfd) 
 }
 
 void DeleteEventlessServer(struct NETConnManager* const manager, const int sfd) {
-  return DeleteEventlessSocket(manager, sfd);
+  DeleteEventlessSocket(manager, sfd);
 }
 
 int DeleteSocket(struct NETConnManager* const manager, const int sfd) {

@@ -1,2 +1,0 @@
-#!/bin/bash
-cc main.c time/time.c net/net_avl.c net/net.c -o main -O3 -pthread -Wall -Wnonnull -Wno-missing-braces -Wmissing-field-initializers -D_GNU_SOURCE

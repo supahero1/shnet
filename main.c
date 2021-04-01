@@ -27,6 +27,10 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
+void FreeAcceptThreadPoolWrapper(void* a) {
+  FreeAcceptThreadPool((struct NETAcceptThreadPool*) a);
+}
+
 void threadpoolonstart(struct NETAcceptThreadPool* a) {
   puts("NETAcceptThreadPool started");
 }
@@ -347,7 +351,7 @@ int main(int argc, char** argv) {
         struct Timeout timeout = Timeout();
         struct TimeoutObject work = (struct TimeoutObject) {
           .time = GetTime(1000000000UL * 10),
-          .func = FreeAcceptThreadPool,
+          .func = FreeAcceptThreadPoolWrapper,
           .data = &pool
         };
         int err = StartTimeoutThread(&timeout, TIME_ALWAYS);

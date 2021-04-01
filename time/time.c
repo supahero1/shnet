@@ -23,6 +23,8 @@
 #include <signal.h>
 #include <stdbool.h>
 
+#include <stdio.h>
+
 uint64_t GetTime(const uint64_t nanoseconds) {
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
   (void) clock_gettime(CLOCK_REALTIME, &tp);
@@ -171,9 +173,9 @@ static void* TimeoutThread(void* t) {
     }
     puts("1");
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL); // ok another break ig
-    printf("%p %p\n", timeout->heap[0].func, timeout->heap[0].data);
+    puts("1");
     timeout->heap[0].func(timeout->heap[0].data);
-    puts("haha");
+    puts("changed");
     (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
     (void) sigpending(&mask);
     if(sigismember(&mask, SIGUSR1)) {
