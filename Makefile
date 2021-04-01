@@ -1,6 +1,6 @@
 all: prepare main
 
-prepare: build
+prepare:
 	@mkdir -p build
 
 CP_FLAGS=-O3 -pthread -Wall -pedantic -D_GNU_SOURCE
