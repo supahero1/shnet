@@ -118,6 +118,7 @@ void TimeoutCleanup(struct Timeout* const timeout) {
 #define timeout ((struct Timeout*) info->si_value.sival_ptr)
 
 static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
+  printf("TimeoutThreadHandler %p\n", (void*) timeout);
   if(timeout->onstop != NULL) {
     timeout->onstop(timeout);
   }
@@ -140,16 +141,16 @@ static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #define timeout ((struct Timeout*) t)
 
 static void* TimeoutThread(void* t) {
-  (void) sigaction(SIGUSR1, &((struct sigaction) {
+  (void) sigaction(SIGRTMAX, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = TimeoutThreadHandler
   }), NULL);
   sigset_t mask;
   (void) sigfillset(&mask);
-  (void) sigdelset(&mask, SIGUSR1);
+  (void) sigdelset(&mask, SIGRTMAX);
   (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigemptyset(&mask);
-  (void) sigaddset(&mask, SIGUSR1);
+  (void) sigaddset(&mask, SIGRTMAX);
   if(timeout->onstart != NULL) {
     timeout->onstart(timeout);
   }
@@ -162,40 +163,17 @@ static void* TimeoutThread(void* t) {
         break;
       }
     }
-    puts("1");
     (void) pthread_mutex_lock(&timeout->mutex);
-    puts("1");
     TimeoutHeapPop(timeout);
-    puts("1");
+    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
+    timeout->heap[0].func(timeout->heap[0].data);
     if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
       timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
       timeout->max_timeouts = timeout->timeouts;
     }
-    puts("1");
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL); // ok another break ig
-    puts("1");
-    timeout->heap[0].func(timeout->heap[0].data);
-    puts("changed");
     (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
-    (void) sigpending(&mask);
-    if(sigismember(&mask, SIGUSR1)) {
-      (void) pthread_mutex_unlock(&timeout->mutex);
-      if(timeout->onstop != NULL) {
-        timeout->onstop(timeout);
-      }
-      (void) pthread_mutex_destroy(&timeout->mutex);
-      (void) sem_destroy(&timeout->work);
-      (void) sem_destroy(&timeout->amount);
-      if(timeout->clear_mode == TIME_ALWAYS || (timeout->clear_mode == TIME_DEPENDS && atomic_load(&timeout->clean_work) == TIME_ALWAYS)) {
-        timeout->timeouts = 1;
-        timeout->max_timeouts = 1;
-        free(timeout->heap);
-        timeout->heap = NULL;
-      }
-      pthread_exit(NULL);
-    }
     (void) sigemptyset(&mask);
-    (void) sigaddset(&mask, SIGUSR1);
+    (void) sigaddset(&mask, SIGRTMAX);
     atomic_store(&timeout->latest, timeout->heap[1].time);
     (void) pthread_mutex_unlock(&timeout->mutex);
   }
@@ -207,7 +185,7 @@ static void* TimeoutThread(void* t) {
 void StopTimeoutThread(struct Timeout* const timeout, const uint32_t clear_mode) {
   atomic_store(&timeout->clean_work, atomic_load(&timeout->clean_work) | 1);
   atomic_store(&timeout->clear_mode, clear_mode);
-  (void) pthread_sigqueue(timeout->worker, SIGUSR1, (union sigval) { .sival_ptr = timeout });
+  (void) pthread_sigqueue(timeout->worker, SIGRTMAX, (union sigval) { .sival_ptr = timeout });
 }
 
 int StartTimeoutThread(struct Timeout* const timeout, const uint32_t clean_work) {

@@ -28,20 +28,21 @@
 #include <limits.h>
 
 void FreeAcceptThreadPoolWrapper(void* a) {
+  puts("da free");
   FreeAcceptThreadPool((struct NETAcceptThreadPool*) a);
 }
 
 void threadpoolonstart(struct NETAcceptThreadPool* a) {
-  puts("NETAcceptThreadPool started");
+  //puts("NETAcceptThreadPool started");
 }
 
 void threadpoolonerror(struct NETAcceptThreadPool* pool, int sfd) {
-  printf("got a threadpool error (sfd %d): %s\n", sfd, strerror(errno));
+  //printf("got a threadpool error (sfd %d): %s\n", sfd, strerror(errno));
   FreeAcceptThreadPool(pool);
 }
 
 void threadpoolonstop(struct NETAcceptThreadPool* a) {
-  puts("NETAcceptThreadPool stopped");
+  //puts("NETAcceptThreadPool stopped");
 }
 
 void onmessage(struct NETSocket* socket) {
@@ -226,7 +227,6 @@ void asyncgaiserver(struct addrinfo* info, int status) {
 
 int main(int argc, char** argv) {
   int err;
-  printf("%ld %ld\n", sizeof(struct NETSocket), sizeof(struct NETServer));
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
     return 1;
@@ -350,7 +350,7 @@ int main(int argc, char** argv) {
         serv.pool = &pool;
         struct Timeout timeout = Timeout();
         struct TimeoutObject work = (struct TimeoutObject) {
-          .time = GetTime(1000000000UL * 10),
+          .time = GetTime(1000000000UL * 1),
           .func = FreeAcceptThreadPoolWrapper,
           .data = &pool
         };

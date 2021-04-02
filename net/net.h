@@ -130,7 +130,7 @@ struct NETAcceptThreadPool {
   pthread_mutex_t mutex;
   _Atomic uint32_t amount;
   _Atomic uint32_t amount2;
-  _Atomic uint32_t event;
+  _Atomic uint32_t counterrorist;
   uint32_t growth;
 };
 

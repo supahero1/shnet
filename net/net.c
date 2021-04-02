@@ -460,11 +460,11 @@ static void EPollThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 static void* EPollThread(void* s) {
   sigset_t mask;
   (void) sigfillset(&mask);
-  (void) sigdelset(&mask, SIGUSR1);
+  (void) sigdelset(&mask, SIGRTMAX - 1);
   (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigemptyset(&mask);
-  (void) sigaddset(&mask, SIGUSR1);
-  (void) sigaction(SIGUSR1, &((struct sigaction) {
+  (void) sigaddset(&mask, SIGRTMAX - 1);
+  (void) sigaction(SIGRTMAX - 1, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = EPollThreadHandler
   }), NULL);
@@ -555,12 +555,12 @@ static void* EPollThread(void* s) {
     }
     (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
     (void) sigpending(&mask);
-    if(sigismember(&mask, SIGUSR1)) {
+    if(sigismember(&mask, SIGRTMAX - 1)) {
       (void) close(manager->epoll);
       net_avl_multithread_free(&manager->tree);
     }
     (void) sigemptyset(&mask);
-    (void) sigaddset(&mask, SIGUSR1);
+    (void) sigaddset(&mask, SIGRTMAX - 1);
   }
   return NULL;
 }
@@ -655,17 +655,22 @@ int DeleteServer(struct NETConnManager* const manager, const int sfd) {
 
 void FreeConnManager(struct NETConnManager* const manager) {
   (void) pthread_cancel(manager->thread);
-  (void) pthread_sigqueue(manager->thread, SIGUSR1, (union sigval) { .sival_ptr = NULL });
+  (void) pthread_sigqueue(manager->thread, SIGRTMAX - 1, (union sigval) { .sival_ptr = NULL });
 }
 
 #define pool ((struct NETAcceptThreadPool*) info->si_value.sival_ptr)
 
 static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
-  puts("a");
+  puts("sig");
   if(pool != NULL) {
-    if(atomic_fetch_sub(&pool->amount, 1) == 1) {
+    puts("wow pool null");
+    uint32_t g = atomic_fetch_sub(&pool->amount, 1);
+    printf("signal handler amount %u\n", g);
+    if(g == 1) {
+      puts("end");
       (void) pthread_mutex_destroy(&pool->mutex);
       free(pool->threads);
+      puts("end 1");
       if(pool->onstop != NULL) {
         pool->onstop(pool);
       }
@@ -677,13 +682,12 @@ static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
 #undef pool
 
 static void AcceptThreadTerminationCheck(struct NETAcceptThreadPool* const pool) {
-  puts("a");
   sigset_t mask;
   (void) sigfillset(&mask);
-  (void) sigdelset(&mask, SIGUSR1);
+  (void) sigdelset(&mask, SIGRTMAX - 2);
   (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
   (void) sigpending(&mask);
-  if(sigismember(&mask, SIGUSR1)) {
+  if(sigismember(&mask, SIGRTMAX - 2)) {
     if(atomic_fetch_sub(&pool->amount, 1) == 1) {
       (void) pthread_mutex_destroy(&pool->mutex);
       free(pool->threads);
@@ -699,30 +703,16 @@ static void AcceptThreadTerminationCheck(struct NETAcceptThreadPool* const pool)
 
 static void* AcceptThread(void* a) {
   sigset_t mask;
-  (void) sigemptyset(&mask);
-  (void) sigaddset(&mask, SIGUSR1);
-  (void) sigaction(SIGUSR1, &((struct sigaction) {
+  (void) sigaction(SIGRTMAX - 2, &((struct sigaction) {
     .sa_flags = SA_SIGINFO,
     .sa_sigaction = AcceptThreadHandler
   }), NULL);
-  (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
-  switch(atomic_load(&pool->event)) {
-    case 0: {
-      (void) pause();
-      break;
-    }
-    case 1: {
-      if(atomic_fetch_sub(&pool->amount, 1) == 1) {
-        (void) pthread_mutex_destroy(&pool->mutex);
-        free(pool->threads);
-        if(pool->onstop != NULL) {
-          pool->onstop(pool);
-        }
-      }
-      return NULL;
-    }
-    case 2: break;
-  }
+  (void) sigfillset(&mask);
+  (void) sigdelset(&mask, SIGRTMAX - 2);
+  (void) sigsuspend(&mask);
+  (void) pthread_sigmask(SIG_SETMASK, &mask, NULL);
+  (void) sigemptyset(&mask);
+  (void) sigaddset(&mask, SIGRTMAX - 2);
   if(atomic_fetch_add(&pool->amount2, 1) == atomic_load(&pool->amount) && pool->onstart != NULL) {
     pool->onstart(pool);
   }
@@ -731,6 +721,7 @@ static void* AcceptThread(void* a) {
   while(1) {
     addr_len = sizeof(struct sockaddr);
     accept:;
+    puts("accepting");
     int sfd = accept(pool->server->sfd, &addr, &addr_len);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
     (void) pthread_mutex_lock(&pool->mutex);
@@ -738,6 +729,7 @@ static void* AcceptThread(void* a) {
       if(errno != ECONNABORTED) {
         pool->onerror(pool, sfd);
       }
+      (void) pthread_mutex_unlock(&pool->mutex);
       AcceptThreadTerminationCheck(pool);
       goto accept;
     }
@@ -782,10 +774,9 @@ static void* AcceptThread(void* a) {
 #undef pool
 
 static void ReadyAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
-  atomic_store(&pool->event, 2);
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {
-    (void) pthread_sigqueue(pool->threads[i], SIGUSR1, (union sigval) { .sival_ptr = NULL });
+    (void) pthread_sigqueue(pool->threads[i], SIGRTMAX - 2, (union sigval) { .sival_ptr = NULL });
   }
 }
 
@@ -807,10 +798,9 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
     return ENOMEM;
   }
   pool->growth = growth;
-  atomic_store(&pool->event, 0);
   sigset_t mask;
-  sigset_t oldmask;
   (void) sigfillset(&mask);
+  sigset_t oldmask;
   (void) pthread_sigmask(SIG_SETMASK, &mask, &oldmask);
   for(uint32_t i = 0; i < amount; ++i) {
     err = pthread_create(&pool->threads[i], &attr, AcceptThread, pool);
@@ -825,15 +815,16 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
   (void) pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
   (void) pthread_attr_destroy(&attr);
   atomic_store(&pool->amount, amount);
+  atomic_store(&pool->amount2, 1);
+  atomic_store(&pool->counterrorist, 0);
   ReadyAcceptThreadPool(pool);
   return 0;
 }
 
 void FreeAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
-  puts("freeacceptthreadpool");
-  atomic_store(&pool->event, 1);
+  //puts("freeacceptthreadpool");
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {
-    (void) pthread_sigqueue(pool->threads[i], SIGUSR1, (union sigval) { .sival_ptr = pool });
+    (void) pthread_sigqueue(pool->threads[i], SIGRTMAX - 2, (union sigval) { .sival_ptr = pool });
   }
 }
