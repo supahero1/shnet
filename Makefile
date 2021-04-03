@@ -3,7 +3,7 @@ all: prepare main
 prepare:
 	@mkdir -p build
 
-CP_FLAGS=-O0 -pthread -Wall -pedantic -D_GNU_SOURCE
+CP_FLAGS=-O3 -pthread -Wall -pedantic -D_GNU_SOURCE
 
 main: build/main.o build/time.o build/net_avl.o build/net.o
 	cc build/main.o build/time.o build/net_avl.o build/net.o -o main ${CP_FLAGS}
