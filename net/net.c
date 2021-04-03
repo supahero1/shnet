@@ -148,15 +148,18 @@ void TCPShutdown(struct NETSocket* const socket) {
 }
 
 int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const res) {
+  puts("GetAddrInfo");
+  printf("%p %p %d %p\n", hostname, service, flags, res);
+  printf("%s %s\n", hostname, service);
   return getaddrinfo(hostname, service, &((struct addrinfo) {
+    .ai_flags = AI_V4MAPPED | AI_NUMERICSERV | (flags & (AI_NUMERICHOST | AI_PASSIVE)),
     .ai_family = flags & (AF_INET | AF_INET6 | AF_UNSPEC),
     .ai_socktype = SOCK_STREAM,
     .ai_protocol = IPPROTO_TCP,
-    .ai_flags = AI_V4MAPPED | AI_NUMERICSERV | (flags & (AI_NUMERICHOST | AI_PASSIVE)),
     .ai_addrlen = 0,
     .ai_addr = NULL,
-    .ai_next = NULL,
-    .ai_canonname = NULL
+    .ai_canonname = NULL,
+    .ai_next = NULL
   }), res);
 }
 
@@ -165,8 +168,8 @@ int GetAddrInfo(const char* const hostname, const char* const service, const int
 static void* AsyncGAIThread(void* a) {
   struct addrinfo* res;
   for(uint_fast32_t i = 0; i < arra->count; ++i) {
-    arra->arr[i].handler(res, GetAddrInfo(arra->arr[i].hostname, arra->arr[i].service, arra->arr[i].flags, &res));
-    freeaddrinfo(res);
+    int err = GetAddrInfo(arra->arr[i].hostname, arra->arr[i].service, arra->arr[i].flags, &res);
+    arra->arr[i].handler(res, err);
   }
   return NULL;
 }
@@ -221,8 +224,6 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
 
 int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
   puts("SyncTCP_GAIConnect()");
-  printf("%p %p %d %p\n", hostname, service, which_ip, (void*) socket);
-  printf("%s %s\n", hostname, service);
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, which_ip, &res);
   if(err != 0) {

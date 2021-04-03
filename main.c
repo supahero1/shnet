@@ -102,6 +102,7 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
       printf("sfd is %d\n", sfd);
       int err;
       struct NETConnManager manager;
+      manager.onstart = netconnmanageronstart;
       err = InitConnManager(&manager, 5);
       if(err != 0) {
         printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
@@ -224,6 +225,7 @@ void asyncgaiserver(struct addrinfo* info, int status) {
       printf("error at AsyncTCPListen: %s\n", strerror(status));
       exit(1);
     }
+    freeaddrinfo(info);
   } else {
     printf("error at AsyncGetAddrInfo: %s\n", strerror(status));
     exit(1);
@@ -282,6 +284,7 @@ int main(int argc, char** argv) {
       case 'c': {
         struct NETSocket sock;
         struct NETConnManager manager;
+        manager.onstart = netconnmanageronstart;
         err = InitConnManager(&manager, 5);
         if(err != 0) {
           printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
@@ -319,7 +322,7 @@ int main(int argc, char** argv) {
       case 'l': {
         struct NETServer serv;
         struct NETConnManager manager;
-        manager.onstart = netconnmanageronstart;
+        //manager.onstart = netconnmanageronstart;
         err = InitConnManager(&manager, 5);
         if(err != 0) {
           printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
