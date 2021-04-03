@@ -45,11 +45,18 @@ extern void TCPSocketFree(struct NETSocket* const);
 
 extern void TCPServerFree(struct NETServer* const);
 
+#if __WORDSIZE == 64
+
 struct NETConnManager {
-  pthread_t thread;
   void (*onstart)(struct NETConnManager*);
+  pthread_t thread;
+  #if __WORDSIZE == 64
   struct net_avl_multithread_tree tree;
   int epoll;
+  #else
+  int epoll;
+  struct net_avl_multithread_tree tree;
+  #endif
 };
 
 extern int TCPSend(struct NETSocket* const, void* const, const ssize_t, struct NETConnManager* const);

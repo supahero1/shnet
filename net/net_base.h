@@ -64,7 +64,7 @@ struct NETServer {
   int sfd;
 };
 
-#elif __WORDSIZE == 32
+#else
 
 struct NETServer {
   struct sockaddr addr;
