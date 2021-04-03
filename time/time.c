@@ -167,6 +167,7 @@ static void* TimeoutThread(void* t) {
     TimeoutHeapPop(timeout);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
     timeout->heap[0].func(timeout->heap[0].data);
+    atomic_store(&timeout->latest, timeout->heap[1].time);
     if(atomic_load(&timeout->clean_work) == TIME_ALWAYS) {
       timeout->heap = realloc(timeout->heap, sizeof(struct TimeoutObject) * timeout->timeouts);
       timeout->max_timeouts = timeout->timeouts;
@@ -174,7 +175,6 @@ static void* TimeoutThread(void* t) {
     (void) pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
     (void) sigemptyset(&mask);
     (void) sigaddset(&mask, SIGRTMAX);
-    atomic_store(&timeout->latest, timeout->heap[1].time);
     (void) pthread_mutex_unlock(&timeout->mutex);
   }
   return NULL;
