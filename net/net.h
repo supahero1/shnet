@@ -45,8 +45,6 @@ extern void TCPSocketFree(struct NETSocket* const);
 
 extern void TCPServerFree(struct NETServer* const);
 
-#if __WORDSIZE == 64
-
 struct NETConnManager {
   void (*onstart)(struct NETConnManager*);
   pthread_t thread;
