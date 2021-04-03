@@ -220,11 +220,15 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
 }
 
 int SyncTCP_GAIConnect(const char* const hostname, const char* const service, const int which_ip, struct NETSocket* const socket) {
+  puts("SyncTCP_GAIConnect()");
+  printf("%p %p %d %p\n", hostname, service, which_ip, (void*) socket);
+  printf("%s %s\n", hostname, service);
   struct addrinfo* res;
   int err = GetAddrInfo(hostname, service, which_ip, &res);
   if(err != 0) {
     return err;
   }
+  puts("GetAddrInfo suceeded");
   return SyncTCPConnect(res, socket);
 }
 
@@ -470,6 +474,9 @@ static void* EPollThread(void* s) {
   }), NULL);
   struct epoll_event events[100];
   uint8_t mem[MSG_BUFFER_LEN];
+  if(manager->onstart != NULL) {
+    manager->onstart(manager);
+  }
   while(1) {
     int count = epoll_wait(manager->epoll, events, 100, -1);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
@@ -661,16 +668,11 @@ void FreeConnManager(struct NETConnManager* const manager) {
 #define pool ((struct NETAcceptThreadPool*) info->si_value.sival_ptr)
 
 static void AcceptThreadHandler(int sig, siginfo_t* info, void* ucontext) {
-  puts("sig");
   if(pool != NULL) {
-    puts("wow pool null");
     uint32_t g = atomic_fetch_sub(&pool->amount, 1);
-    printf("signal handler amount %u\n", g);
     if(g == 1) {
-      puts("end");
       (void) pthread_mutex_destroy(&pool->mutex);
       free(pool->threads);
-      puts("end 1");
       if(pool->onstop != NULL) {
         pool->onstop(pool);
       }
@@ -721,7 +723,6 @@ static void* AcceptThread(void* a) {
   while(1) {
     addr_len = sizeof(struct sockaddr);
     accept:;
-    puts("accepting");
     int sfd = accept(pool->server->sfd, &addr, &addr_len);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
     (void) pthread_mutex_lock(&pool->mutex);
@@ -816,13 +817,11 @@ int InitAcceptThreadPool(struct NETAcceptThreadPool* const pool, const uint32_t 
   (void) pthread_attr_destroy(&attr);
   atomic_store(&pool->amount, amount);
   atomic_store(&pool->amount2, 1);
-  atomic_store(&pool->counterrorist, 0);
   ReadyAcceptThreadPool(pool);
   return 0;
 }
 
 void FreeAcceptThreadPool(struct NETAcceptThreadPool* const pool) {
-  //puts("freeacceptthreadpool");
   const uint32_t amount = atomic_load(&pool->amount);
   for(uint32_t i = 0; i < amount; ++i) {
     (void) pthread_sigqueue(pool->threads[i], SIGRTMAX - 2, (union sigval) { .sival_ptr = pool });

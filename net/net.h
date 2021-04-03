@@ -47,6 +47,7 @@ extern void TCPServerFree(struct NETServer* const);
 
 struct NETConnManager {
   pthread_t thread;
+  void (*onstart)(struct NETConnManager*);
   struct net_avl_multithread_tree tree;
   int epoll;
 };
@@ -130,7 +131,6 @@ struct NETAcceptThreadPool {
   pthread_mutex_t mutex;
   _Atomic uint32_t amount;
   _Atomic uint32_t amount2;
-  _Atomic uint32_t counterrorist;
   uint32_t growth;
 };
 

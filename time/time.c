@@ -118,7 +118,6 @@ void TimeoutCleanup(struct Timeout* const timeout) {
 #define timeout ((struct Timeout*) info->si_value.sival_ptr)
 
 static void TimeoutThreadHandler(int sig, siginfo_t* info, void* ucontext) {
-  printf("TimeoutThreadHandler %p\n", (void*) timeout);
   if(timeout->onstop != NULL) {
     timeout->onstop(timeout);
   }

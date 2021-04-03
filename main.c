@@ -33,16 +33,20 @@ void FreeAcceptThreadPoolWrapper(void* a) {
 }
 
 void threadpoolonstart(struct NETAcceptThreadPool* a) {
-  //puts("NETAcceptThreadPool started");
+  puts("NETAcceptThreadPool started");
 }
 
 void threadpoolonerror(struct NETAcceptThreadPool* pool, int sfd) {
-  //printf("got a threadpool error (sfd %d): %s\n", sfd, strerror(errno));
+  printf("got a threadpool error (sfd %d): %s\n", sfd, strerror(errno));
   FreeAcceptThreadPool(pool);
 }
 
 void threadpoolonstop(struct NETAcceptThreadPool* a) {
-  //puts("NETAcceptThreadPool stopped");
+  puts("NETAcceptThreadPool stopped");
+}
+
+void netconnmanageronstart(struct NETConnManager* a) {
+  puts("NetConnManager started");
 }
 
 void onmessage(struct NETSocket* socket) {
@@ -166,6 +170,7 @@ void asyncserver(struct NETServer* const server, const int sfd) {
       printf("sfd is %d\n", sfd);
       int err;
       struct NETConnManager manager;
+      manager.onstart = netconnmanageronstart;
       err = InitConnManager(&manager, 5);
       if(err != 0) {
         printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
@@ -282,6 +287,7 @@ int main(int argc, char** argv) {
           printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
           exit(1);
         }
+        puts("InitConnManager succeeded");
         err = SyncTCP_GAIConnect(argv[3], argv[4], IPv4, &sock);
         if(err < -1) {
           printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
@@ -313,6 +319,7 @@ int main(int argc, char** argv) {
       case 'l': {
         struct NETServer serv;
         struct NETConnManager manager;
+        manager.onstart = netconnmanageronstart;
         err = InitConnManager(&manager, 5);
         if(err != 0) {
           printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
@@ -348,7 +355,7 @@ int main(int argc, char** argv) {
         }
         puts("InitAcceptThreadPool succeeded");
         serv.pool = &pool;
-        struct Timeout timeout = Timeout();
+        /*struct Timeout timeout = Timeout();
         struct TimeoutObject work = (struct TimeoutObject) {
           .time = GetTime(1000000000UL * 1),
           .func = FreeAcceptThreadPoolWrapper,
@@ -363,7 +370,7 @@ int main(int argc, char** argv) {
         if(err != 0) {
           puts("SetTimeout");
           exit(1);
-        }
+        }*/
         (void) getc(stdin);
         break;
       }
