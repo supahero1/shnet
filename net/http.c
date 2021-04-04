@@ -44,8 +44,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
       }
     }
     session->last_at = HTTP_PARSE_METHOD;
-  } else {
-    idx = 0;
   }
   switch(buffer[0]) {
     case 'G': {
