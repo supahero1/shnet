@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
+#include <linux/tls.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <netinet/tcp.h>
@@ -148,9 +149,6 @@ void TCPShutdown(struct NETSocket* const socket) {
 }
 
 int GetAddrInfo(const char* const hostname, const char* const service, const int flags, struct addrinfo** const res) {
-  puts("GetAddrInfo");
-  printf("%p %p %d %p\n", hostname, service, flags, res);
-  printf("%s %s\n", hostname, service);
   return getaddrinfo(hostname, service, &((struct addrinfo) {
     .ai_flags = AI_V4MAPPED | AI_NUMERICSERV | (flags & (AI_NUMERICHOST | AI_PASSIVE)),
     .ai_family = flags & (AF_INET | AF_INET6 | AF_UNSPEC),
