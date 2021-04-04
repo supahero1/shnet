@@ -16,10 +16,11 @@
 
 #include "http.h"
 
+#include <errno.h>
 #include <string.h>
 
-int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_request* request, struct HTTP_settings* settings, struct HTTP_parser_session* session) {
-  if(len < 18) {
+int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int flags, struct HTTP_request* const request, const struct HTTP_settings* const settings, struct HTTP_parser_session* const session) {
+  if(len < 18) { // GET / HTTP/1.1\r\n\r\n
     return HTTP_MALFORMED;
   }
   ssize_t idx;
@@ -30,7 +31,7 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
         break;
       }
       case HTTP_PARSE_PATH: {
-        goto parse_uri;
+        goto parse_path;
       }
       case HTTP_PARSE_VERSION: {
         goto parse_version;
@@ -42,6 +43,9 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
         goto parse_body;
       }
     }
+    session->last_at = HTTP_PARSE_METHOD;
+  } else {
+    idx = 0;
   }
   switch(buffer[0]) {
     case 'G': {
@@ -87,7 +91,7 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
           break;
         }
         default: {
-          return HTTP_MALFORMED;
+          return HTTP_INVAL_METHOD;
         }
       }
       break;
@@ -125,7 +129,7 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
       break;
     }
     default: {
-      return HTTP_METHOD_NOTSUP;
+      return HTTP_INVAL_METHOD;
     }
   }
   if(session != NULL) {
@@ -135,15 +139,21 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
   if((flags & HTTP_PARSE_METHOD) != 0) {
     return 0;
   }
-  parse_uri:;
+  parse_path:;
   uint8_t* end = memchr(buffer + idx, ' ', len - idx);
-  uint32_t length = (uint32_t)((uintptr_t) end - (uintptr_t)(buffer + idx));
   if(end == NULL) {
     return HTTP_MALFORMED;
   }
-  if(idx + length  > len - 13) {
+  uint32_t length = (uint32_t)((uintptr_t) end - (uintptr_t)(buffer + idx));
+  if(length > settings->max_path_length) {
+    errno = HTTP_PATH_TOO_LONG;
+    return HTTP_NOT_ALLOWED;
+  }
+  if(idx + length  > len - 11) {
     return HTTP_MALFORMED;
   }
+  request->path = (char*) buffer + idx;
+  request->path_length = length;
   if(session != NULL) {
     session->last_at = HTTP_PARSE_VERSION;
     session->idx = idx;
@@ -153,13 +163,14 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
   }
   idx += length;
   parse_version:
-  if(memcmp(buffer + idx, &((uint8_t[]){ ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '1', '\\', 'r', '\\', 'n' }), 13) != 0) {
-    if(buffer[idx + 8] == '0') {
+  if(memcmp(buffer + idx, &((uint8_t[]){ ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '1', '\r', '\n' }), 11) != 0) {
+    if(memcmp(buffer + idx, &((uint8_t[]){ ' ', 'H', 'T', 'T', 'P', '/', '1', '.', '0', '\r', '\n' }), 11) == 0) {
       return HTTP_VERSION_NOTSUP;
     } else {
       return HTTP_MALFORMED;
     }
   }
+  idx += 11;
   if(session != NULL) {
     session->last_at = HTTP_PARSE_HEADERS;
     session->idx = idx;
@@ -167,11 +178,16 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
   if((flags & HTTP_PARSE_VERSION) != 0) {
     return 0;
   }
-  idx += 6;
   parse_headers:
-  while(memcmp(buffer + idx, &((uint8_t[]){ '\\', 'r', '\\', 'n' }), 4) != 0) {
+  while(memcmp(buffer + idx, &((uint8_t[]){ '\r', '\n' }), 2) != 0) {
+    if(request->header_count == settings->max_header_amount) {
+      errno = HTTP_TOO_MANY_HEADERS;
+      return HTTP_NOT_ALLOWED;
+    }
     
+    ++request->header_count;
   }
+  idx += 2;
   if(session != NULL) {
     session->last_at = HTTP_PARSE_BODY;
     session->idx = idx;
@@ -182,5 +198,167 @@ int HTTPv1_1_raw_parser(uint8_t* buffer, ssize_t len, int flags, struct HTTP_req
   parse_body:
   request->body = buffer + idx;
   request->body_length = len - idx;
+  return 0;
+}
+
+int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const int flags, struct HTTP_response* const response, const struct HTTP_settings* const settings, struct HTTP_parser_session* const session) {
+  if(len < 17) { // HTTP/1.1 100 \r\n\r\n
+    return HTTP_MALFORMED;
+  }
+  ssize_t idx;
+  if(session != NULL) {
+    idx = session->idx;
+    switch(session->last_at) {
+      case HTTP_PARSE_STATUS: {
+        break;
+      }
+      case HTTP_PARSE_REASON_PHRASE: {
+        goto parse_reason_phrase;
+      }
+      case HTTP_PARSE_HEADERS: {
+        goto parse_headers;
+      }
+      case HTTP_PARSE_BODY: {
+        goto parse_body;
+      }
+    }
+    session->last_at = HTTP_PARSE_STATUS;
+  } else {
+    idx = 0;
+  }
+  if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '1', ' ' }), 9) != 0) {
+    if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '0', ' ' }), 9) == 0) {
+      return HTTP_VERSION_NOTSUP;
+    } else {
+      return HTTP_MALFORMED;
+    }
+  }
+  idx += 9;
+  for(uint32_t i = 0; i < 3; ++i) {
+    if(buffer[idx + i] < 49 || buffer[idx + i] > 57) { // should be < 48, but now no need to check for (code < 100) below
+      return HTTP_MALFORMED;
+    }
+  }
+  if(buffer[idx + 3] != ' ') {
+    return HTTP_MALFORMED;
+  }
+  uint32_t code = ((buffer[idx + 0] - 48) * 100) + ((buffer[idx + 1] - 48) * 10) + (buffer[idx + 2] - 48);
+  switch(code) {
+    case HTTP_CONTINUE:
+    case HTTP_SWITCHING_PROTOCOLS:
+    case HTTP_PROCESSING:
+    case HTTP_OK:
+    case HTTP_CREATED:
+    case HTTP_ACCEPTED:
+    case HTTP_NON_AUTHORITATIVE_INFORMATION:
+    case HTTP_NO_CONTENT:
+    case HTTP_RESET_CONTENT:
+    case HTTP_PARTIAL_CONTENT:
+    case HTTP_MULTI_STATUS:
+    case HTTP_ALREADY_REPORTED:
+    case HTTP_IM_USED:
+    case HTTP_MULTIPLE_CHOICES:
+    case HTTP_MOVED_PERMANENTLY:
+    case HTTP_FOUND:
+    case HTTP_SEE_OTHER:
+    case HTTP_NOT_MODIFIED:
+    case HTTP_USE_PROXY:
+    case HTTP_TEMPORARY_REDIRECT:
+    case HTTP_PERMANENT_REDIRECT:
+    case HTTP_BAD_REQUEST:
+    case HTTP_UNAUTHORIZED:
+    case HTTP_PAYMENT_REQUIRED:
+    case HTTP_FORBIDDEN:
+    case HTTP_NOT_FOUND:
+    case HTTP_METHOD_NOT_ALLOWED:
+    case HTTP_NOT_ACCEPTABLE:
+    case HTTP_PROXY_AUTHENTICATION_REQUIRED:
+    case HTTP_REQUEST_TIMEOUT:
+    case HTTP_CONFLICT:
+    case HTTP_GONE:
+    case HTTP_LENGTH_REQUIRED:
+    case HTTP_PRECONDITION_FAILED:
+    case HTTP_PAYLOAD_TOO_LARGE:
+    case HTTP_REQUEST_URI_TOO_LONG:
+    case HTTP_UNSUPPORTED_MEDIA_TYPE:
+    case HTTP_REQUESTED_RANGE_NOT_SATISFIABLE:
+    case HTTP_EXPECTATION_FAILED:
+    case HTTP_IM_A_TEAPOT:
+    case HTTP_MISDIRECTED_REQUEST:
+    case HTTP_UNPROCESSABLE_ENTITY:
+    case HTTP_LOCKED:
+    case HTTP_FAILED_DEPENDENCY:
+    case HTTP_UPGRADE_REQUIRED:
+    case HTTP_PRECONDITION_REQUIRED:
+    case HTTP_TOO_MANY_REQUESTS:
+    case HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE:
+    case HTTP_CONNECTION_CLOSED_WITHOUT_RESPONSE:
+    case HTTP_UNAVAILABLE_FOR_LEGAL_REASONS:
+    case HTTP_CLIENT_CLOSED_REQUEST:
+    case HTTP_INTERNAL_SERVER_ERROR:
+    case HTTP_NOT_IMPLEMENTED:
+    case HTTP_BAD_GATEWAY:
+    case HTTP_SERVICE_UNAVAILABLE:
+    case HTTP_GATEWAY_TIMEOUT:
+    case HTTP_HTTP_VERSION_NOT_SUPPORTED:
+    case HTTP_VARIANT_ALSO_NEGOTIATES:
+    case HTTP_INSUFFICIENT_STORAGE:
+    case HTTP_LOOP_DETECTED:
+    case HTTP_NOT_EXTENDED:
+    case HTTP_NETWORK_AUTHENTICATION_REQUIRED:
+    case HTTP_NETWORK_CONNECT_TIMEOUT_ERROR: {
+      break;
+    }
+    default: {
+      return HTTP_INVAL_STATUS_CODE;
+    }
+  }
+  response->status_code = code;
+  idx += 4;
+  if((flags & HTTP_IGNORE_REASON_PHRASE) == 0) {
+    parse_reason_phrase:
+    for(uint32_t i = 0; i < settings->max_reason_phrase_length; ++i) {
+      if(buffer[idx + i + 1] == '\r') { // assuming that before calling this function we calculated `len` by finding \r\n\r\n
+        if(buffer[idx + i + 2] != '\n') {
+          return HTTP_MALFORMED;
+        } else {
+          response->reason_phrase = (char*) buffer + idx;
+          response->reason_phrase_length = i + 1;
+          idx += i + 3;
+        }
+      } else if(buffer[idx + i + 1] == '\n') {
+        return HTTP_MALFORMED;
+      } else if(i == settings->max_reason_phrase_length - 1) {
+        return HTTP_REASON_PHRASE_TOO_LONG;
+      }
+    }
+  }
+  if(session != NULL) {
+    session->last_at = HTTP_PARSE_HEADERS;
+    session->idx = idx;
+  }
+  if((flags & HTTP_PARSE_STATUS) != 0) {
+    return 0;
+  }
+  parse_headers:
+  while(memcmp(buffer + idx, &((uint8_t[]){ '\r', '\n' }), 2) != 0) {
+    if(response->header_count == settings->max_header_amount) {
+      errno = HTTP_TOO_MANY_HEADERS;
+      return HTTP_NOT_ALLOWED;
+    }
+    
+    ++response->header_count;
+  }
+  idx += 2;
+  if(session != NULL) {
+    session->last_at = HTTP_PARSE_BODY;
+    session->idx = idx;
+  }
+  if((flags & HTTP_PARSE_HEADERS) != 0) {
+    return 0;
+  }
+  parse_body:
+  response->body = buffer + idx;
+  response->body_length = len - idx;
   return 0;
 }
