@@ -23,7 +23,45 @@ extern "C" {
 
 #include "net.h"
 
+enum HTTPCodes {
+  HTTP_GET,
+  HTTP_HEAD,
+  HTTP_POST,
+  HTTP_PUT,
+  HTTP_DELETE,
+  HTTP_TRACE,
+  HTTP_OPTIONS,
+  HTTP_CONNECT,
+  HTTP_PATCH,
+  
+  HTTP_PARSE_METHOD = 0,
+  HTTP_PARSE_PATH,
+  HTTP_PARSE_VERSION,
+  HTTP_PARSE_HEADERS,
+  HTTP_PARSE_BODY,
+  
+  HTTP_METHOD_NOTSUP = 1,
+  HTTP_INVAL_METHOD,
+  HTTP_MALFORMED,
+  HTTP_VERSION_NOTSUP
+};
 
+struct HTTP_request {
+  char* path;
+  struct HTTP_header* headers;
+  uint8_t* body;
+  uint32_t path_length;
+  uint32_t header_count;
+  uint32_t body_length;
+  int method;
+};
+
+struct HTTP_parser_session {
+  ssize_t idx;
+  int last_at;
+};
+
+int HTTPv1_1_Parser(uint8_t*, ssize_t, int, struct HTTP_request*, struct HTTP_parser_session*);
 
 
 
