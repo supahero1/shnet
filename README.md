@@ -11,6 +11,7 @@ I can see 4 steps associated with this project:
 2. HTTP layer (TO BE DONE)  
 3. WebSocket layer  
 4. TLS layer (to be merged with the TCP layer)  
+
 At first I was thinking about doing TLS straightforwardly with OpenSSL or WolfSSL or any other TLS library, but then I realised it might be overkill. I decided to delay it until the end and write it myself (probably with some help of a library providing optimised cryptographic functions, maybe OpenSSL).
 # Current progress
 - Support for both blocking and non blocking sockets, client and server  
