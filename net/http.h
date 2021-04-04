@@ -61,9 +61,7 @@ struct HTTP_parser_session {
   int last_at;
 };
 
-int HTTPv1_1_Parser(uint8_t*, ssize_t, int, struct HTTP_request*, struct HTTP_parser_session*);
-
-
+int HTTPv1_1_raw_parser(uint8_t*, ssize_t, int, struct HTTP_request*, struct HTTP_settings*, struct HTTP_parser_session*);
 
 
 
