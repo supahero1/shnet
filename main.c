@@ -286,6 +286,8 @@ int main(int argc, char** argv) {
       printf("- %s\n", path_space);
     }
   }
+  struct HTTP_header* h = HTTP_get_header(response.headers, response.header_amount, "upgRaDE", strlen("Upgrade"));
+  printf("%p %p\n", (void*) h, (void*) response.headers);
   free(path_space);
   return 0;
   if(argc < 5) {

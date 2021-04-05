@@ -17,8 +17,9 @@
 #include "http.h"
 
 #include <errno.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 
 #include <stdio.h>
 
@@ -85,6 +86,7 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
     .body = NULL,
     .path_length = 0,
     .header_amount = 0,
+    .body_length = 0,
     .method = 0
   };
   switch(buffer[0]) {
@@ -338,7 +340,8 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
     .reason_phrase = NULL,
     .header_amount = 0,
     .status_code = 0,
-    .reason_phrase_length = 0
+    .reason_phrase_length = 0,
+    .body_length = 0
   };
   if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '1', ' ' }), 9) != 0) {
     if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '0', ' ' }), 9) == 0) {
@@ -629,6 +632,163 @@ char* HTTP_strerror(const int err) {
     case HTTP_NOT_EXTENDED: return "HTTP_NOT_EXTENDED";
     case HTTP_NETWORK_AUTHENTICATION_REQUIRED: return "HTTP_NETWORK_AUTHENTICATION_REQUIRED";
     case HTTP_NETWORK_CONNECT_TIMEOUT_ERROR: return "HTTP_NETWORK_CONNECT_TIMEOUT_ERROR";
-    default: return "Unknown error";
+    default: return "HTTP_UNKNOWN_ERROR";
   }
+}
+
+struct HTTP_header* HTTP_get_header(struct HTTP_header* const headers, const uint32_t headers_amount, const char* const name, const uint32_t name_length) {
+  for(uint32_t i = 0; i < headers_amount; ++i) {
+    if(headers[i].name_length != name_length || strncasecmp(headers[i].name, name, name_length) != 0) {
+      continue;
+    } else {
+      return headers + i;
+    }
+  }
+  return NULL;
+}
+
+uint32_t HTTP_get_method_length(const int method) {
+  switch(method) {
+    case HTTP_GET: return 3;
+    case HTTP_HEAD: return 4;
+    case HTTP_POST: return 4;
+    case HTTP_PUT: return 3;
+    case HTTP_DELETE: return 6;
+    case HTTP_TRACE: return 5;
+    case HTTP_OPTIONS: return 7;
+    case HTTP_CONNECT: return 7;
+    case HTTP_PATCH: return 5;
+    default: {
+      return -1;
+    }
+  }
+}
+
+char* HTTP_get_method_name(const int method) {
+  switch(method) {
+    case HTTP_GET: return "GET";
+    case HTTP_HEAD: return "HEAD";
+    case HTTP_POST: return "POST";
+    case HTTP_PUT: return "PUT";
+    case HTTP_DELETE: return "DELETE";
+    case HTTP_TRACE: return "TRACE";
+    case HTTP_OPTIONS: return "OPTIONS";
+    case HTTP_CONNECT: return "CONNECT";
+    case HTTP_PATCH: return "PATCH";
+    default: {
+      return NULL;
+    }
+  }
+}
+
+static void HTTP_create_nooverlap_headers_body(char* const buffer, char* buf, const struct HTTP_request* const request) {
+  for(uint32_t i = 0; i < request->header_amount; ++i) {
+    (void) memcpy(buf, request->headers[i].name, request->headers[i].name_length);
+    buf += request->headers[i].name_length;
+    (void) strcpy(buf, ": ");
+    buf += 2;
+    (void) memcpy(buf, request->headers[i].value, request->headers[i].value_length);
+    buf += request->headers[i].value_length;
+    (void) strcpy(buf, "\r\n");
+    buf += 2;
+  }
+  (void) strcpy(buf, "\r\n");
+  (void) memcpy(buf + 2, request->body, request->body_length);
+}
+
+static void HTTP_create_overlap_headers_body(char* const buffer, char* buf, const struct HTTP_request* const request) {
+  for(uint32_t i = 0; i < request->header_amount; ++i) {
+    (void) memmove(buf, request->headers[i].name, request->headers[i].name_length);
+    buf += request->headers[i].name_length;
+    (void) strcpy(buf, ": ");
+    buf += 2;
+    (void) memmove(buf, request->headers[i].value, request->headers[i].value_length);
+    buf += request->headers[i].value_length;
+    (void) strcpy(buf, "\r\n");
+    buf += 2;
+  }
+  (void) strcpy(buf, "\r\n");
+  (void) memmove(buf + 2, request->body, request->body_length);
+}
+
+int HTTP_create_request(char** const buffer, const uint32_t len, const int flags, const struct HTTP_request* const request) {
+  const uint32_t mnl = HTTP_get_method_length(request->method);
+  /*
+    METHOD PATH HTTP/1.1\r\n   <- 1 + 1 + 8 + 2 (+ 2 (\r\n) at the end of headers) = 14
+    HEADERS
+    \r\n
+    BODY
+  */
+  uint32_t total_length = mnl + request->path_length + request->body_length + 14;
+  for(uint32_t i = 0; i < request->header_amount; ++i) {
+    total_length += request->headers[i].name_length + request->headers[i].value_length + 4;
+  }
+  if(buffer != NULL) {
+    if(total_length > len) {
+      return ENOMEM;
+    }
+  } else {
+    *buffer = malloc(total_length);
+    if(*buffer == NULL) {
+      return ENOMEM;
+    }
+  }
+  (void) strcpy(*buffer, HTTP_get_method_name(request->method));
+  char* buf = *buffer + mnl;
+  if((flags & HTTP_DATA_MIGHT_OVERLAP) == 0) {
+    (void) memcpy(buf, request->path, request->path_length);
+    buf += request->path_length;
+    (void) strcpy(buf, " HTTP/1.1\r\n");
+    buf += 11;
+    HTTP_create_nooverlap_headers_body(*buffer, buf, request);
+  } else {
+    (void) memmove(buf, request->path, request->path_length);
+    buf += request->path_length;
+    (void) strcpy(buf, " HTTP/1.1\r\n");
+    buf += 11;
+    HTTP_create_overlap_headers_body(*buffer, buf, request);
+  }
+  return 0;
+}
+
+int HTTP_create_response(char** const buffer, const uint32_t len, const int flags, const struct HTTP_response* const response) {
+  /*
+    HTTP/1.1 XXX \r\n   <- 8 + 1 + 3 + 1 + 2 (+ 2 (\r\n) at the end of headers) = 17
+    HEADERS
+    \r\n
+    BODY
+  */
+  uint32_t total_length = response->reason_phrase_length + response->body_length + 17;
+  for(uint32_t i = 0; i < response->header_amount; ++i) {
+    total_length += response->headers[i].name_length + response->headers[i].value_length + 4;
+  }
+  if(buffer != NULL) {
+    if(total_length > len) {
+      return ENOMEM;
+    }
+  } else {
+    *buffer = malloc(total_length);
+    if(*buffer == NULL) {
+      return ENOMEM;
+    }
+  }
+  (void) strcpy(*buffer, "HTTP/1.1 ");
+  (*buffer)[9] = response->status_code / 100;
+  (*buffer)[10] = (response->status_code % 100) / 10;
+  (*buffer)[11] = response->status_code % 10;
+  (*buffer)[12] = ' ';
+  if((flags & HTTP_DATA_MIGHT_OVERLAP) == 0) {
+    (void) memcpy(*buffer + 13, response->reason_phrase, response->reason_phrase_length);
+    char* buf = *buffer + 13 + response->reason_phrase_length;
+    (void) strcpy(buf, "\r\n");
+    buf += 2;
+    HTTP_create_nooverlap_headers_body(*buffer, buf, (struct HTTP_request*) response);
+  } else {
+    (void) memmove(*buffer + 13, response->reason_phrase, response->reason_phrase_length);
+    char* buf = *buffer + 13 + response->reason_phrase_length;
+    (void) strcpy(buf, "\r\n");
+    buf += 2;
+    HTTP_create_overlap_headers_body(*buffer, buf, (struct HTTP_request*) response);
+  }
+  return 0;
 }

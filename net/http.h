@@ -48,6 +48,11 @@ enum HTTP_codes {
   HTTP_PARSE_BODY = 16,
   HTTP_ALLOW_REPETITIVE_HEADER_WHITESPACE = 32,
   
+  // creating options
+  
+  HTTP_DATA_MIGHT_OVERLAP = 1,
+  // HTTP_CHUNK,
+  
   // parsing return values
   
   HTTP_VALID = 0,
@@ -144,11 +149,12 @@ struct HTTP_header {
 };
 
 struct HTTP_request {
-  char* path;
   struct HTTP_header* headers;
   uint8_t* body;
-  uint32_t path_length;
+  char* path;
   uint32_t header_amount;
+  uint32_t body_length;
+  uint32_t path_length;
   int method;
 };
 
@@ -164,6 +170,7 @@ struct HTTP_response {
   uint8_t* body;
   char* reason_phrase;
   uint32_t header_amount;
+  uint32_t body_length;
   uint32_t status_code;
   uint32_t reason_phrase_length;
 };
@@ -172,6 +179,15 @@ extern int HTTPv1_1_response_parser(uint8_t* const, const uint32_t, const int, s
 
 extern char* HTTP_strerror(const int);
 
+extern struct HTTP_header* HTTP_get_header(struct HTTP_header* const, const uint32_t, const char* const, const uint32_t);
+
+extern uint32_t HTTP_get_method_length(const int);
+
+extern char* HTTP_get_method_name(const int);
+
+extern int HTTP_create_request(char** const, const uint32_t, const int, const struct HTTP_request* const);
+
+extern int HTTP_create_response(char** const, const uint32_t, const int, const struct HTTP_response* const);
 
 #ifdef __cplusplus
 }
