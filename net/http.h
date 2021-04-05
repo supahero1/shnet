@@ -23,6 +23,8 @@ extern "C" {
 
 #include "net.h"
 
+extern struct HTTP_settings HTTP_default_settings(void);
+
 enum HTTP_codes {
   HTTP_GET,
   HTTP_HEAD,
@@ -40,24 +42,28 @@ enum HTTP_codes {
   HTTP_PARSE_STATUS = 1,
   HTTP_PARSE_REASON_PHRASE,
   HTTP_IGNORE_REASON_PHRASE = 4,
-  HTTP_PARSE_PATH = 8,
-  HTTP_PARSE_VERSION = 16,
-  HTTP_PARSE_HEADERS = 32,
-  HTTP_PARSE_BODY = 64,
+  HTTP_PARSE_PATH = 2,
+  HTTP_PARSE_VERSION = 4,
+  HTTP_PARSE_HEADERS = 8,
+  HTTP_PARSE_BODY = 16,
+  HTTP_ALLOW_REPETITIVE_HEADER_WHITESPACE = 32,
   
   // parsing return values
   
-  HTTP_INVAL_METHOD = 1,
+  HTTP_VALID = 0,
+  HTTP_INVAL_METHOD,
   HTTP_MALFORMED,
   HTTP_VERSION_NOTSUP,
   HTTP_NOT_ALLOWED,
   HTTP_INVAL_STATUS_CODE,
-  HTTP_PATH_TOO_LONG = 0,
+  HTTP_PATH_TOO_LONG,
   HTTP_TOO_MANY_HEADERS,
   HTTP_HEADER_NAME_TOO_LONG,
   HTTP_HEADER_VALUE_TOO_LONG,
   HTTP_REASON_PHRASE_TOO_LONG,
-  HTTP_TIMEDOUT,
+  HTTP_TIMEOUT,
+  HTTP_NOMEM,
+  HTTP_ILLEGAL_SPACE,
   
   // status codes (extended)
   
@@ -130,18 +136,24 @@ enum HTTP_codes {
   HTTP_NETWORK_CONNECT_TIMEOUT_ERROR = 599
 };
 
+struct HTTP_header {
+  char* name;
+  char* value;
+  uint32_t name_length;
+  uint32_t value_length;
+};
+
 struct HTTP_request {
   char* path;
   struct HTTP_header* headers;
   uint8_t* body;
   uint32_t path_length;
-  uint32_t header_count;
-  uint32_t body_length;
+  uint32_t header_amount;
   int method;
 };
 
 struct HTTP_parser_session {
-  ssize_t idx;
+  uint32_t idx;
   int last_at;
 };
 
@@ -151,13 +163,14 @@ struct HTTP_response {
   struct HTTP_header* headers;
   uint8_t* body;
   char* reason_phrase;
-  uint32_t header_count;
-  uint32_t body_length;
+  uint32_t header_amount;
   uint32_t status_code;
   uint32_t reason_phrase_length;
 };
 
 extern int HTTPv1_1_response_parser(uint8_t* const, const uint32_t, const int, struct HTTP_response* const, const struct HTTP_settings* const, struct HTTP_parser_session* const);
+
+extern char* HTTP_strerror(const int);
 
 
 #ifdef __cplusplus

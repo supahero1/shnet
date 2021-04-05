@@ -26,7 +26,7 @@ extern "C" {
 struct HTTP_settings {
   uint32_t max_path_length;          // 4096
   uint32_t max_header_amount;        // 64
-  uint32_t max_header_name_length;   // 32
+  uint32_t max_header_name_length;   // 64
   uint32_t max_header_value_length;  // 4096
   uint32_t request_idle_timeout;     // 8000ms
   uint32_t max_reason_phrase_length; // 64

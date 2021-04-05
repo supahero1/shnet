@@ -1,6 +1,7 @@
 #include "check.h"
 
 #include "net/net.h"
+#include "net/http.h"
 
 #include <math.h>
 #include <sched.h>
@@ -233,7 +234,60 @@ void asyncgaiserver(struct addrinfo* info, int status) {
 }
 
 int main(int argc, char** argv) {
-  int err;
+  /*char req[] = "CONNECT /lmfao/lol?XD HTTP/1.1\r\nConnection: close\r\nUpgrade:  websocket\r\n\r\n\0";
+  printf("parsing:\n\n%s", req);
+  struct HTTP_request request;
+  struct HTTP_settings settings = HTTP_default_settings();
+  int err = HTTPv1_1_request_parser((uint8_t*) req, strlen(req), HTTP_ALLOW_REPETITIVE_HEADER_WHITESPACE, &request, &settings, NULL);
+  char* path_space = malloc(request.path_length + 1);
+  memcpy(path_space, request.path, request.path_length);
+  path_space[request.path_length] = 0;
+  printf("%s\n", HTTP_strerror(err));
+  if(err == HTTP_VALID) {
+    printf("path: %s\n"
+           "path length: %u\n"
+           "header amount: %u\n",
+           path_space, request.path_length, request.header_amount);
+    for(uint32_t i = 0; i < request.header_amount; ++i) {
+      path_space = realloc(path_space, request.headers[i].name_length + 1);
+      memcpy(path_space, request.headers[i].name, request.headers[i].name_length);
+      path_space[request.headers[i].name_length] = 0;
+      printf("%s ", path_space);
+      path_space = realloc(path_space, request.headers[i].value_length + 1);
+      memcpy(path_space, request.headers[i].value, request.headers[i].value_length);
+      path_space[request.headers[i].value_length] = 0;
+      printf("- %s\n", path_space);
+    }
+  }
+  free(path_space);*/
+  char res[] = "HTTP/1.1 200 OK\r\nConnection:close\r\nUpgrade:websocket\r\n\r\n\0";
+  printf("parsing:\n\n%s", res);
+  struct HTTP_response response;
+  struct HTTP_settings settings = HTTP_default_settings();
+  int err = HTTPv1_1_response_parser((uint8_t*) res, strlen(res), 0, &response, &settings, NULL);
+  char* path_space = malloc(response.reason_phrase_length + 1);
+  memcpy(path_space, response.reason_phrase, response.reason_phrase_length);
+  path_space[response.reason_phrase_length] = 0;
+  printf("%s\n", HTTP_strerror(err));
+  if(err == HTTP_VALID) {
+    printf("status code: %u\n"
+           "reason phrase: %s\n"
+           "reason phrase length: %u\n"
+           "header amount: %u\n",
+           response.status_code, path_space, response.reason_phrase_length, response.header_amount);
+    for(uint32_t i = 0; i < response.header_amount; ++i) {
+      path_space = realloc(path_space, response.headers[i].name_length + 1);
+      memcpy(path_space, response.headers[i].name, response.headers[i].name_length);
+      path_space[response.headers[i].name_length] = 0;
+      printf("%s ", path_space);
+      path_space = realloc(path_space, response.headers[i].value_length + 1);
+      memcpy(path_space, response.headers[i].value, response.headers[i].value_length);
+      path_space[response.headers[i].value_length] = 0;
+      printf("- %s\n", path_space);
+    }
+  }
+  free(path_space);
+  return 0;
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
     return 1;
