@@ -54,6 +54,26 @@ static const uint8_t HTTP_tokens[] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+static const uint8_t HTTP_text[] = {
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
 int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int flags, struct HTTP_request* const request, const struct HTTP_settings* const settings, struct HTTP_parser_session* const session) {
   if(len < 18) { // GET / HTTP/1.1\r\n\r\n
     return HTTP_MALFORMED;
@@ -280,7 +300,7 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
           idx = i + 2;
           break;
         }
-      } else if(HTTP_tokens[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
+      } else if(HTTP_text[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
         goto free_malformed;
       }
       ++i;
@@ -524,7 +544,7 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
           idx = i + 2;
           break;
         }
-      } else if(HTTP_tokens[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
+      } else if(HTTP_text[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
         goto free_malformed;
       }
       ++i;
@@ -693,7 +713,9 @@ static void HTTP_create_nooverlap_headers_body(char* buf, const struct HTTP_requ
     buf += 2;
   }
   (void) strcpy(buf, "\r\n");
-  (void) memcpy(buf + 2, request->body, request->body_length);
+  if(request->body != NULL) {
+    (void) memcpy(buf + 2, request->body, request->body_length);
+  }
 }
 
 static void HTTP_create_overlap_headers_body(char* buf, const struct HTTP_request* const request) {
@@ -708,7 +730,9 @@ static void HTTP_create_overlap_headers_body(char* buf, const struct HTTP_reques
     buf += 2;
   }
   (void) strcpy(buf, "\r\n");
-  (void) memmove(buf + 2, request->body, request->body_length);
+  if(request->body != NULL) {
+    (void) memmove(buf + 2, request->body, request->body_length);
+  }
 }
 
 uint32_t HTTP_request_size(const struct HTTP_request* const request) {
@@ -722,7 +746,7 @@ uint32_t HTTP_request_size(const struct HTTP_request* const request) {
 uint32_t HTTP_create_request(char** const buffer, const uint32_t max_len, const int flags, const struct HTTP_request* const request) {
   const uint32_t length = HTTP_request_size(request);
   if(*buffer != NULL) {
-    if(length > max_len) {
+    if(max_len != 0 && length > max_len) {
       return 0;
     }
   } else {
@@ -761,7 +785,7 @@ uint32_t HTTP_response_size(const struct HTTP_response* const response) {
 uint32_t HTTP_create_response(char** const buffer, const uint32_t max_len, const int flags, const struct HTTP_response* const response) {
   const uint32_t length = HTTP_response_size(response);
   if(*buffer != NULL) {
-    if(length > max_len) {
+    if(max_len != 0 && length > max_len) {
       return 0;
     }
   } else {

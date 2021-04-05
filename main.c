@@ -57,6 +57,31 @@ void onmessage(struct NETSocket* socket) {
   long bytes = recv(socket->sfd, buffer, 50000, 0);
   printf("nice got %ld bytes\n", bytes);
   printf("%s\n", buffer);
+  printf("\nnow parsed:\n");
+  struct HTTP_response response;
+  struct HTTP_settings settings = HTTP_default_settings();
+  int err = HTTPv1_1_response_parser((uint8_t*) buffer, (uint32_t) bytes, 0, &response, &settings, NULL);
+  char* path_space = malloc(response.reason_phrase_length + 1);
+  memcpy(path_space, response.reason_phrase, response.reason_phrase_length);
+  path_space[response.reason_phrase_length] = 0;
+  printf("%s\n", HTTP_strerror(err));
+  if(err == HTTP_VALID) {
+    printf("status code: %u\n"
+           "reason phrase: %s\n"
+           "reason phrase length: %u\n"
+           "header amount: %u\n",
+           response.status_code, path_space, response.reason_phrase_length, response.header_amount);
+    for(uint32_t i = 0; i < response.header_amount; ++i) {
+      path_space = realloc(path_space, response.headers[i].name_length + 1);
+      memcpy(path_space, response.headers[i].name, response.headers[i].name_length);
+      path_space[response.headers[i].name_length] = 0;
+      printf("%s ", path_space);
+      path_space = realloc(path_space, response.headers[i].value_length + 1);
+      memcpy(path_space, response.headers[i].value, response.headers[i].value_length);
+      path_space[response.headers[i].value_length] = 0;
+      printf("- %s\n", path_space);
+    }
+  }
 }
 
 void onclose(struct NETSocket* socket) {
@@ -119,8 +144,63 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
         exit(1);
       }
       puts("AddSocket succeeded");
-      char buf[] = "GET /index.html HTTP/1.1\r\nConnection: close\r\n\r\n";
-      err = TCPSend(socket, buf, sizeof(buf), &manager);
+      struct HTTP_header headers[] = {
+        {
+          .name = "Connection",
+          .name_length = strlen("connection"),
+          .value = "Close",
+          .value_length = strlen("close")
+        },
+        {
+          .name = "Host",
+          .name_length = strlen("Host"),
+          .value = "diep.io",
+          .value_length = strlen("diep.io")
+        },
+        {
+          .name = "Origin",
+          .name_length = strlen("Origin"),
+          .value = "http://diep.io",
+          .value_length = strlen("http://diep.io")
+        },
+        {
+          .name = "Referer",
+          .name_length = strlen("Referer"),
+          .value = "http://diep.io/",
+          .value_length = strlen("http://diep.io/")
+        },
+        {
+          .name = "User-Agent",
+          .name_length = strlen("User-Agent"),
+          .value = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:87.0) Gecko/20100101 Firefox/87.0",
+          .value_length = strlen("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:87.0) Gecko/20100101 Firefox/87.0")
+        },
+      };
+      char* buffer = NULL;
+      struct HTTP_request request = (struct HTTP_request) {
+        .headers = headers,
+        .body = NULL,
+        .header_amount = 5,
+        .body_length = 0,
+        .method = HTTP_GET,
+        .path = "/index.html",
+        .path_length = strlen("/index.html")
+      };
+      err = HTTP_create_request(&buffer, 4096, 0, &request);
+      if(err == 0) {
+        puts("out of memory :(");
+        exit(1);
+      }
+      puts("HTTP_create_request() succeeded");
+      char* lmfao = malloc(err + 1);
+      if(lmfao == NULL) {
+        puts("ehh");
+        exit(1);
+      }
+      (void) memcpy(lmfao, buffer, err);
+      lmfao[err] = 0;
+      printf("generated request:\n%s", lmfao);
+      err = TCPSend(socket, buffer, err, &manager);
       if(err != 0) {
         printf("error at TCPSend %d | %s\n", err, strerror(err));
         exit(1);
@@ -291,14 +371,14 @@ int main(int argc, char** argv) {
   printf("%p %p\n", (void*) h, (void*) response.headers);
   free(path_space);*/
   
-  char* buffer = NULL;
+  /*char* buffer = NULL;
   char body[] = "This is a HTTP body I have just written. HTTP blah blah.";
   struct HTTP_header headers[3] = {
     {
       .name = "connection",
       .name_length = strlen("connection"),
-      .value = "upgrade",
-      .value_length = strlen("upgrade")
+      .value = "close",
+      .value_length = strlen("close")
     },
     {
       .name = "upgrade",
@@ -312,7 +392,8 @@ int main(int argc, char** argv) {
       .value = "pl_PL",
       .value_length = strlen("pl_PL")
     }
-  };
+  };*/
+  
   /*struct HTTP_request request = (struct HTTP_request) {
     .headers = headers,
     .body = (uint8_t*) body,
@@ -323,7 +404,8 @@ int main(int argc, char** argv) {
     .path_length = strlen("/submit/request")
   };
   int err = HTTP_create_request(&buffer, 4096, 0, &request);*/
-  struct HTTP_response response = {
+  
+  /*struct HTTP_response response = {
     .headers = headers,
     .body = (uint8_t*) body,
     .header_amount = 3,
@@ -346,7 +428,12 @@ int main(int argc, char** argv) {
   (void) memcpy(lmfao, buffer, err);
   lmfao[err] = 0;
   printf("output:\n%s", lmfao);
-  return 0;
+  return 0;*/
+  
+  
+  
+  
+  int err;
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
     return 1;
