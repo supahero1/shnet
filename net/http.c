@@ -29,7 +29,6 @@ struct HTTP_settings HTTP_default_settings() {
     .max_header_amount = 64,
     .max_header_name_length = 64,
     .max_header_value_length = 4096,
-    .request_idle_timeout = 8000,
     .max_reason_phrase_length = 64
   };
 }
@@ -43,26 +42,6 @@ static const uint8_t HTTP_tokens[] = {
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1,
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0,
-  
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-static const uint8_t HTTP_text[] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -300,7 +279,7 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
           idx = i + 2;
           break;
         }
-      } else if(HTTP_text[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
+      } else if((buffer[i] < 32 || buffer[i] == 127) && buffer[i] != ' ' && buffer[i] != '\t') {
         goto free_malformed;
       }
       ++i;
@@ -544,7 +523,7 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
           idx = i + 2;
           break;
         }
-      } else if(HTTP_text[buffer[i]] == 0 && buffer[i] != ' ' && buffer[i] != '\t') {
+      } else if((buffer[i] < 32 || buffer[i] == 127) && buffer[i] != ' ' && buffer[i] != '\t') {
         goto free_malformed;
       }
       ++i;

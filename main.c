@@ -154,20 +154,14 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
         {
           .name = "Host",
           .name_length = strlen("Host"),
-          .value = "diep.io",
-          .value_length = strlen("diep.io")
+          .value = "wikipedia.com",
+          .value_length = strlen("wikipedia.com")
         },
         {
           .name = "Origin",
           .name_length = strlen("Origin"),
-          .value = "http://diep.io",
-          .value_length = strlen("http://diep.io")
-        },
-        {
-          .name = "Referer",
-          .name_length = strlen("Referer"),
-          .value = "http://diep.io/",
-          .value_length = strlen("http://diep.io/")
+          .value = "http://wikipedia.com",
+          .value_length = strlen("http://wikipedia.com")
         },
         {
           .name = "User-Agent",
@@ -175,6 +169,12 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
           .value = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:87.0) Gecko/20100101 Firefox/87.0",
           .value_length = strlen("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:87.0) Gecko/20100101 Firefox/87.0")
         },
+        {
+          .name = "Accept-Encoding",
+          .name_length = strlen("Accept-Encoding"),
+          .value = "gzip",
+          .value_length = strlen("gzip")
+        }
       };
       char* buffer = NULL;
       struct HTTP_request request = (struct HTTP_request) {
