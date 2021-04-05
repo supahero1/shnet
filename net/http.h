@@ -185,9 +185,13 @@ extern uint32_t HTTP_get_method_length(const int);
 
 extern char* HTTP_get_method_name(const int);
 
-extern int HTTP_create_request(char** const, const uint32_t, const int, const struct HTTP_request* const);
+extern uint32_t HTTP_request_size(const struct HTTP_request* const);
 
-extern int HTTP_create_response(char** const, const uint32_t, const int, const struct HTTP_response* const);
+extern uint32_t HTTP_create_request(char** const, const uint32_t, const int, const struct HTTP_request* const);
+
+extern uint32_t HTTP_response_size(const struct HTTP_response* const);
+
+extern uint32_t HTTP_create_response(char** const, const uint32_t, const int, const struct HTTP_response* const);
 
 #ifdef __cplusplus
 }

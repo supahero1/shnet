@@ -260,7 +260,8 @@ int main(int argc, char** argv) {
     }
   }
   free(path_space);*/
-  char res[] = "HTTP/1.1 200 OK\r\nConnection:close\r\nUpgrade:websocket\r\n\r\n\0";
+  
+  /*char res[] = "HTTP/1.1 200 OK\r\nConnection:close\r\nUpgrade:websocket\r\n\r\n\0";
   printf("parsing:\n\n%s", res);
   struct HTTP_response response;
   struct HTTP_settings settings = HTTP_default_settings();
@@ -288,7 +289,63 @@ int main(int argc, char** argv) {
   }
   struct HTTP_header* h = HTTP_get_header(response.headers, response.header_amount, "upgRaDE", strlen("Upgrade"));
   printf("%p %p\n", (void*) h, (void*) response.headers);
-  free(path_space);
+  free(path_space);*/
+  
+  char* buffer = NULL;
+  char body[] = "This is a HTTP body I have just written. HTTP blah blah.";
+  struct HTTP_header headers[3] = {
+    {
+      .name = "connection",
+      .name_length = strlen("connection"),
+      .value = "upgrade",
+      .value_length = strlen("upgrade")
+    },
+    {
+      .name = "upgrade",
+      .name_length = strlen("upgrade"),
+      .value = "websocket",
+      .value_length = strlen("websocket")
+    },
+    {
+      .name = "accept-language",
+      .name_length = strlen("accept-language"),
+      .value = "pl_PL",
+      .value_length = strlen("pl_PL")
+    }
+  };
+  /*struct HTTP_request request = (struct HTTP_request) {
+    .headers = headers,
+    .body = (uint8_t*) body,
+    .header_amount = 3,
+    .body_length = strlen(body),
+    .method = HTTP_CONNECT,
+    .path = "/submit/request",
+    .path_length = strlen("/submit/request")
+  };
+  int err = HTTP_create_request(&buffer, 4096, 0, &request);*/
+  struct HTTP_response response = {
+    .headers = headers,
+    .body = (uint8_t*) body,
+    .header_amount = 3,
+    .body_length = strlen(body),
+    .status_code = HTTP_OK,
+    .reason_phrase = "OK",
+    .reason_phrase_length = strlen("OK")
+  };
+  int err = HTTP_create_response(&buffer, 4096, 0, &response);
+  if(err == 0) {
+    puts("error lmfao");
+    exit(1);
+  }
+  printf("HTTP_create_xxx succeeded, size of output: %u\n", err);
+  char* lmfao = malloc(err + 1);
+  if(lmfao == NULL) {
+    puts("ehh");
+    exit(1);
+  }
+  (void) memcpy(lmfao, buffer, err);
+  lmfao[err] = 0;
+  printf("output:\n%s", lmfao);
   return 0;
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
