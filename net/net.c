@@ -22,9 +22,9 @@
 #include <string.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
-#include <linux/tls.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <netinet/tcp.h>
@@ -83,7 +83,7 @@ void TCPServerFree(struct NETServer* const server) {
 }
 
 static void TCPKill(struct NETSocket* const socket) {
-  socket->state = NET_CLOSED;
+  atomic_store(&socket->state, NET_CLOSED);
   if(socket->onclose != NULL) {
     socket->onclose(socket);
   }
@@ -105,17 +105,19 @@ int TCPSend(struct NETSocket* const socket, void* const buffer, const ssize_t le
       socket->send_length += length - bytes;
       if(manager != NULL) {
         epoll_ctl(manager->epoll, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
-          .events = EPOLLIN | EPOLLRDHUP,
+          .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP,
           .data = (epoll_data_t) {
             .fd = socket->sfd
           }
         }));
       }
     } else {
-      if(errno == EPIPE && socket->state != NET_CLOSED) {
-        puts("connection shut down unexpectedly");
-        TCPKill(socket);
-        DeleteEventlessSocket(manager, socket->sfd);
+      if(errno == EPIPE) {
+        if(atomic_exchange(&socket->state, NET_CLOSED) != NET_CLOSED) {
+          puts("connection shut down unexpectedly");
+          TCPKill(socket);
+          DeleteEventlessSocket(manager, socket->sfd);
+        }
       }
       return errno;
     }
@@ -129,21 +131,19 @@ int TCPSend(struct NETSocket* const socket, void* const buffer, const ssize_t le
 }
 
 void TCPSendShutdown(struct NETSocket* const socket) {
-  if(socket->state == NET_OPEN) {
-    socket->state = NET_SEND_CLOSING;
+  if(atomic_compare_exchange_strong(&socket->state, &(int){NET_OPEN}, NET_SEND_CLOSING) == true || atomic_compare_exchange_strong(&socket->state, &(int){NET_RECEIVE_CLOSING}, NET_CLOSED)) {
     shutdown(socket->sfd, SHUT_WR);
   }
 }
 
 void TCPReceiveShutdown(struct NETSocket* const socket) {
-  if(socket->state == NET_OPEN) {
-    socket->state = NET_RECEIVE_CLOSING;
+  if(atomic_compare_exchange_strong(&socket->state, &(int){NET_OPEN}, NET_RECEIVE_CLOSING) == true || atomic_compare_exchange_strong(&socket->state, &(int){NET_SEND_CLOSING}, NET_CLOSED)) {
     shutdown(socket->sfd, SHUT_RD);
   }
 }
 
 void TCPShutdown(struct NETSocket* const socket) {
-  if(socket->state != NET_CLOSED) {
+  if(atomic_exchange(&socket->state, NET_CLOSED) != NET_CLOSED) {
     shutdown(socket->sfd, SHUT_RDWR);
   }
 }
@@ -211,7 +211,7 @@ int SyncTCPConnect(struct addrinfo* const res, struct NETSocket* const sock) {
       (void) close(sfd);
       continue;
     } else {
-      sock->state = NET_OPEN;
+      atomic_store(&sock->state, NET_OPEN);
       freeaddrinfo(res);
       return 0;
     }
@@ -338,7 +338,7 @@ static void* AsyncTCPConnectThread(void* a) {
       }
       continue;
     } else {
-      sock.state = NET_OPEN;
+      atomic_store(&sock.state, NET_OPEN);
       arr->handler(&sock, sfd);
       break;
     }
@@ -426,22 +426,23 @@ int AsyncTCPListen(struct ANET_L* const info) {
 static int EPollSocketGetMessage(struct NETConnManager* const manager, struct NETSocket* const socket, uint8_t* const mem, const size_t length) {
   ssize_t bytes = recv(socket->sfd, mem, length, MSG_PEEK);
   if(bytes == 0) {
-    if(socket->state != NET_CLOSED) {
+    if(atomic_exchange(&socket->state, NET_CLOSED) != NET_CLOSED) {
       puts("connection closed, received 0 bytes");
       TCPKill(socket);
       DeleteEventlessSocket(manager, socket->sfd);
     }
-    return -1;
+    return -2;
   } else if(bytes == -1) {
-    if((errno == ECONNRESET || errno == ETIMEDOUT) && socket->state != NET_CLOSED) {
+    if((errno == ECONNRESET || errno == ETIMEDOUT) && atomic_exchange(&socket->state, NET_CLOSED) != NET_CLOSED) {
       puts("connection reset or timedout while reading data");
       TCPKill(socket);
       DeleteEventlessSocket(manager, socket->sfd);
+      return -2;
     } else if(errno != EAGAIN) {
       printf("recv error %d | %s\n", errno, strerror(errno));
       socket->onerror(socket);
+      return -1;
     }
-    return -1;
   } else if(socket->onmessage != NULL) {
     socket->onmessage(socket);
   } else {
@@ -487,10 +488,9 @@ static void* EPollThread(void* s) {
       struct NETSocket* sock = net_avl_multithread_search(&manager->tree, events[i].data.fd);
       if((sock->flags & AI_PASSIVE) == 0) {
         if((events[i].events & EPOLLHUP) != 0) {
-          if(sock->state == NET_OPEN) {
-            sock->state = NET_SEND_CLOSING;
+          if(atomic_compare_exchange_strong(&sock->state, &(int){NET_OPEN}, NET_SEND_CLOSING) == true) {
             puts("the peer doesn't accept messages anymore, connection closing");
-          } else if(sock->state != NET_CLOSED && sock->state != NET_SEND_CLOSING) {
+          } else if(atomic_compare_exchange_strong(&sock->state, &(int){NET_RECEIVE_CLOSING}, NET_CLOSED) == true) {
             puts("the peer doesn't accept messages anymore, connection closed");
             TCPKill(sock);
             DeleteEventlessSocket(manager, sock->sfd);
@@ -498,10 +498,9 @@ static void* EPollThread(void* s) {
           }
         }
         if((events[i].events & EPOLLRDHUP) != 0) {
-          if(sock->state == NET_OPEN) {
-            sock->state = NET_RECEIVE_CLOSING;
+          if(atomic_compare_exchange_strong(&sock->state, &(int){NET_OPEN}, NET_RECEIVE_CLOSING) == true) {
             puts("the peer won't send messages anymore, connection closing");
-          } else if(sock->state != NET_CLOSED && sock->state != NET_RECEIVE_CLOSING) {
+          } else if(atomic_compare_exchange_strong(&sock->state, &(int){NET_SEND_CLOSING}, NET_CLOSED) == true) {
             puts("the peer won't send messages anymore, connection closed");
             TCPKill(sock);
             DeleteEventlessSocket(manager, sock->sfd);
@@ -514,13 +513,15 @@ static void* EPollThread(void* s) {
           printf("got an event, code %d, message: %s\n", temp, strerror(temp));
         }
         if((events[i].events & EPOLLIN) != 0) {
-          (void) EPollSocketGetMessage(manager, sock, mem, 1);
+          if(EPollSocketGetMessage(manager, sock, mem, 1) == -2) {
+            continue;
+          }
         }
-        if(sock->send_length != 0 && sock->state != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) {
+        if(sock->send_length != 0 && atomic_load(&sock->state) != NET_SEND_CLOSING && (events[i].events & EPOLLOUT) != 0) {
           puts("sending what we have in buffer");
           ssize_t bytes = send(sock->sfd, sock->send_buffer, sock->send_length, MSG_NOSIGNAL);
           if(bytes == -1) {
-            if(errno == EPIPE && sock->state != NET_CLOSED) {
+            if(errno == EPIPE && atomic_exchange(&sock->state, NET_CLOSED) != NET_CLOSED) {
               puts("connection shut down unexpectedly");
               TCPKill(sock);
               DeleteEventlessSocket(manager, sock->sfd);

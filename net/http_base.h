@@ -29,6 +29,7 @@ struct HTTP_settings {
   uint32_t max_header_name_length;   // 64
   uint32_t max_header_value_length;  // 4096
   uint32_t max_reason_phrase_length; // 64
+  uint32_t max_body_length;          // 256 * 4096 (1.05MB)
 };
 
 #ifdef __cplusplus

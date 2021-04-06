@@ -41,7 +41,7 @@ struct NETSocket {
   void* send_buffer;
   ssize_t send_length;
   socklen_t addrlen;
-  int state;
+  _Atomic int state;
   int flags;
   int server;
   int family;

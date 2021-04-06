@@ -21,7 +21,9 @@
 extern "C" {
 #endif
 
-#include "net.h"
+#include "http_base.h"
+
+#include <stdint.h>
 
 extern struct HTTP_settings HTTP_default_settings(void);
 

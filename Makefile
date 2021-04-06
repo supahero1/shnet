@@ -18,11 +18,11 @@ build/net_avl.o: net/net_avl.c net/net_avl.h net/net_base.h net/http_base.h net/
 	@echo "Compiling net_avl..."
 	@cc -c net/net_avl.c -o build/net_avl.o ${CP_FLAGS}
 
-build/net.o: net/net.c net/net.h build/net_avl.o build/time.o
+build/net.o: net/net.c net/net.h build/net_avl.o build/time.o build/http.o
 	@echo "Compiling net..."
 	@cc -c net/net.c -o build/net.o ${CP_FLAGS}
 
-build/http.o: net/http.c net/http.h build/net.o
+build/http.o: net/http.c net/http.h net/http_base.h
 	@echo "Compiling http..."
 	@cc -c net/http.c -o build/http.o ${CP_FLAGS}
 

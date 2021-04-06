@@ -29,7 +29,8 @@ struct HTTP_settings HTTP_default_settings() {
     .max_header_amount = 64,
     .max_header_name_length = 64,
     .max_header_value_length = 4096,
-    .max_reason_phrase_length = 64
+    .max_reason_phrase_length = 64,
+    .max_body_length = 256 * 4096
   };
 }
 
@@ -54,7 +55,7 @@ static const uint8_t HTTP_tokens[] = {
 };
 
 int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int flags, struct HTTP_request* const request, const struct HTTP_settings* const settings, struct HTTP_parser_session* const session) {
-  if(len < 18) { // GET / HTTP/1.1\r\n\r\n
+  if(len < 18) {
     return HTTP_MALFORMED;
   }
   uint32_t idx;
@@ -173,7 +174,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
       return HTTP_INVAL_METHOD;
     }
   }
-  puts("parsed method");
   if(session != NULL) {
     session->last_at = HTTP_PARSE_PATH;
     session->idx = idx;
@@ -196,7 +196,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
   }
   request->path = (char*) buffer + idx;
   request->path_length = length;
-  puts("parsed path");
   if(session != NULL) {
     session->last_at = HTTP_PARSE_VERSION;
     session->idx = idx;
@@ -214,7 +213,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
     }
   }
   idx += 11;
-  puts("parsed version");
   if(session != NULL) {
     session->last_at = HTTP_PARSE_HEADERS;
     session->idx = idx;
@@ -243,7 +241,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
           .name_length = i - idx,
           .value_length = 0
         };
-        printf("found a header name, length %u\n", i - idx);
         idx = i + 1;
         break;
       } else if(HTTP_tokens[buffer[i]] == 0) {
@@ -252,10 +249,10 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
       ++i;
     }
     while(1) {
-      if(idx == len - 1) {
+      if(len - idx < 3) {
         goto free_malformed;
       }
-      if(buffer[idx] == '\r' && idx != len - 2 && buffer[idx + 1] == '\n') {
+      if(buffer[idx] == '\r' && buffer[idx + 1] == '\n') {
         free(request->headers);
         return HTTP_ILLEGAL_SPACE;
       } else if(buffer[idx] != ' ' && buffer[idx] != '\t') {
@@ -275,7 +272,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
         } else {
           request->headers[request->header_amount].value = (char*) buffer + idx;
           request->headers[request->header_amount++].value_length = i - idx;
-          printf("found a header value, length %u\n", i - idx);
           idx = i + 2;
           break;
         }
@@ -292,7 +288,6 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
   }
   request->headers = realloc(request->headers, sizeof(struct HTTP_header) * request->header_amount);
   idx += 2;
-  puts("parsed headers");
   if(session != NULL) {
     session->last_at = HTTP_PARSE_BODY;
     session->idx = idx;
@@ -309,7 +304,7 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
 }
 
 int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const int flags, struct HTTP_response* const response, const struct HTTP_settings* const settings, struct HTTP_parser_session* const session) {
-  if(len < 17) { // HTTP/1.1 100 \r\n\r\n
+  if(len < 17) {
     return HTTP_MALFORMED;
   }
   uint32_t idx;
@@ -433,7 +428,6 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
       return HTTP_INVAL_STATUS_CODE;
     }
   }
-  puts("parsed status code");
   response->status_code = code;
   idx += 4;
   if((flags & HTTP_IGNORE_REASON_PHRASE) == 0) {
@@ -442,7 +436,7 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
       if(len - idx - i < 4) {
         return HTTP_MALFORMED;
       }
-      if(buffer[idx + i] == '\r') { // assuming that before calling this function we calculated `len` by finding \r\n\r\n
+      if(buffer[idx + i] == '\r') {
         if(buffer[idx + i + 1] != '\n') {
           return HTTP_MALFORMED;
         } else {
@@ -457,7 +451,6 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
         return HTTP_REASON_PHRASE_TOO_LONG;
       }
     }
-    puts("parsed reason phrase");
   }
   if(session != NULL) {
     session->last_at = HTTP_PARSE_HEADERS;
@@ -487,7 +480,6 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
           .name_length = i - idx,
           .value_length = 0
         };
-        printf("found a header name, length %u\n", i - idx);
         idx = i + 1;
         break;
       } else if(HTTP_tokens[buffer[i]] == 0) {
@@ -496,10 +488,10 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
       ++i;
     }
     while(1) {
-      if(idx == len - 1) {
+      if(len - idx < 3) {
         goto free_malformed;
       }
-      if(buffer[idx] == '\r' && idx != len - 2 && buffer[idx + 1] == '\n') {
+      if(buffer[idx] == '\r' && buffer[idx + 1] == '\n') {
         free(response->headers);
         return HTTP_ILLEGAL_SPACE;
       } else if(buffer[idx] != ' ' && buffer[idx] != '\t') {
@@ -519,7 +511,6 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
         } else {
           response->headers[response->header_amount].value = (char*) buffer + idx;
           response->headers[response->header_amount++].value_length = i - idx;
-          printf("found a header value, length %u\n", i - idx);
           idx = i + 2;
           break;
         }
@@ -536,7 +527,6 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
   }
   response->headers = realloc(response->headers, sizeof(struct HTTP_header) * response->header_amount);
   idx += 2;
-  puts("parsed headers");
   if(session != NULL) {
     session->last_at = HTTP_PARSE_BODY;
     session->idx = idx;
@@ -658,7 +648,7 @@ uint32_t HTTP_get_method_length(const int method) {
     case HTTP_CONNECT: return 7;
     case HTTP_PATCH: return 5;
     default: {
-      return -1;
+      return 0;
     }
   }
 }
