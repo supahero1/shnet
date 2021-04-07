@@ -24,10 +24,13 @@ extern "C" {
 #include "net_avl.h"
 #include "../time/time.h"
 
-#define IPv4       AF_INET
-#define IPv6       AF_INET6
-#define IP_ANY     AF_UNSPEC
-#define NET_SERVER AI_PASSIVE
+enum NETCodes {
+  NET_IPv4 = AF_INET,
+  NET_IPv6 = AF_INET6,
+  NET_IP_ANY = AF_UNSPEC,
+  NET_SERVER = AI_PASSIVE,
+  NET_TLS = 0x8000000
+};
 
 extern void TCPNoBlock(const int);
 

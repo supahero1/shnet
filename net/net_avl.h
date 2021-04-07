@@ -30,13 +30,13 @@ struct net_avl_node {
   struct net_avl_node* parent;
   struct net_avl_node* left;
   struct net_avl_node* right;
-  #if __WORDSIZE == 64
+#if __WORDSIZE == 64
   struct NETSocket socket;
   int balance;
-  #else
+#else
   int balance;
   struct NETSocket socket;
-  #endif
+#endif
 };
 
 struct net_avl_tree {
@@ -62,9 +62,15 @@ extern void net_avl_delete(struct net_avl_tree* const, const int);
 
 struct net_avl_multithread_tree {
   pthread_mutex_t mutex;
+#if __WORDSIZE == 64
   struct net_avl_tree tree;
   uint32_t counter;
   pthread_mutex_t protect;
+#else
+  struct net_avl_tree tree;
+  pthread_mutex_t protect;
+  uint32_t counter;
+#endif
 };
 
 extern struct net_avl_multithread_tree net_avl_multithread_tree(const uint32_t);

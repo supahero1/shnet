@@ -1,5 +1,3 @@
-#include "check.h"
-
 #include "net/net.h"
 #include "net/http.h"
 
@@ -27,6 +25,9 @@
 #include <semaphore.h>
 #include <sys/epoll.h>
 #include <limits.h>
+
+//#include <gmp.h>
+//#include <gnutls/gnutls.h>
 
 void FreeAcceptThreadPoolWrapper(void* a) {
   puts("da free");
@@ -144,6 +145,14 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
         exit(1);
       }
       puts("AddSocket succeeded");
+      
+      /*gnutls_session_t session;
+      err = gnutls_init(&session, GNUTLS_CLIENT | GNUTLS_NONBLOCK | GNUTLS_NO_SIGNAL);
+      printf("gnutls_init(): %d\n", err);
+      if(err < 0) {
+        exit(1);
+      }*/
+      
       struct HTTP_header headers[] = {
         {
           .name = "Connection",
@@ -446,7 +455,7 @@ int main(int argc, char** argv) {
             .handler = asyncgai,
             .hostname = argv[3],
             .service = argv[4],
-            .flags = IPv4
+            .flags = NET_IPv4
           }),
           .count = 1
         }));
@@ -463,7 +472,7 @@ int main(int argc, char** argv) {
             .handler = asyncgaiserver,
             .hostname = argv[3],
             .service = argv[4],
-            .flags = IPv4 | NET_SERVER
+            .flags = NET_IPv4 | NET_SERVER
           }),
           .count = 1
         }));
@@ -491,7 +500,7 @@ int main(int argc, char** argv) {
           exit(1);
         }
         puts("InitConnManager succeeded");
-        err = SyncTCP_GAIConnect(argv[3], argv[4], IPv4, &sock);
+        err = SyncTCP_GAIConnect(argv[3], argv[4], NET_IPv4, &sock);
         if(err < -1) {
           printf("error at SyncTCP_GAIConnect %d | %s\n", err, strerror(err));
           exit(1);
@@ -528,7 +537,7 @@ int main(int argc, char** argv) {
           printf("error at InitConnectionManager %d | %s\n", err, strerror(err));
           exit(1);
         }
-        err = SyncTCP_GAIListen(argv[3], argv[4], IPv4, &serv);
+        err = SyncTCP_GAIListen(argv[3], argv[4], NET_IPv4, &serv);
         if(err < -1) {
           printf("error at SyncTCP_GAIListen %d | %s\n", err, strerror(err));
           exit(1);

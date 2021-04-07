@@ -62,21 +62,11 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
   if(session != NULL) {
     idx = session->idx;
     switch(session->last_at) {
-      case HTTP_PARSE_METHOD: {
-        break;
-      }
-      case HTTP_PARSE_PATH: {
-        goto parse_path;
-      }
-      case HTTP_PARSE_VERSION: {
-        goto parse_version;
-      }
-      case HTTP_PARSE_HEADERS: {
-        goto parse_headers;
-      }
-      case HTTP_PARSE_BODY: {
-        goto parse_body;
-      }
+      case HTTP_PARSE_METHOD: goto parse_method;
+      case HTTP_PARSE_PATH: goto parse_path;
+      case HTTP_PARSE_VERSION: goto parse_version;
+      case HTTP_PARSE_HEADERS: goto parse_headers;
+      case HTTP_PARSE_BODY: goto parse_body;
     }
     session->last_at = HTTP_PARSE_METHOD;
   }
@@ -89,6 +79,7 @@ int HTTPv1_1_request_parser(uint8_t* const buffer, const uint32_t len, const int
     .body_length = 0,
     .method = 0
   };
+  parse_method:
   switch(buffer[0]) {
     case 'G': {
       if(memcmp(buffer, &((uint8_t[]){ 'G', 'E', 'T', ' ' }), 4) != 0) {
@@ -311,18 +302,10 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
   if(session != NULL) {
     idx = session->idx;
     switch(session->last_at) {
-      case HTTP_PARSE_STATUS: {
-        break;
-      }
-      case HTTP_PARSE_REASON_PHRASE: {
-        goto parse_reason_phrase;
-      }
-      case HTTP_PARSE_HEADERS: {
-        goto parse_headers;
-      }
-      case HTTP_PARSE_BODY: {
-        goto parse_body;
-      }
+      case HTTP_PARSE_STATUS: goto parse_status;
+      case HTTP_PARSE_REASON_PHRASE: goto parse_reason_phrase;
+      case HTTP_PARSE_HEADERS: goto parse_headers;
+      case HTTP_PARSE_BODY: goto parse_body;
     }
     session->last_at = HTTP_PARSE_STATUS;
   } else {
@@ -337,6 +320,7 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
     .reason_phrase_length = 0,
     .body_length = 0
   };
+  parse_status:
   if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '1', ' ' }), 9) != 0) {
     if(memcmp(buffer, &((uint8_t[]){ 'H', 'T', 'T', 'P', '/', '1', '.', '0', ' ' }), 9) == 0) {
       return HTTP_VERSION_NOTSUP;
@@ -421,12 +405,8 @@ int HTTPv1_1_response_parser(uint8_t* const buffer, const uint32_t len, const in
     case HTTP_LOOP_DETECTED:
     case HTTP_NOT_EXTENDED:
     case HTTP_NETWORK_AUTHENTICATION_REQUIRED:
-    case HTTP_NETWORK_CONNECT_TIMEOUT_ERROR: {
-      break;
-    }
-    default: {
-      return HTTP_INVAL_STATUS_CODE;
-    }
+    case HTTP_NETWORK_CONNECT_TIMEOUT_ERROR: break;
+    default: return HTTP_INVAL_STATUS_CODE;
   }
   response->status_code = code;
   idx += 4;

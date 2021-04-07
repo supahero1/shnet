@@ -21,9 +21,6 @@
 extern "C" {
 #endif
 
-#include "http_base.h"
-#include "websocket_base.h"
-
 #include <netdb.h>
 
 enum NETFlags { NET_OPEN, NET_SEND_CLOSING, NET_RECEIVE_CLOSING, NET_CLOSED };
@@ -34,10 +31,6 @@ struct NETSocket {
   void (*onclose)(struct NETSocket*);
   void (*onerror)(struct NETSocket*);
   void (*onsent)(struct NETSocket*);
-  union {
-    struct HTTP_settings* http_settings;
-    struct WebSocket_settings* websocket_settings;
-  };
   void* send_buffer;
   ssize_t send_length;
   socklen_t addrlen;
@@ -48,7 +41,6 @@ struct NETSocket {
   int socktype;
   int protocol;
   int sfd;
-  int application_protocol;
 };
 
 struct NETServer {
@@ -57,10 +49,6 @@ struct NETServer {
   struct NETAcceptThreadPool* pool;
   void (*onerror)(struct NETServer*);
   struct NETConnManager* manager;
-  union {
-    struct HTTP_settings* http_settings;
-    struct WebSocket_settings* websocket_settings;
-  };
   int* connections;
   uint32_t conn_count;
 #if __WORDSIZE == 64
@@ -79,7 +67,6 @@ struct NETServer {
   int socktype;
   int protocol;
   int sfd;
-  int application_protocol;
 };
 
 #ifdef __cplusplus

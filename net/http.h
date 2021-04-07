@@ -21,11 +21,7 @@
 extern "C" {
 #endif
 
-#include "http_base.h"
-
-#include <stdint.h>
-
-extern struct HTTP_settings HTTP_default_settings(void);
+#include "net.h"
 
 enum HTTP_codes {
   HTTP_GET,
@@ -159,6 +155,17 @@ struct HTTP_request {
   uint32_t path_length;
   int method;
 };
+
+struct HTTP_settings {
+  uint32_t max_path_length;          // 4096
+  uint32_t max_header_amount;        // 64
+  uint32_t max_header_name_length;   // 64
+  uint32_t max_header_value_length;  // 4096
+  uint32_t max_reason_phrase_length; // 64
+  uint32_t max_body_length;          // 256 * 4096 (1.05MB)
+};
+
+extern struct HTTP_settings HTTP_default_settings(void);
 
 struct HTTP_parser_session {
   uint32_t idx;

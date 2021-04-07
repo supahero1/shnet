@@ -21,9 +21,11 @@
 extern "C" {
 #endif
 
-#include "http.h"
+#include "net.h"
 
-
+struct WebSocket_settings {
+  int __unused1;
+};
 
 
 
