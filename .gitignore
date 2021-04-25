@@ -1,4 +1,6 @@
 build/
+shnet/
 main
+main.c
 core
 logs.txt
