@@ -1,6 +1,4 @@
 build/
 shnet/
-main
-main.c
-core
+dev/
 logs.txt
