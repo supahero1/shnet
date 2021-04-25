@@ -1,26 +1,27 @@
 empty: ;
-.PHONY: empty debug build clean prepare test include static dynamic strip-static strip-dynamic uninstall
+.PHONY: empty build clean prepare test include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 
-CMPE=gcc -O3 -pthread -Wall -pedantic -D_GNU_SOURCE -fomit-frame-pointer
-
-debug: CMPE += -D NET_DEBUG
-debug: build
-	
+CMPE_CORE=gcc -pthread -Wall -pedantic -D_GNU_SOURCE
+CMPE=O3 -fomit-frame-pointer
+ifneq ($(debug),)
+COMP=$(CMPE_CORE) -$(CMPE) -D NET_DEBUG
+else
+COMP=$(CMPE_CORE) -$(CMPE)
+endif
 
 build: prepare build/flesto.o
-	
 
-test: tests/tests.h src/debug.h tests/flesto.c
-	${CMPE} tests/flesto.c src/flesto.c -o tests/flesto && tests/flesto
+test: prepare tests/tests.h src/debug.h tests/flesto.c
+	$(COMP) tests/flesto.c src/flesto.c -o build/flesto && build/flesto
 
 clean:
-	rm -r -f build tests/flesto tests/logs.txt
+	rm -r -f build
 
 prepare:
 	mkdir -p build
 
 build/flesto.o: src/flesto.c src/flesto.h
-	${CMPE} -fPIC -c src/flesto.c -o build/flesto.o
+	$(COMP) -fPIC -c src/flesto.c -o build/flesto.o
 
 include: build
 	mkdir -p /usr/include/shnet
@@ -32,22 +33,24 @@ copy-headers:
 	mkdir -p shnet
 	cp src/flesto.h shnet/
 
-static: include
+build-static: build
 	ar rcsv build/libshnet.a $(wildcard build/*.o)
+
+static: build-static include
 	cp build/libshnet.a /usr/lib/
 	cp build/libshnet.a /usr/local/lib/
 
-strip-static: build copy-headers
-	ar rcsv build/libshnet.a $(wildcard build/*.o)
+strip-static: build-static copy-headers
 	cp build/libshnet.a shnet/
 
-dynamic: include
-	${CMPE} $(wildcard build/*.o) -shared -o build/libshnet.so
+build-dynamic: build
+	$(COMP) $(wildcard build/*.o) -shared -o build/libshnet.so
+
+dynamic: build-dynamic include
 	cp build/libshnet.so /usr/lib/
 	cp build/libshnet.so /usr/local/lib/
 
-strip-dynamic: build copy-headers
-	${CMPE} $(wildcard build/*.o) -shared -o build/libshnet.so
+strip-dynamic: build-dynamic copy-headers
 	cp build/libshnet.so shnet/
 
 uninstall:
