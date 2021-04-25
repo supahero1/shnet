@@ -1,5 +1,9 @@
-#include "net/net.h"
-#include "net/http.h"
+//#include "net/net.h"
+//#include "net/http.h"
+
+//#define NET_DEBUG
+
+#include "src/debug.h"
 
 #include <math.h>
 #include <sched.h>
@@ -26,10 +30,7 @@
 #include <sys/epoll.h>
 #include <limits.h>
 
-//#include <gmp.h>
-//#include <gnutls/gnutls.h>
-
-void FreeAcceptThreadPoolWrapper(void* a) {
+/*void FreeAcceptThreadPoolWrapper(void* a) {
   puts("da free");
   FreeAcceptThreadPool((struct NETAcceptThreadPool*) a);
 }
@@ -145,14 +146,14 @@ void asyncsocket(struct NETSocket* const socket, const int sfd) {
         exit(1);
       }
       puts("AddSocket succeeded");
-      
+      */
       /*gnutls_session_t session;
       err = gnutls_init(&session, GNUTLS_CLIENT | GNUTLS_NONBLOCK | GNUTLS_NO_SIGNAL);
       printf("gnutls_init(): %d\n", err);
       if(err < 0) {
         exit(1);
       }*/
-      
+      /*
       struct HTTP_header headers[] = {
         {
           .name = "Connection",
@@ -321,8 +322,9 @@ void asyncgaiserver(struct addrinfo* info, int status) {
     exit(1);
   }
 }
-
+*/
 int main(int argc, char** argv) {
+  NET_LOG("main() in");
   /*char req[] = "CONNECT /lmfao/lol?XD HTTP/1.1\r\nConnection: close\r\nUpgrade:  websocket\r\n\r\n\0";
   printf("parsing:\n\n%s", req);
   struct HTTP_request request;
@@ -445,8 +447,11 @@ int main(int argc, char** argv) {
   int err;
   if(argc < 5) {
     puts("Minimum amount of arguments is 4.");
+    NET_LOG("argc check failed");
     return 1;
   }
+  NET_LOG("argc check passed");
+  /*
   if(argv[1][0] == 'a') {
     switch(argv[2][0]) {
       case 'c': {
@@ -582,7 +587,7 @@ int main(int argc, char** argv) {
         if(err != 0) {
           puts("SetTimeout");
           exit(1);
-        }*/
+        }*\/
         (void) getc(stdin);
         break;
       }
@@ -593,6 +598,6 @@ int main(int argc, char** argv) {
     }
   } else {
     puts("Option not recognized. The available options: a(sync), s(ync)");
-  }
+  }*/
   return 0;
 }

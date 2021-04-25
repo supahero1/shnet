@@ -1,39 +1,55 @@
-all: prepare main
-	@echo "Done"
+empty: ;
+.PHONY: empty debug build clean prepare test include static dynamic strip-static strip-dynamic uninstall
+
+CMPE=gcc -O3 -pthread -Wall -pedantic -D_GNU_SOURCE -fomit-frame-pointer
+
+debug: CMPE += -D NET_DEBUG
+debug: build
+	
+
+build: prepare build/flesto.o
+	
+
+test: tests/tests.h src/debug.h tests/flesto.c
+	${CMPE} tests/flesto.c src/flesto.c -o tests/flesto && tests/flesto
+
+clean:
+	rm -r -f build tests/flesto tests/logs.txt
 
 prepare:
-	@mkdir -p build
+	mkdir -p build
 
-CP_FLAGS=-O3 -pthread -Wall -pedantic -D_GNU_SOURCE -fomit-frame-pointer
+build/flesto.o: src/flesto.c src/flesto.h
+	${CMPE} -fPIC -c src/flesto.c -o build/flesto.o
 
-main: build/main.o build/time.o build/net_avl.o build/net.o build/http.o build/websocket.o
-	@echo "Linking main..."
-	@cc build/main.o build/time.o build/net_avl.o build/net.o build/http.o build/websocket.o -o main ${CP_FLAGS}
+include: build
+	mkdir -p /usr/include/shnet
+	cp src/flesto.h /usr/include/shnet/
+	mkdir -p /usr/local/include/shnet
+	cp src/flesto.h /usr/local/include/shnet/
 
-build/main.o: main.c build/http.o build/websocket.o
-	@echo "Compiling main..."
-	@cc -c main.c -o build/main.o ${CP_FLAGS}
+copy-headers:
+	mkdir -p shnet
+	cp src/flesto.h shnet/
 
-build/time.o: time/time.c time/time.h
-	@echo "Compiling time..."
-	@cc -c time/time.c -o build/time.o ${CP_FLAGS}
+static: include
+	ar rcsv build/libshnet.a $(wildcard build/*.o)
+	cp build/libshnet.a /usr/lib/
+	cp build/libshnet.a /usr/local/lib/
 
-build/net_avl.o: net/net_avl.c net/net_avl.h net/net_base.h
-	@echo "Compiling net_avl..."
-	@cc -c net/net_avl.c -o build/net_avl.o ${CP_FLAGS}
+strip-static: build copy-headers
+	ar rcsv build/libshnet.a $(wildcard build/*.o)
+	cp build/libshnet.a shnet/
 
-build/net.o: net/net.c net/net.h build/net_avl.o build/time.o
-	@echo "Compiling net..."
-	@cc -c net/net.c -o build/net.o ${CP_FLAGS}
+dynamic: include
+	${CMPE} $(wildcard build/*.o) -shared -o build/libshnet.so
+	cp build/libshnet.so /usr/lib/
+	cp build/libshnet.so /usr/local/lib/
 
-build/http.o: net/http.c net/http.h build/net.o
-	@echo "Compiling http..."
-	@cc -c net/http.c -o build/http.o ${CP_FLAGS}
+strip-dynamic: build copy-headers
+	${CMPE} $(wildcard build/*.o) -shared -o build/libshnet.so
+	cp build/libshnet.so shnet/
 
-build/websocket.o: net/websocket.c net/websocket.h build/net.o
-	@echo "Compiling websocket..."
-	@cc -c net/websocket.c -o build/websocket.o ${CP_FLAGS}
-
-build/uri.o: net/uri.c net/uri.h
-	@echo "Compiling uri..."
-	@cc -c net/uri.c -o build/uri.o ${CP_FLAGS}
+uninstall:
+	rm -f /usr/lib/libshnet.* /usr/local/lib/libshnet.*
+	rm -r -f /usr/include/shnet /usr/local/include/shnet shnet

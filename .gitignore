@@ -1,4 +1,4 @@
 build/
 main
 core
-*.o
+logs.txt

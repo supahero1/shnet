@@ -1,17 +1,23 @@
 /*
-   Copyright 2021 shädam
+  Copyright (c) 2021 shädam
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
 
-       http://www.apache.org/licenses/LICENSE-2.0
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
 */
 
 #include "uri.h"
@@ -88,7 +94,6 @@ int URI_parser(void* buffer, const uin32_t len, const int flags, struct URI* con
     idx = session->idx;
     switch(session->last_at) {
       case URI_PARSE_SCHEME: goto parse_scheme;
-      case URI_PARSE_AUTHORITY: goto parse_userinfo;
       case URI_PARSE_USERINFO: goto parse_userinfo;
       case URI_PARSE_HOST: goto parse_host;
       case URI_PARSE_PORT: goto parse_port;
@@ -101,15 +106,18 @@ int URI_parser(void* buffer, const uin32_t len, const int flags, struct URI* con
   }
   *uri = (struct URI) {
     .scheme = NULL,
-    .authority = NULL,
+    .userinfo = NULL,
+    .host = NULL,
     .path = NULL,
     .query = NULL,
     .fragment = NULL,
     .scheme_length = 0,
-    .authority_length = 0,
+    .userinfo_length = 0,
+    .host_length = 0,
     .path_length = 0,
     .query_length = 0,
-    .fragment_length = 0
+    .fragment_length = 0,
+    .port = 0
   };
   parse_scheme:
   if(US_ASCII_ALPHA[buffer[0]] == 0) {
@@ -134,7 +142,7 @@ int URI_parser(void* buffer, const uin32_t len, const int flags, struct URI* con
     goto parse_host;
   }
   if(session != NULL) {
-    session->last_at = URI_PARSE_AUTHORITY;
+    session->last_at = URI_PARSE_USERINFO;
     session->idx = idx;
   }
   if((flags & URI_PARSE_SCHEME) != 0) {
@@ -156,5 +164,13 @@ int URI_parser(void* buffer, const uin32_t len, const int flags, struct URI* con
     }
   }
   idx += 2;
-  for(uint32_t i = idx)
+  for(uint32_t i = idx;; ++i) {
+    
+  }
 }
+
+/*
+- make a version that makes no checks and only divides a URI into pieces
+- make a version that only runs checks
+- maybe finish this in the future IDK
+*/
