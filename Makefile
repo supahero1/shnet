@@ -1,18 +1,20 @@
 empty: ;
-.PHONY: empty build clean prepare test include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
+.PHONY: empty build test clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 
 CMPE_CORE=gcc -pthread -Wall -pedantic -D_GNU_SOURCE
 CMPE=O3 -fomit-frame-pointer
 ifneq ($(debug),)
-COMP=$(CMPE_CORE) -$(CMPE) -D NET_DEBUG
+COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
+FILENAMES=build/debug.o build/flesto.o
+HEADERNAMES=flesto.h,debug.h
 
-build: prepare build/flesto.o
+build: prepare $(FILENAMES)
 
-test: prepare tests/tests.h src/debug.h tests/flesto.c
-	$(COMP) tests/flesto.c src/flesto.c -o build/flesto && build/flesto
+test: $(wildcard tests/*.c) $(wildcard tests/*.h)
+	$(COMP) tests/flesto.c -o build/flesto -libshnet && build/flesto
 
 clean:
 	rm -r -f build
@@ -20,21 +22,18 @@ clean:
 prepare:
 	mkdir -p build
 
-build/flesto.o: src/flesto.c src/flesto.h
-	$(COMP) -fPIC -c src/flesto.c -o build/flesto.o
-
-include: build
+include:
 	mkdir -p /usr/include/shnet
-	cp src/flesto.h /usr/include/shnet/
+	cp src/{$(HEADERNAMES)} /usr/include/shnet/
 	mkdir -p /usr/local/include/shnet
-	cp src/flesto.h /usr/local/include/shnet/
+	cp src/{$(HEADERNAMES)} /usr/local/include/shnet/
 
 copy-headers:
 	mkdir -p shnet
 	cp src/flesto.h shnet/
 
 build-static: build
-	ar rcsv build/libshnet.a $(wildcard build/*.o)
+	ar rcsv build/libshnet.a $(FILENAMES)
 
 static: build-static include
 	cp build/libshnet.a /usr/lib/
@@ -44,7 +43,7 @@ strip-static: build-static copy-headers
 	cp build/libshnet.a shnet/
 
 build-dynamic: build
-	$(COMP) $(wildcard build/*.o) -shared -o build/libshnet.so
+	$(COMP) $(FILENAMES) -shared -o build/libshnet.so
 
 dynamic: build-dynamic include
 	cp build/libshnet.so /usr/lib/
@@ -56,3 +55,10 @@ strip-dynamic: build-dynamic copy-headers
 uninstall:
 	rm -f /usr/lib/libshnet.* /usr/local/lib/libshnet.*
 	rm -r -f /usr/include/shnet /usr/local/include/shnet shnet
+
+
+build/debug.o:
+	$(COMP) -fPIC -c src/debug.c -o build/debug.o
+
+build/flesto.o: src/flesto.c src/flesto.h
+	$(COMP) -fPIC -c src/flesto.c -o build/flesto.o
