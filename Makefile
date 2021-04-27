@@ -9,28 +9,27 @@ else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
 FILENAMES=build/debug.o build/flesto.o
-HEADERNAMES=flesto.h,debug.h
 
 build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/flesto.c -o build/flesto -libshnet && build/flesto
+	$(COMP) tests/flesto.c -o build/flesto -lshnet && build/flesto
 
 clean:
-	rm -r -f build
+	rm -r -f build logs.txt
 
 prepare:
 	mkdir -p build
 
 include:
 	mkdir -p /usr/include/shnet
-	cp src/{$(HEADERNAMES)} /usr/include/shnet/
+	cp src/*.h /usr/include/shnet/
 	mkdir -p /usr/local/include/shnet
-	cp src/{$(HEADERNAMES)} /usr/local/include/shnet/
+	cp src/*.h /usr/local/include/shnet/
 
 copy-headers:
 	mkdir -p shnet
-	cp src/flesto.h shnet/
+	cp src/*.h shnet/
 
 build-static: build
 	ar rcsv build/libshnet.a $(FILENAMES)

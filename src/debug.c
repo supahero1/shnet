@@ -9,7 +9,7 @@
 static char SHNET_DEBUG_RAN = 0;
 #endif
 
-void print_debug(const char* fmt, ...) {
+void printf_debug(const char* fmt, ...) {
 #ifdef SHNET_DEBUG
   FILE* a = fopen("logs.txt", "a");
   if(a != NULL) {
@@ -31,16 +31,18 @@ void print_debug(const char* fmt, ...) {
     do {
       b = fclose(a);
     } while(b == EINTR);
-    if(b != 0 || vprintf(fmt, args) < 0) {
+    va_start(args, fmt);
+    if(b != 0 || vprintf(fmt, args) < 0 || putc('\n', stdout) == EOF) {
       goto error;
     }
+    va_end(args);
   } else {
     goto error;
   }
   return;
   error:
 #ifndef SHNET_NO_CONSOLE_LOG
-  (void) printf("Debug error (LINE %d)", __LINE__);
+  (void) printf("Debug error (line %d)", __LINE__);
 #endif
   exit(1);
 #endif
