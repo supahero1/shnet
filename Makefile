@@ -8,12 +8,12 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o build/flesto.o
+FILENAMES=build/debug.o
 
 build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/flesto.c -o build/flesto -lshnet && build/flesto
+	#$(COMP) tests/aaa.c -o build/aaa -lshnet && build/aaa
 
 clean:
 	rm -r -f build logs.txt
@@ -59,5 +59,5 @@ uninstall:
 build/debug.o:
 	$(COMP) -fPIC -c src/debug.c -o build/debug.o
 
-build/flesto.o: src/flesto.c src/flesto.h
-	$(COMP) -fPIC -c src/flesto.c -o build/flesto.o
+build/heap.o:
+	$(COMP) -fPIC -c src/heap.c -o build/heap.o

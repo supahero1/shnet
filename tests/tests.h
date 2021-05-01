@@ -21,7 +21,7 @@ static char TESTS_STARTED = 0;
   } \
 } while(0)
 #define TEST_PASS (void) printf("\033[1;32m" "PASSED\n" "\033[0m")
-#define TEST_FAIL (void) printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__)
+#define TEST_FAIL (void) printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__); return 1
 
 #ifdef __cplusplus
 }

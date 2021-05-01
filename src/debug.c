@@ -42,7 +42,7 @@ void printf_debug(const char* fmt, ...) {
   return;
   error:
 #ifndef SHNET_NO_CONSOLE_LOG
-  (void) printf("Debug error (line %d)", __LINE__);
+  (void) puts("Debug error");
 #endif
   exit(1);
 #endif
