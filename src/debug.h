@@ -7,7 +7,7 @@ extern "C" {
 
 #include <stdarg.h>
 
-void printf_debug(const char*, ...);
+void printf_debug(const char*, const int, ...);
 
 #ifdef __cplusplus
 }

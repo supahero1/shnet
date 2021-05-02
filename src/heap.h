@@ -20,10 +20,10 @@ struct heap {
   unsigned long used;
   unsigned long item_size;
   long sign;
-  int (*compare)(const void*, const void*);
+  long (*compare)(const void*, const void*);
 };
 
-extern struct heap heap(const unsigned long, const long, int (*)(const void*, const void*));
+extern struct heap heap(const unsigned long, const long, long (*)(const void*, const void*));
 
 extern int heap_resize(struct heap* const, const unsigned long);
 

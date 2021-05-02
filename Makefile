@@ -8,12 +8,12 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o
+FILENAMES=build/debug.o build/heap.o
 
 build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	#$(COMP) tests/aaa.c -o build/aaa -lshnet && build/aaa
+	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
 
 clean:
 	rm -r -f build logs.txt

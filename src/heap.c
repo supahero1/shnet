@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct heap heap(const unsigned long item_size, const long sign, int (*compare)(const void*, const void*)) {
+struct heap heap(const unsigned long item_size, const long sign, long (*compare)(const void*, const void*)) {
   return (struct heap) {
     .array = NULL,
     .size = item_size,
@@ -15,7 +15,7 @@ struct heap heap(const unsigned long item_size, const long sign, int (*compare)(
 }
 
 int heap_resize(struct heap* const heap, const unsigned long new_size) {
-  char* const ptr = realloc(heap->array, new_size);
+  void* const ptr = realloc(heap->array, new_size);
   if(ptr == NULL) {
     return heap_out_of_memory;
   }
@@ -59,9 +59,10 @@ void heap_down(const struct heap* const heap, const unsigned long index) {
     while(1) {
       const long left_diff = heap->compare(heap->array, heap->array + idx);
       if(idx + heap->item_size < heap->used) {
-        const long right_diff = heap->compare(heap->array, heap->array + idx + heap->item_size);
-        if(right_diff * heap->sign < 0 && heap->compare(heap->array + idx + heap->item_size, heap->array + idx) * heap->sign > 0) {
+        if(heap->compare(heap->array      , heap->array + idx + heap->item_size) * heap->sign < 0 &&
+           heap->compare(heap->array + idx, heap->array + idx + heap->item_size) * heap->sign < 0) {
           (void) memcpy(heap->array + (idx >> 1), heap->array + idx + heap->item_size, heap->item_size);
+          idx += heap->item_size;
         } else if(left_diff * heap->sign < 0) {
           (void) memcpy(heap->array + (idx >> 1), heap->array + idx, heap->item_size);
         } else {
@@ -87,10 +88,13 @@ void heap_down(const struct heap* const heap, const unsigned long index) {
 }
 
 void heap_up(const struct heap* const heap, const unsigned long index) {
+  unsigned long parent = ((index / heap->item_size) >> 1) * heap->item_size;
+  if(heap->compare(heap->array + parent, heap->array + index) * heap->sign >= 0) {
+    return;
+  }
   unsigned long idx = index;
-  unsigned long parent = ((idx / heap->item_size) >> 1) * heap->item_size;
   (void) memcpy(heap->array, heap->array + index, heap->item_size);
-  while(heap->compare(heap->array + parent, heap->array) * heap->sign < 0) {
+  do {
     (void) memcpy(heap->array + idx, heap->array + parent, heap->item_size);
     if(parent == heap->item_size) {
       (void) memcpy(heap->array + heap->item_size, heap->array, heap->item_size);
@@ -99,7 +103,7 @@ void heap_up(const struct heap* const heap, const unsigned long index) {
       idx = parent;
       parent = ((parent / heap->item_size) >> 1) * heap->item_size;
     }
-  }
+  } while(heap->compare(heap->array + parent, heap->array) * heap->sign < 0);
   if(index != idx) {
     (void) memcpy(heap->array + idx, heap->array, heap->item_size);
   }

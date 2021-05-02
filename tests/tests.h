@@ -12,16 +12,8 @@ extern "C" {
 #include <stdio.h>
 #include <shnet/debug.h>
 
-static char TESTS_STARTED = 0;
-
-#define TEST_BEGIN do { \
-  if(TESTS_STARTED == 0) { \
-    TESTS_STARTED = 1; \
-    (void) printf("\033[1;32m" "========== TESTS ==========\n" "\033[0m"); \
-  } \
-} while(0)
-#define TEST_PASS (void) printf("\033[1;32m" "PASSED\n" "\033[0m")
-#define TEST_FAIL (void) printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__); return 1
+#define TEST_PASS printf("\033[1;32m" "PASSED\n" "\033[0m"); printf_debug("PASSED", 0);
+#define TEST_FAIL printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__); printf_debug("FAILED (line %d)\n", 0, __LINE__);return 1
 
 #ifdef __cplusplus
 }
