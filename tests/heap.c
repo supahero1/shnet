@@ -29,7 +29,7 @@ int main() {
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);
-    srand(tp.tv_nsec);
+    srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
   printf_debug("1. Initialisation", 1);
   struct heap h = heap(sizeof(struct heap_node), heap_min, cmp);
