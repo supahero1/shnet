@@ -195,7 +195,10 @@ int main() {
         TEST_FAIL;
       }
     }
+    printf("\r%.*f%%", 1, (float)(q + 1) / repeat * 100);
+    fflush(stdout);
   }
+  printf("\r");
   TEST_PASS;
   h.sign = heap_max;
   printf_debug("3.4.", 1);
@@ -234,7 +237,10 @@ int main() {
         TEST_FAIL;
       }
     }
+    printf("\r%.*f%%", 1, (float)(q + 1) / repeat * 100);
+    fflush(stdout);
   }
+  printf("\r");
   TEST_PASS;
   printf_debug("Testing heap.c succeeded", 1);
   return 0;

@@ -33,13 +33,17 @@ extern struct avl_tree avl_tree(const unsigned long, struct avl_node* (*)(struct
 
 extern int avl_insert(struct avl_tree* const, const void* const, const int);
 
-extern void* avl_search(struct avl_tree* const, const void* const);
+extern struct avl_node* avl_search(struct avl_tree* const, const void* const);
 
-extern void* avl_delete_node(struct avl_tree* const, struct avl_node*);
+extern struct avl_node* avl_delete_node(struct avl_tree* const, struct avl_node*);
 
-extern void* avl_delete(struct avl_tree* const, const void* const);
+extern struct avl_node* avl_delete(struct avl_tree* const, const void* const);
 
-extern void* avl_try_delete(struct avl_tree* const, const void* const);
+extern struct avl_node* avl_try_delete(struct avl_tree* const, const void* const);
+
+extern struct avl_node* avl_min(struct avl_tree* const);
+
+extern struct avl_node* avl_max(struct avl_tree* const);
 
 #ifdef __cplusplus
 }

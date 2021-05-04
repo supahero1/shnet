@@ -278,7 +278,7 @@ int avl_insert(struct avl_tree* const tree, const void* const item, const int fl
   }
 }
 
-void* avl_search(struct avl_tree* const tree, const void* const item) {
+struct avl_node* avl_search(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -292,7 +292,7 @@ void* avl_search(struct avl_tree* const tree, const void* const item) {
   }
 }
 
-void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
+struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
   struct avl_node* temp;
   struct avl_node* deleted;
   long sign;
@@ -438,7 +438,7 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
   }
 }
 
-void* avl_delete(struct avl_tree* const tree, const void* const item) {
+struct avl_node* avl_delete(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -452,7 +452,7 @@ void* avl_delete(struct avl_tree* const tree, const void* const item) {
   }
 }
 
-void* avl_try_delete(struct avl_tree* const tree, const void* const item) {
+struct avl_node* avl_try_delete(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -468,6 +468,28 @@ void* avl_try_delete(struct avl_tree* const tree, const void* const item) {
       node = node->left;
     } else {
       return avl_delete_node(tree, node);
+    }
+  }
+}
+
+struct avl_node* avl_min(struct avl_tree* const tree) {
+  struct avl_node* node = tree->head;
+  while(1) {
+    if(node->left != NULL) {
+      node = node->left;
+    } else {
+      return node;
+    }
+  }
+}
+
+struct avl_node* avl_max(struct avl_tree* const tree) {
+  struct avl_node* node = tree->head;
+  while(1) {
+    if(node->right != NULL) {
+      node = node->right;
+    } else {
+      return node;
     }
   }
 }

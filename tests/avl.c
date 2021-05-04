@@ -165,7 +165,7 @@ int main() {
     } else {
       const int how_much = (rand() % 3000) + 2001;
       for(int j = 0; j < how_much; ++j) {
-        void* const ptr = avl_try_delete(&tree, &mem[0].val);
+        struct avl_node* const ptr = avl_try_delete(&tree, &mem[0].val);
         if(ptr == NULL) {
           TEST_FAIL;
         }
