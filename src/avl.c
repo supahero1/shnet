@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct avl_tree avl_tree(const unsigned long item_size, struct avl_node* (*new_node)(struct avl_tree*), long (*compare)(const void*, const void*)) {
+struct avl_tree avl_tree(const unsigned long item_size, void* (*new_node)(struct avl_tree*), long (*compare)(const void*, const void*)) {
   return (struct avl_tree) {
     .head = NULL,
     .item_size = item_size,
@@ -278,7 +278,7 @@ int avl_insert(struct avl_tree* const tree, const void* const item, const int fl
   }
 }
 
-struct avl_node* avl_search(struct avl_tree* const tree, const void* const item) {
+void* avl_search(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -287,14 +287,14 @@ struct avl_node* avl_search(struct avl_tree* const tree, const void* const item)
     } else if(diff < 0) {
       node = node->left;
     } else {
-      return node;
+      return node + 1;
     }
   }
 }
 
-struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
+void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
   struct avl_node* temp;
-  struct avl_node* deleted;
+  void* deleted;
   long sign;
   if(node->right == NULL) {
     if(node->left == NULL) {
@@ -306,12 +306,12 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
           node->parent->left = NULL;
           sign = 1;
         }
-        deleted = node;
+        deleted = node + 1;
         node = node->parent;
       } else {
         tree->is_empty = 1;
         tree->head = NULL;
-        return node;
+        return node + 1;
       }
     } else {
       node->left->parent = node->parent;
@@ -323,11 +323,11 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
           node->parent->left = node->left;
           sign = 1;
         }
-        deleted = node;
+        deleted = node + 1;
         node = node->parent;
       } else {
         tree->head = node->left;
-        return node;
+        return node + 1;
       }
     }
   } else {
@@ -341,11 +341,11 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
           node->parent->left = node->right;
           sign = 1;
         }
-        deleted = node;
+        deleted = node + 1;
         node = node->parent;
       } else {
         tree->head = node->right;
-        return node;
+        return node + 1;
       }
     } else {
       temp = node->left;
@@ -357,7 +357,7 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
           }
           node->right = temp->right;
           (void) memcpy(node + 1, temp + 1, tree->item_size);
-          deleted = temp;
+          deleted = temp + 1;
           sign = -1;
         } else {
           do {
@@ -368,7 +368,7 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
             temp->right->parent = temp->parent;
           }
           (void) memcpy(node + 1, temp + 1, tree->item_size);
-          deleted = temp;
+          deleted = temp + 1;
           node = temp->parent;
           sign = 1;
         }
@@ -378,7 +378,7 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
         }
         node->left = temp->left;
         (void) memcpy(node + 1, temp + 1, tree->item_size);
-        deleted = temp;
+        deleted = temp + 1;
         sign = 1;
       }
     }
@@ -438,7 +438,7 @@ struct avl_node* avl_delete_node(struct avl_tree* const tree, struct avl_node* n
   }
 }
 
-struct avl_node* avl_delete(struct avl_tree* const tree, const void* const item) {
+void* avl_delete(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -452,7 +452,7 @@ struct avl_node* avl_delete(struct avl_tree* const tree, const void* const item)
   }
 }
 
-struct avl_node* avl_try_delete(struct avl_tree* const tree, const void* const item) {
+void* avl_try_delete(struct avl_tree* const tree, const void* const item) {
   struct avl_node* node = tree->head;
   while(1) {
     const long diff = tree->compare(item, node + 1);
@@ -472,24 +472,24 @@ struct avl_node* avl_try_delete(struct avl_tree* const tree, const void* const i
   }
 }
 
-struct avl_node* avl_min(struct avl_tree* const tree) {
+void* avl_min(struct avl_tree* const tree) {
   struct avl_node* node = tree->head;
   while(1) {
     if(node->left != NULL) {
       node = node->left;
     } else {
-      return node;
+      return node + 1;
     }
   }
 }
 
-struct avl_node* avl_max(struct avl_tree* const tree) {
+void* avl_max(struct avl_tree* const tree) {
   struct avl_node* node = tree->head;
   while(1) {
     if(node->right != NULL) {
       node = node->right;
     } else {
-      return node;
+      return node + 1;
     }
   }
 }

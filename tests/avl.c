@@ -46,28 +46,28 @@ long avl_get_balance(struct avl_tree* const tree, struct avl_node* const node) {
 void avl_integrity_check(struct avl_tree* const tree, struct avl_node* const node, const int child) {
   if(node->parent != NULL) {
     if(node == node->parent) {
-      puts("(0) broken link");
+      puts("\r(0) broken link");
       exit(1);
     }
     if(child == 0 && node->parent->left != node) {
-      puts("(1) broken link");
+      puts("\r(1) broken link");
       exit(1);
     }
     if(child == 1 && node->parent->right != node) {
-      puts("(2) broken link");
+      puts("\r(2) broken link");
       exit(1);
     }
   }
   if(node->left != NULL) {
     if(node->left->parent != node) {
-      puts("(3) broken link");
+      puts("\r(3) broken link");
       exit(1);
     }
     avl_integrity_check(tree, node->left, 0);
   }
   if(node->right != NULL) {
     if(node->right->parent != node) {
-      puts("(4) broken link");
+      puts("\r(4) broken link");
       exit(1);
     }
     avl_integrity_check(tree, node->right, 1);
@@ -77,7 +77,7 @@ void avl_integrity_check(struct avl_tree* const tree, struct avl_node* const nod
 void avl_balance_check(struct avl_tree* const tree, struct avl_node* node) {
   long balance = avl_get_balance(tree, node);
   if(balance != node->balance) {
-    printf("invalid balance, has %ld, should have %ld\n", node->balance, balance);
+    printf("\rinvalid balance, has %ld, should have %ld\n", node->balance, balance);
     exit(1);
   }
   if(node->left != NULL) {
@@ -113,8 +113,8 @@ struct tree_node mem[5000];
 unsigned long used = 0;
 struct avl_tree tree;
 
-struct avl_node* newnode(struct avl_tree* tree) {
-  return (struct avl_node*)&mem[++used - 1];
+void* newnode(struct avl_tree* tree) {
+  return &mem[++used - 1];
 }
 
 void delnode(struct avl_node* node) {
@@ -172,7 +172,7 @@ int main() {
         if(tree.is_empty != 1) {
           avl_integrity_check(&tree, tree.head, 0);
           avl_balance_check(&tree, tree.head);
-          delnode(ptr);
+          delnode(ptr - 1);
           avl_integrity_check(&tree, tree.head, 0);
           avl_balance_check(&tree, tree.head);
         }
