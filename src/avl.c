@@ -306,12 +306,12 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
           node->parent->left = NULL;
           sign = 1;
         }
-        deleted = node + 1;
+        deleted = node;
         node = node->parent;
       } else {
         tree->is_empty = 1;
         tree->head = NULL;
-        return node + 1;
+        return node;
       }
     } else {
       node->left->parent = node->parent;
@@ -323,11 +323,11 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
           node->parent->left = node->left;
           sign = 1;
         }
-        deleted = node + 1;
+        deleted = node;
         node = node->parent;
       } else {
         tree->head = node->left;
-        return node + 1;
+        return node;
       }
     }
   } else {
@@ -341,11 +341,11 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
           node->parent->left = node->right;
           sign = 1;
         }
-        deleted = node + 1;
+        deleted = node;
         node = node->parent;
       } else {
         tree->head = node->right;
-        return node + 1;
+        return node;
       }
     } else {
       temp = node->left;
@@ -357,7 +357,7 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
           }
           node->right = temp->right;
           (void) memcpy(node + 1, temp + 1, tree->item_size);
-          deleted = temp + 1;
+          deleted = temp;
           sign = -1;
         } else {
           do {
@@ -368,7 +368,7 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
             temp->right->parent = temp->parent;
           }
           (void) memcpy(node + 1, temp + 1, tree->item_size);
-          deleted = temp + 1;
+          deleted = temp;
           node = temp->parent;
           sign = 1;
         }
@@ -378,7 +378,7 @@ void* avl_delete_node(struct avl_tree* const tree, struct avl_node* node) {
         }
         node->left = temp->left;
         (void) memcpy(node + 1, temp + 1, tree->item_size);
-        deleted = temp + 1;
+        deleted = temp;
         sign = 1;
       }
     }

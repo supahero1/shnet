@@ -172,7 +172,7 @@ int main() {
         if(tree.is_empty != 1) {
           avl_integrity_check(&tree, tree.head, 0);
           avl_balance_check(&tree, tree.head);
-          delnode(ptr - 1);
+          delnode(ptr);
           avl_integrity_check(&tree, tree.head, 0);
           avl_balance_check(&tree, tree.head);
         }
