@@ -65,21 +65,6 @@ extern unsigned long time_manager_add_timer(struct time_manager* const, const ui
 
 extern void time_manager_stop(struct time_manager* const);
 
-struct time_manager_nd {
-  struct heap tree;
-  void (*on_timer_expire)(struct time_manager_nd*, void*);
-  void (*on_start)(struct time_manager_nd*);
-  void (*on_stop)(struct time_manager_nd*);
-  pthread_t worker;
-  _Atomic uint64_t latest;
-  uint64_t* latest_ptr;
-  pthread_mutex_t mutex;
-  sem_t work;
-  sem_t amount;
-};
-
-
-
 #ifdef __cplusplus
 }
 #endif
