@@ -17,7 +17,11 @@ extern "C" {
 enum time_consts {
   time_success,
   time_out_of_memory,
-  time_failure
+  time_failure,
+  
+  time_outside_timeout = 0,
+  time_inside_timeout,
+  time_interval
 };
 
 extern uint64_t time_get_ns(const uint64_t);
@@ -30,7 +34,8 @@ extern uint64_t time_get_sec(const uint64_t);
 
 struct time_manager_node {
   uint64_t time;
-  unsigned long id;
+  uint32_t id;
+  uint32_t interval;
   void (*func)(void*);
   void* data;
 };
@@ -59,9 +64,9 @@ extern int time_manager(struct time_manager* const, void (*)(struct time_manager
 
 extern int time_manager_start(struct time_manager* const);
 
-extern void time_manager_cancel_timer(struct time_manager* const, const uint64_t, const unsigned long, const int);
+extern void time_manager_cancel_timer(struct time_manager* const, const uint64_t, const uint32_t, const int);
 
-extern unsigned long time_manager_add_timer(struct time_manager* const, const uint64_t, void (*)(void*), void* const, const int);
+extern uint32_t time_manager_add_timer(struct time_manager* const, const uint64_t, void (*)(void*), void* const, const int);
 
 extern void time_manager_stop(struct time_manager* const);
 

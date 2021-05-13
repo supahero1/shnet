@@ -22,7 +22,7 @@ void cbfunc1(void* data) {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, 1);
+  (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, time_inside_timeout | time_interval);
   if(errno != time_success) {
     TEST_FAIL;
   }
@@ -52,27 +52,27 @@ void cbfunc4(void* data) {
   atomic_fetch_add(&last, 1);
   if(atomic_load(&last) == 1) {
     for(int i = 0; i < 11; ++i) {
-      (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, 1);
+      (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, time_inside_timeout);
       if(errno != time_success) {
         TEST_FAIL;
       }
     }
-    (void) time_manager_add_timer(data, time_get_sec(1), cbfunc5, data, 1);
+    (void) time_manager_add_timer(data, time_get_sec(1), cbfunc5, data, time_inside_timeout);
     if(errno != time_success) {
       TEST_FAIL;
     }
     uint64_t time = time_get_ms(750);
-    unsigned long id = time_manager_add_timer(data, time, cbfunc6, data, 1);
+    unsigned long id = time_manager_add_timer(data, time, cbfunc6, data, time_inside_timeout);
     if(errno != time_success) {
       TEST_FAIL;
     }
-    time_manager_cancel_timer(data, time, id, 1);
+    time_manager_cancel_timer(data, time, id, time_inside_timeout);
     time = time_get_ms(1);
-    id = time_manager_add_timer(data, time, cbfunc6, data, 1);
+    id = time_manager_add_timer(data, time, cbfunc6, data, time_inside_timeout);
     if(errno != time_success) {
       TEST_FAIL;
     }
-    time_manager_cancel_timer(data, time, id, 1);
+    time_manager_cancel_timer(data, time, id, time_inside_timeout);
   }
 }
 
@@ -124,7 +124,7 @@ void cbbenchfunc(void* data) {
     exit(0);
   }
   last_time = now;
-  (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, 1);
+  (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, time_inside_timeout);
   if(errno != time_success) {
     TEST_FAIL;
   }
@@ -133,6 +133,7 @@ void cbbenchfunc(void* data) {
 int counter = 0;
 
 int main() {
+  printf("%lu\n", sizeof(struct time_manager_node));
   printf_debug("Testing time.c:", 1);
   printf_debug("1. Stress test", 1);
   puts("If a round takes longer than 5 seconds, consider the test failed and feel free to break out using an interrupt (^C).");
@@ -156,15 +157,15 @@ int main() {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  (void) time_manager_add_timer(&manager, time_get_ms(1500), cbfunc1, &manager, 0);
+  (void) time_manager_add_timer(&manager, time_get_ms(1500), cbfunc1, &manager, time_outside_timeout);
   if(errno != time_success) {
     TEST_FAIL;
   }
-  (void) time_manager_add_timer(&manager, time_get_ms(500), cbfunc3, &manager, 0);
+  (void) time_manager_add_timer(&manager, time_get_ms(500), cbfunc3, &manager, time_outside_timeout);
   if(errno != time_success) {
     TEST_FAIL;
   }
-  (void) time_manager_add_timer(&manager, time_get_sec(1), cbfunc2, &manager, 0);
+  (void) time_manager_add_timer(&manager, time_get_sec(1), cbfunc2, &manager, time_outside_timeout);
   if(errno != time_success) {
     TEST_FAIL;
   }
@@ -177,6 +178,7 @@ int main() {
   goto start;
   benchmark:
   printf_debug("2. Benchmark", 1);
+  puts("A \"frame loop\" will be created to see various statistics. New intervals will be fired at 60FPS rate and the benchmark will end when 1000 timeouts have been fired.");
   err = time_manager(&manager, on_timeout_expire, 1, 0);
   if(err != time_success) {
     TEST_FAIL;
@@ -190,7 +192,7 @@ int main() {
   begin = time_get_ns(16666666);
   last_time = begin - 16666666;
   times = 1;
-  (void) time_manager_add_timer(&manager, begin, cbbenchfunc, &manager, 0);
+  (void) time_manager_add_timer(&manager, begin, cbbenchfunc, &manager, time_outside_timeout);
   if(errno != time_success) {
     TEST_FAIL;
   }
