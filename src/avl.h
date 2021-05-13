@@ -22,9 +22,6 @@ struct avl_node {
 };
 
 struct avl_tree {
-  char* array;
-  unsigned long size;
-  unsigned long used;
   struct avl_node* head;
   unsigned long item_size;
   void* (*new_node)(struct avl_tree*);
