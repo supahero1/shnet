@@ -13,7 +13,7 @@ extern "C" {
 #include <shnet/debug.h>
 
 #define TEST_PASS printf("\033[1;32m" "PASSED\n" "\033[0m"); printf_debug("PASSED", 0);
-#define TEST_FAIL printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__); printf_debug("FAILED (line %d)\n", 0, __LINE__);return 1
+#define TEST_FAIL printf("\033[1;31m" "FAILED (line %d)\n" "\033[0m", __LINE__); printf_debug("FAILED (line %d)\n", 0, __LINE__);exit(1)
 
 #ifdef __cplusplus
 }
