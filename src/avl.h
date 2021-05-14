@@ -1,10 +1,6 @@
 #ifndef YSfCugXXYkw_b__jFFk___qGEnC_chg0
 #define YSfCugXXYkw_b__jFFk___qGEnC_chg0 1
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 enum avl_consts {
   avl_success,
   avl_out_of_memory,
@@ -44,9 +40,5 @@ extern void* avl_try_delete(struct avl_tree* const, const void* const);
 extern void* avl_min(struct avl_tree* const);
 
 extern void* avl_max(struct avl_tree* const);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // YSfCugXXYkw_b__jFFk___qGEnC_chg0

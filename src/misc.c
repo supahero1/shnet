@@ -4,6 +4,10 @@
 #include <string.h>
 #include <stdint.h>
 
+/*
+ *  C O N T I N U O U S   M E M O R Y
+ */
+
 int contmem(struct contmem* const contmem, const unsigned long max_items, const unsigned long item_size, const unsigned long tolerance) {
   struct contmem_block* const ptr = malloc(sizeof(struct contmem_block) + max_items * item_size);
   if(ptr == NULL) {
@@ -70,4 +74,53 @@ void contmem_free(struct contmem* const contmem) {
     free(block);
     block = prev;
   } while(block != NULL);
+}
+
+/*
+ *  M U T U A L   F U N C T I O N   E X C L U S I O N
+ */
+
+int mufex(struct mufex* const m) {
+  struct mufex mx;
+  int err = pthread_mutex_init(&mx.protect, NULL);
+  if(err != 0) {
+    return err;
+  }
+  err = pthread_mutex_init(&mx.mutex, NULL);
+  if(err != 0) {
+    (void) pthread_mutex_destroy(&mx.protect);
+    return err;
+  }
+  mx.counter = 0;
+  *m = mx;
+  return 0;
+}
+
+void mufex_lock(struct mufex* const mx, const int shared) {
+  if(shared == mufex_shared) {
+    (void) pthread_mutex_lock(&mx->protect);
+    if(++mx->counter == 1) {
+      (void) pthread_mutex_lock(&mx->mutex);
+    }
+    (void) pthread_mutex_unlock(&mx->protect);
+  } else {
+    (void) pthread_mutex_lock(&mx->mutex);
+  }
+}
+
+void mufex_unlock(struct mufex* const mx, const int shared) {
+  if(shared == mufex_shared) {
+    (void) pthread_mutex_lock(&mx->protect);
+    if(--mx->counter == 0) {
+      (void) pthread_mutex_unlock(&mx->mutex);
+    }
+    (void) pthread_mutex_unlock(&mx->protect);
+  } else {
+    (void) pthread_mutex_unlock(&mx->mutex);
+  }
+}
+
+void mufex_destroy(struct mufex* const mx) {
+  (void) pthread_mutex_destroy(&mx->protect);
+  (void) pthread_mutex_destroy(&mx->mutex);
 }

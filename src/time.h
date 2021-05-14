@@ -1,10 +1,6 @@
 #ifndef __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z
 #define __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z 1
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "avl.h"
 #include "heap.h"
 #include "misc.h"
@@ -69,9 +65,5 @@ extern void time_manager_cancel_timer(struct time_manager* const, const uint64_t
 extern uint32_t time_manager_add_timer(struct time_manager* const, const uint64_t, void (*)(void*), void* const, const int);
 
 extern void time_manager_stop(struct time_manager* const);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z

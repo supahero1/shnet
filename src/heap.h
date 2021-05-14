@@ -1,10 +1,6 @@
 #ifndef tN_a_OVDejTvT_qZjNU51_kyi3Ym__CB
 #define tN_a_OVDejTvT_qZjNU51_kyi3Ym__CB 1
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 enum heap_consts {
   heap_success,
   heap_out_of_memory,
@@ -34,9 +30,5 @@ extern void heap_pop(struct heap* const);
 extern void heap_down(const struct heap* const, const unsigned long);
 
 extern void heap_up(const struct heap* const, const unsigned long);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // tN_a_OVDejTvT_qZjNU51_kyi3Ym__CB
