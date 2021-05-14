@@ -5,7 +5,6 @@
 
 struct heap heap(const unsigned long item_size, const long sign, long (*compare)(const void*, const void*)) {
   return (struct heap) {
-    .array = NULL,
     .size = item_size,
     .used = item_size,
     .item_size = item_size,
