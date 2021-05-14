@@ -74,8 +74,7 @@ int time_manager(struct time_manager* const manager, void (*on_timer_expire)(str
   *manager = (struct time_manager) {
     .tree = avl_tree(sizeof(struct time_manager_node), time_manager_new_node, time_manager_compare),
     .contmem = mem,
-    .on_timer_expire = on_timer_expire,
-    .mutex = PTHREAD_MUTEX_INITIALIZER
+    .on_timer_expire = on_timer_expire
   };
   err = sem_init(&manager->work, 0, 0);
   if(err != 0) {
@@ -85,6 +84,13 @@ int time_manager(struct time_manager* const manager, void (*on_timer_expire)(str
   err = sem_init(&manager->amount, 0, 0);
   if(err != 0) {
     (void) sem_destroy(&manager->work);
+    errno = err;
+    return time_failure;
+  }
+  err = pthread_mutex_init(&manager->mutex, NULL);
+  if(err != 0) {
+    (void) sem_destroy(&manager->work);
+    (void) sem_destroy(&manager->amount);
     errno = err;
     return time_failure;
   }
@@ -99,6 +105,7 @@ static void time_manager_cleanup_routine(void* time_manager_thread_data) {
   }
   (void) sem_destroy(&manager->work);
   (void) sem_destroy(&manager->amount);
+  (void) pthread_mutex_destroy(&manager->mutex);
   contmem_free(&manager->contmem);
 }
 
@@ -155,13 +162,7 @@ static void* time_manager_thread(void* time_manager_thread_data) {
 #undef manager
 
 int time_manager_start(struct time_manager* const manager) {
-  const int err = pthread_create(&manager->worker, NULL, time_manager_thread, manager);
-  if(err != 0) {
-    (void) sem_destroy(&manager->work);
-    (void) sem_destroy(&manager->amount);
-    contmem_free(&manager->contmem);
-  }
-  return err;
+  return pthread_create(&manager->worker, NULL, time_manager_thread, manager);
 }
 
 void time_manager_cancel_timer(struct time_manager* const manager, const uint64_t time, const uint32_t id, const int nolock) {
