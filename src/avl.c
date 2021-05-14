@@ -5,7 +5,6 @@
 
 struct avl_tree avl_tree(const unsigned long item_size, void* (*new_node)(struct avl_tree*), long (*compare)(const void*, const void*)) {
   return (struct avl_tree) {
-    .head = NULL,
     .item_size = item_size,
     .new_node = new_node,
     .compare = compare,
