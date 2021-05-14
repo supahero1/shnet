@@ -13,9 +13,9 @@ FILENAMES=build/debug.o build/heap.o build/avl.o build/misc.o build/time.o
 build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
-	$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
-	$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
+	#$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
+	#$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
+	#$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
 
 clean:
 	rm -r -f build logs.txt
