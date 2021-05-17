@@ -99,14 +99,16 @@ int time_manager(struct time_manager* const manager, void (*on_timer_expire)(str
 
 #define manager ((struct time_manager*) time_manager_thread_data)
 
+#include <stdio.h>
+
 static void time_manager_cleanup_routine(void* time_manager_thread_data) {
-  if(manager->on_stop != NULL) {
-    manager->on_stop(manager);
-  }
   (void) sem_destroy(&manager->work);
   (void) sem_destroy(&manager->amount);
   (void) pthread_mutex_destroy(&manager->mutex);
   contmem_free(&manager->contmem);
+  if(manager->on_stop != NULL) {
+    manager->on_stop(manager);
+  }
 }
 
 static void* time_manager_thread(void* time_manager_thread_data) {
@@ -162,7 +164,26 @@ static void* time_manager_thread(void* time_manager_thread_data) {
 #undef manager
 
 int time_manager_start(struct time_manager* const manager) {
-  return pthread_create(&manager->worker, NULL, time_manager_thread, manager);
+  int err = pthread_create(&manager->worker, NULL, time_manager_thread, manager);
+  if(err == 0) {
+    err = time_success;
+  }
+  return err;
+}
+
+int time_manager_start_detached(struct time_manager* const manager) {
+  pthread_attr_t attr;
+  int err = pthread_attr_init(&attr);
+  if(err != 0) {
+    return err;
+  }
+  (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  err = pthread_create(&manager->worker, &attr, time_manager_thread, manager);
+  (void) pthread_attr_destroy(&attr);
+  if(err == 0) {
+    return time_success;
+  }
+  return err;
 }
 
 void time_manager_cancel_timer(struct time_manager* const manager, const uint64_t time, const uint32_t id, const int nolock) {

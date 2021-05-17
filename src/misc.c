@@ -82,45 +82,27 @@ void contmem_free(struct contmem* const contmem) {
 
 int mufex(struct mufex* const m) {
   struct mufex mx;
-  int err = pthread_mutex_init(&mx.protect, NULL);
+  int err = pthread_mutex_init(&mx.mutex, NULL);
   if(err != 0) {
     return err;
   }
-  err = pthread_mutex_init(&mx.mutex, NULL);
-  if(err != 0) {
-    (void) pthread_mutex_destroy(&mx.protect);
-    return err;
-  }
-  mx.counter = 0;
+  atomic_store(&mx.counter, 0);
   *m = mx;
   return 0;
 }
 
 void mufex_lock(struct mufex* const mx, const int shared) {
-  if(shared == mufex_shared) {
-    (void) pthread_mutex_lock(&mx->protect);
-    if(++mx->counter == 1) {
-      (void) pthread_mutex_lock(&mx->mutex);
-    }
-    (void) pthread_mutex_unlock(&mx->protect);
-  } else {
+  if(shared != mufex_shared || atomic_fetch_add(&mx->counter, 1) == 0) {
     (void) pthread_mutex_lock(&mx->mutex);
   }
 }
 
 void mufex_unlock(struct mufex* const mx, const int shared) {
-  if(shared == mufex_shared) {
-    (void) pthread_mutex_lock(&mx->protect);
-    if(--mx->counter == 0) {
-      (void) pthread_mutex_unlock(&mx->mutex);
-    }
-    (void) pthread_mutex_unlock(&mx->protect);
-  } else {
+  if(shared != mufex_shared || atomic_fetch_sub(&mx->counter, 1) == 1) {
     (void) pthread_mutex_unlock(&mx->mutex);
   }
 }
 
 void mufex_destroy(struct mufex* const mx) {
-  (void) pthread_mutex_destroy(&mx->protect);
   (void) pthread_mutex_destroy(&mx->mutex);
 }

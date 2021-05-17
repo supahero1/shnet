@@ -107,3 +107,10 @@ void heap_up(const struct heap* const heap, const unsigned long index) {
     (void) memcpy(heap->array + idx, heap->array, heap->item_size);
   }
 }
+
+void heap_free(struct heap* const heap) {
+  free(heap->array);
+  heap->array = NULL;
+  heap->size = 0;
+  heap->used = 0;
+}

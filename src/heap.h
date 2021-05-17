@@ -31,4 +31,6 @@ extern void heap_down(const struct heap* const, const unsigned long);
 
 extern void heap_up(const struct heap* const, const unsigned long);
 
+extern void heap_free(struct heap* const);
+
 #endif // tN_a_OVDejTvT_qZjNU51_kyi3Ym__CB

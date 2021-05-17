@@ -6,7 +6,7 @@
 #include <shnet/heap.h>
 
 #define count  10000UL
-#define repeat 100UL
+#define repeat 50UL
 
 struct heap_node {
   unsigned long value;
@@ -243,5 +243,6 @@ int main() {
   printf("\r");
   TEST_PASS;
   printf_debug("Testing heap.c succeeded", 1);
+  heap_free(&h);
   return 0;
 }

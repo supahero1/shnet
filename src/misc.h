@@ -38,6 +38,7 @@ extern void contmem_free(struct contmem* const);
  */
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 enum mufex_consts {
   mufex_shared,
@@ -45,9 +46,8 @@ enum mufex_consts {
 };
 
 struct mufex {
-  pthread_mutex_t protect;
   pthread_mutex_t mutex;
-  unsigned long counter;
+  _Atomic unsigned long long counter;
 };
 
 extern int mufex(struct mufex* const);

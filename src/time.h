@@ -60,6 +60,8 @@ extern int time_manager(struct time_manager* const, void (*)(struct time_manager
 
 extern int time_manager_start(struct time_manager* const);
 
+extern int time_manager_start_detached(struct time_manager* const);
+
 extern void time_manager_cancel_timer(struct time_manager* const, const uint64_t, const uint32_t, const int);
 
 extern uint32_t time_manager_add_timer(struct time_manager* const, const uint64_t, void (*)(void*), void* const, const int);

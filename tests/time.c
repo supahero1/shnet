@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <shnet/time.h>
 
 void on_timeout_expire(struct time_manager* manager, void* lool) {
@@ -95,6 +96,12 @@ uint64_t min = 100000000000;
 uint64_t max = 0;
 uint64_t avg[1000];
 
+int canQuit = 0;
+
+void quit(struct time_manager* d) {
+  canQuit = 1;
+}
+
 void cbbenchfunc(void* data) {
   uint64_t now = time_get_ns(0);
   uint64_t diff = now - last_time;
@@ -121,12 +128,14 @@ void cbbenchfunc(void* data) {
     sd = sqrt(sd);
     printf_debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
-    exit(0);
-  }
-  last_time = now;
-  (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, time_inside_timeout);
-  if(errno != time_success) {
-    TEST_FAIL;
+    ((struct time_manager*) data)->on_stop = quit;
+    time_manager_stop(data);
+  } else {
+    last_time = now;
+    (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, time_inside_timeout);
+    if(errno != time_success) {
+      TEST_FAIL;
+    }
   }
 }
 
@@ -196,6 +205,8 @@ int main() {
   if(errno != time_success) {
     TEST_FAIL;
   }
-  getc(stdin);
+  while(canQuit == 0) {
+    sleep(1);
+  }
   return 0;
 }
