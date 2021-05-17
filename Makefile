@@ -8,7 +8,7 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o build/heap.o build/avl.o build/misc.o build/time.o build/threads.o build/net.o
+FILENAMES=build/debug.o build/heap.o build/avl.o build/misc.o build/time.o build/threads.o #build/net.o
 
 build: prepare $(FILENAMES)
 
@@ -78,5 +78,5 @@ build/time.o: build/heap.o build/avl.o build/misc.o
 build/threads.o:
 	$(COMP) -fPIC -c src/threads.c -o build/threads.o
 
-build/net.o: build/time.o
-	$(COMP) -fPIC -c src/net.c -o build/net.o
+#build/net.o: build/time.o
+	#$(COMP) -fPIC -c src/net.c -o build/net.o
