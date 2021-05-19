@@ -15,6 +15,8 @@ void on_timeout_expire(struct time_manager* manager, void* lool) {
 
 _Atomic unsigned char last;
 
+pthread_mutex_t mutexo = PTHREAD_MUTEX_INITIALIZER;
+
 void cbfunc4(void*);
 
 void cbfunc1(void* data) {
@@ -23,7 +25,7 @@ void cbfunc1(void* data) {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, time_inside_timeout | time_interval);
+  (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, time_interval);
   if(errno != time_success) {
     TEST_FAIL;
   }
@@ -53,27 +55,27 @@ void cbfunc4(void* data) {
   atomic_fetch_add(&last, 1);
   if(atomic_load(&last) == 1) {
     for(int i = 0; i < 11; ++i) {
-      (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, time_inside_timeout);
+      (void) time_manager_add_timer(data, time_get_ms(500), cbfunc4, data, 0);
       if(errno != time_success) {
         TEST_FAIL;
       }
     }
-    (void) time_manager_add_timer(data, time_get_sec(1), cbfunc5, data, time_inside_timeout);
+    (void) time_manager_add_timer(data, time_get_sec(1), cbfunc5, data, 0);
     if(errno != time_success) {
       TEST_FAIL;
     }
     uint64_t time = time_get_ms(750);
-    unsigned long id = time_manager_add_timer(data, time, cbfunc6, data, time_inside_timeout);
+    unsigned long id = time_manager_add_timer(data, time, cbfunc6, data, 0);
     if(errno != time_success) {
       TEST_FAIL;
     }
-    time_manager_cancel_timer(data, time, id, time_inside_timeout);
+    time_manager_cancel_timer(data, time, id);
     time = time_get_ms(1);
-    id = time_manager_add_timer(data, time, cbfunc6, data, time_inside_timeout);
+    id = time_manager_add_timer(data, time, cbfunc6, data, 0);
     if(errno != time_success) {
       TEST_FAIL;
     }
-    time_manager_cancel_timer(data, time, id, time_inside_timeout);
+    time_manager_cancel_timer(data, time, id);
   }
 }
 
@@ -83,6 +85,7 @@ void cbfunc5(void* data) {
     TEST_FAIL;
   }
   time_manager_stop(data);
+  (void) pthread_mutex_unlock(&mutexo);
 }
 
 void cbfunc6(void* data) {
@@ -97,10 +100,6 @@ uint64_t max = 0;
 uint64_t avg[1000];
 
 int canQuit = 0;
-
-void quit(struct time_manager* d) {
-  canQuit = 1;
-}
 
 void cbbenchfunc(void* data) {
   uint64_t now = time_get_ns(0);
@@ -128,11 +127,11 @@ void cbbenchfunc(void* data) {
     sd = sqrt(sd);
     printf_debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
-    ((struct time_manager*) data)->on_stop = quit;
     time_manager_stop(data);
+    canQuit = 1;
   } else {
     last_time = now;
-    (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, time_inside_timeout);
+    (void) time_manager_add_timer(data, begin + 16666666 * times++, cbbenchfunc, data, 0);
     if(errno != time_success) {
       TEST_FAIL;
     }
@@ -151,6 +150,7 @@ int main() {
     (void) clock_gettime(CLOCK_REALTIME, &tp);
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
+  (void) pthread_mutex_lock(&mutexo);
   struct time_manager manager;
   start:
   printf("\rRound %d/3", counter + 1);
@@ -159,26 +159,25 @@ int main() {
   if(err != time_success) {
     TEST_FAIL;
   }
-  manager.on_start = NULL;
-  manager.on_stop = NULL;
   err = time_manager_start(&manager);
   if(err != time_success) {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  (void) time_manager_add_timer(&manager, time_get_ms(1500), cbfunc1, &manager, time_outside_timeout);
+  (void) time_manager_add_timer(&manager, time_get_ms(1500), cbfunc1, &manager, 0);
   if(errno != time_success) {
     TEST_FAIL;
   }
-  (void) time_manager_add_timer(&manager, time_get_ms(500), cbfunc3, &manager, time_outside_timeout);
+  (void) time_manager_add_timer(&manager, time_get_ms(500), cbfunc3, &manager, 0);
   if(errno != time_success) {
     TEST_FAIL;
   }
-  (void) time_manager_add_timer(&manager, time_get_sec(1), cbfunc2, &manager, time_outside_timeout);
+  (void) time_manager_add_timer(&manager, time_get_sec(1), cbfunc2, &manager, 0);
   if(errno != time_success) {
     TEST_FAIL;
   }
-  (void) pthread_join(manager.worker, NULL);
+  (void) pthread_mutex_lock(&mutexo);
+  time_manager_free(&manager);
   if(counter++ == 2) {
     puts("");
     TEST_PASS;
@@ -192,8 +191,6 @@ int main() {
   if(err != time_success) {
     TEST_FAIL;
   }
-  manager.on_start = NULL;
-  manager.on_stop = NULL;
   err = time_manager_start(&manager);
   if(err != time_success) {
     TEST_FAIL;
@@ -201,12 +198,13 @@ int main() {
   begin = time_get_ns(16666666);
   last_time = begin - 16666666;
   times = 1;
-  (void) time_manager_add_timer(&manager, begin, cbbenchfunc, &manager, time_outside_timeout);
+  (void) time_manager_add_timer(&manager, begin, cbbenchfunc, &manager, 0);
   if(errno != time_success) {
     TEST_FAIL;
   }
   while(canQuit == 0) {
-    sleep(1);
+    usleep(100000);
   }
+  time_manager_free(&manager);
   return 0;
 }

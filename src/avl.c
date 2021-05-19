@@ -214,7 +214,7 @@ int avl_insert(struct avl_tree* const tree, const void* const item, const int fl
   if(tree->is_empty == 1) {
     node = tree->new_node(tree);
     if(node == NULL) {
-      return avl_failure;
+      return avl_out_of_memory;
     }
     tree->is_empty = 0;
     *node = (struct avl_node) {
@@ -230,7 +230,7 @@ int avl_insert(struct avl_tree* const tree, const void* const item, const int fl
   if(flags == avl_disallow_copies) {
     node = avl_insert_seek_nc(tree, item);
     if(node == NULL) {
-      return avl_failure;
+      return avl_out_of_memory;
     }
   } else {
     node = avl_insert_seek(tree, item);

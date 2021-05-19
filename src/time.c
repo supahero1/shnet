@@ -65,6 +65,8 @@ static void time_manager_remove_node(struct time_manager* const manager, struct 
   }
 }
 
+static void time_manager_thread(void*);
+
 int time_manager(struct time_manager* const manager, void (*on_timer_expire)(struct time_manager*, void*), const unsigned long max_timeouts, const unsigned long tolerance) {
   struct contmem mem;
   int err = contmem(&mem, max_timeouts, sizeof(struct time_manager_tree_node), tolerance);
@@ -94,36 +96,40 @@ int time_manager(struct time_manager* const manager, void (*on_timer_expire)(str
     errno = err;
     return time_failure;
   }
+  err = threads(&manager->thread);
+  if(err != threads_success) {
+    (void) sem_destroy(&manager->work);
+    (void) sem_destroy(&manager->amount);
+    (void) pthread_mutex_destroy(&manager->mutex);
+    return time_failure;
+  }
+  manager->thread.func = time_manager_thread;
+  manager->thread.data = manager;
   return time_success;
+}
+
+static void time_manager_internal_cancel_timer(struct time_manager* const manager, const uint64_t time, const uint32_t id) {
+  time_manager_remove_node(manager, avl_delete(&manager->tree, &((struct time_manager_node){ .time = time, .id = id })));
+  if(manager->tree.is_empty == 1) {
+    manager->latest_ptr = NULL;
+    atomic_store(&manager->latest, 0);
+  } else {
+    uint64_t* const latest = (uint64_t*) avl_min(&manager->tree);
+    manager->latest_ptr = latest;
+    atomic_store(&manager->latest, *latest);
+  }
+  (void) sem_post(&manager->work);
 }
 
 #define manager ((struct time_manager*) time_manager_thread_data)
 
-#include <stdio.h>
-
-static void time_manager_cleanup_routine(void* time_manager_thread_data) {
-  (void) sem_destroy(&manager->work);
-  (void) sem_destroy(&manager->amount);
-  (void) pthread_mutex_destroy(&manager->mutex);
-  contmem_free(&manager->contmem);
-  if(manager->on_stop != NULL) {
-    manager->on_stop(manager);
-  }
-}
-
-static void* time_manager_thread(void* time_manager_thread_data) {
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+static void time_manager_thread(void* time_manager_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   {
     sigset_t mask;
     (void) sigfillset(&mask);
     (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
   }
-  pthread_cleanup_push(time_manager_cleanup_routine, time_manager_thread_data);
-  if(manager->on_start != NULL) {
-    manager->on_start(manager);
-  }
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
   while(1) {
     check_for_timers:
     (void) sem_wait(&manager->amount);
@@ -141,55 +147,38 @@ static void* time_manager_thread(void* time_manager_thread_data) {
     (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
     (void) pthread_mutex_lock(&manager->mutex);
     if(atomic_load(&manager->latest) == 0) {
-      goto out;
+      (void) pthread_mutex_unlock(&manager->mutex);
+    } else {
+      struct time_manager_node timeout = *((struct time_manager_node*) manager->latest_ptr);
+      const unsigned long tolerance = manager->contmem.tolerance;
+      if(timeout.interval != 0) {
+        manager->contmem.tolerance = UINTPTR_MAX;
+      }
+      time_manager_internal_cancel_timer(manager, timeout.time, timeout.id);
+      if(timeout.interval != 0) {
+        manager->contmem.tolerance = tolerance;
+      }
+      (void) pthread_mutex_unlock(&manager->mutex);
+      manager->on_timer_expire(manager, &timeout);
     }
-    struct time_manager_node timeout = *((struct time_manager_node*) manager->latest_ptr);
-    const unsigned long tolerance = manager->contmem.tolerance;
-    if(timeout.interval != 0) {
-      manager->contmem.tolerance = UINTPTR_MAX;
-    }
-    time_manager_cancel_timer(manager, timeout.time, timeout.id, time_inside_timeout);
-    if(timeout.interval != 0) {
-      manager->contmem.tolerance = tolerance;
-    }
-    manager->on_timer_expire(manager, &timeout);
-    out:
-    (void) pthread_mutex_unlock(&manager->mutex);
     (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_testcancel();
   }
-  pthread_cleanup_pop(1);
-  return NULL;
 }
 
 #undef manager
 
 int time_manager_start(struct time_manager* const manager) {
-  int err = pthread_create(&manager->worker, NULL, time_manager_thread, manager);
-  if(err == 0) {
-    err = time_success;
+  switch(threads_add(&manager->thread, 1)) {
+    case threads_success: return time_success;
+    case threads_out_of_memory: return time_out_of_memory;
+    case threads_failure: return time_failure;
   }
-  return err;
+  return 0;
 }
 
-int time_manager_start_detached(struct time_manager* const manager) {
-  pthread_attr_t attr;
-  int err = pthread_attr_init(&attr);
-  if(err != 0) {
-    return err;
-  }
-  (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  err = pthread_create(&manager->worker, &attr, time_manager_thread, manager);
-  (void) pthread_attr_destroy(&attr);
-  if(err == 0) {
-    return time_success;
-  }
-  return err;
-}
-
-void time_manager_cancel_timer(struct time_manager* const manager, const uint64_t time, const uint32_t id, const int nolock) {
-  if(nolock == 0) {
-    (void) pthread_mutex_lock(&manager->mutex);
-  }
+void time_manager_cancel_timer(struct time_manager* const manager, const uint64_t time, const uint32_t id) {
+  (void) pthread_mutex_lock(&manager->mutex);
   time_manager_remove_node(manager, avl_delete(&manager->tree, &((struct time_manager_node){ .time = time, .id = id })));
   if(manager->tree.is_empty == 1) {
     manager->latest_ptr = NULL;
@@ -200,28 +189,23 @@ void time_manager_cancel_timer(struct time_manager* const manager, const uint64_
     atomic_store(&manager->latest, *latest);
   }
   (void) sem_post(&manager->work);
-  if(nolock == 0) {
-    (void) pthread_mutex_unlock(&manager->mutex);
-  }
+  (void) pthread_mutex_unlock(&manager->mutex);
 }
 
-uint32_t time_manager_add_timer(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, const int flags) {
-  if((flags & 1) == 0) {
-    (void) pthread_mutex_lock(&manager->mutex);
-  }
+uint32_t time_manager_add_timer(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, const int is_interval) {
+  (void) pthread_mutex_lock(&manager->mutex);
   if(manager->counter == UINT32_MAX) {
     manager->counter = 0;
   }
   const uint32_t id = manager->counter++;
-  const int err = avl_insert(&manager->tree, &((struct time_manager_node) { .time = time, .id = id, .interval = flags & 2, .func = func, .data = data }), avl_allow_copies);
-  errno = err;
-  if(err != 0) {
+  const int err = avl_insert(&manager->tree, &((struct time_manager_node) { .time = time, .id = id, .interval = is_interval, .func = func, .data = data }), avl_allow_copies);
+  if(err == avl_out_of_memory) {
     --manager->counter;
-    if((flags & 1) == 0) {
-      (void) pthread_mutex_unlock(&manager->mutex);
-    }
+    errno = time_out_of_memory;
+    (void) pthread_mutex_unlock(&manager->mutex);
     return 0;
   }
+  errno = time_success;
   uint64_t* const latest = (uint64_t*) avl_min(&manager->tree);
   if(manager->latest_ptr == NULL || *latest != *manager->latest_ptr) {
     manager->latest_ptr = latest;
@@ -229,12 +213,18 @@ uint32_t time_manager_add_timer(struct time_manager* const manager, const uint64
     (void) sem_post(&manager->work);
   }
   (void) sem_post(&manager->amount);
-  if((flags & 1) == 0) {
-    (void) pthread_mutex_unlock(&manager->mutex);
-  }
+  (void) pthread_mutex_unlock(&manager->mutex);
   return id;
 }
 
 void time_manager_stop(struct time_manager* const manager) {
-  pthread_cancel(manager->worker);
+  threads_shutdown(&manager->thread);
+}
+
+void time_manager_free(struct time_manager* const manager) {
+  (void) sem_destroy(&manager->work);
+  (void) sem_destroy(&manager->amount);
+  (void) pthread_mutex_destroy(&manager->mutex);
+  contmem_free(&manager->contmem);
+  threads_free(&manager->thread);
 }

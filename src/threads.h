@@ -8,31 +8,30 @@
 enum threads_consts {
   threads_success,
   threads_out_of_memory,
-  threads_failure,
-  
-  threads_creation_error = 0,
-  threads_close,
-  
-  threads_detached = 0,
-  threads_joinable
+  threads_failure
 };
 
 struct threads {
   pthread_t* threads;
+  unsigned long used;
   unsigned long size;
-  _Atomic unsigned long used;
-  _Atomic int flag;
+  _Atomic unsigned long togo;
   pthread_barrier_t* barrier;
-  void (*startup)(void*);
+  sem_t sem;
+  void (*func)(void*);
   void* data;
-  void (*on_start)(struct threads*);
-  void (*on_stop)(struct threads*);
 };
 
-extern int threads_add(struct threads* const, const unsigned long, const int);
+extern int threads(struct threads* const);
 
-extern int threads_remove(struct threads* const, const unsigned long);
+extern int threads_resize(struct threads* const, const unsigned long);
 
-extern int threads_shutdown(struct threads* const);
+extern int threads_add(struct threads* const, const unsigned long);
+
+extern void threads_remove(struct threads* const, const unsigned long);
+
+extern void threads_shutdown(struct threads* const);
+
+extern void threads_free(struct threads* const);
 
 #endif // _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_

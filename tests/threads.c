@@ -1,59 +1,78 @@
 #include "tests.h"
 
+#include <time.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdatomic.h>
 #include <shnet/threads.h>
 
 #define thread_count 100UL
-
-_Atomic unsigned long first = 0;
-
-void onstart(struct threads* a) {
-  int err = threads_shutdown(a);
-  if(err != threads_success) {
-    TEST_FAIL;
-  }
-}
-
-void onstop(struct threads* a) {
-  if(atomic_fetch_add(&first, 1) == 2) {
-    return;
-  }
-  int err = threads_add(a, thread_count, threads_detached);
-  if(err != threads_success) {
-    if(err == threads_out_of_memory) {
-      TEST_FAIL;
-    }
-    TEST_FAIL;
-  }
-}
+#define repeat 1000
 
 void cb(void* data) {
-  sleep(9999);
+  (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+  usleep(5000000);
+  TEST_FAIL;
 }
 
 int main() {
   printf_debug("Testing threads.c:", 1);
-  printf_debug("This usually takes exactly a second, but it MIGHT take longer. Be patient, or use an interrupt (^C) to break out of the test.", 1);
-  struct threads threads;
-  memset(&threads, 0, sizeof(struct threads));
-  threads.on_start = onstart;
-  threads.on_stop = onstop;
-  threads.startup = cb;
-  threads.data = &threads;
-  int err = threads_add(&threads, thread_count, threads_detached);
+  {
+    struct timespec tp;
+    (void) clock_gettime(CLOCK_REALTIME, &tp);
+    srand(tp.tv_nsec + tp.tv_sec * 1000000000);
+  }
+  struct threads thrds;
+  int err = threads(&thrds);
   if(err != threads_success) {
     TEST_FAIL;
   }
-  while(1) {
-    sleep(1);
-    if(atomic_load(&first) == 3) {
-      TEST_PASS;
-      return 0;
+  thrds.func = cb;
+  thrds.data = &thrds;
+  err = threads_add(&thrds, thread_count);
+  if(err != threads_success) {
+    TEST_FAIL;
+  }
+  unsigned long how_much;
+  for(unsigned long i = 0; i < repeat; ++i) {
+    printf("\r%.1f%%", (float)(i + 1) / repeat / 2 * 100);
+    fflush(stdout);
+    how_much = 1 + (rand() % thrds.used);
+    threads_remove(&thrds, how_much);
+    how_much = 1 + (rand() % (thread_count - thrds.used));
+    err = threads_add(&thrds, how_much);
+    if(err != threads_success) {
+      printf("\r");
+      if(err == threads_out_of_memory) {
+        TEST_FAIL;
+      }
+      TEST_FAIL;
     }
   }
+  if(thrds.used != 0) {
+    threads_shutdown(&thrds);
+  }
+  for(unsigned long i = 0; i < repeat; ++i) {
+    printf("\r%.1f%%", (float)((i + repeat) + 1) / repeat / 2 * 100);
+    fflush(stdout);
+    how_much = 1 + (rand() % (thread_count - thrds.used));
+    err = threads_add(&thrds, how_much);
+    if(err != threads_success) {
+      printf("\r");
+      if(err == threads_out_of_memory) {
+        TEST_FAIL;
+      }
+      TEST_FAIL;
+    }
+    how_much = 1 + (rand() % thrds.used);
+    threads_remove(&thrds, how_much);
+  }
+  if(thrds.used != 0) {
+    threads_shutdown(&thrds);
+  }
+  threads_free(&thrds);
+  printf("\r");
+  TEST_PASS;
   return 0;
 }
