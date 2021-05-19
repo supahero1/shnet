@@ -2,7 +2,6 @@
 #define __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z 1
 
 #include "avl.h"
-#include "heap.h"
 #include "misc.h"
 #include "threads.h"
 
