@@ -32,7 +32,7 @@ int main() {
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
   printf_debug("1. Initialisation", 1);
-  struct heap h = heap(sizeof(struct heap_node), heap_min, cmp);
+  struct heap h = heap(sizeof(struct heap_node), heap_min, cmp, 1);
   if(h.item_size != sizeof(struct heap_node)) {
     TEST_FAIL;
   }
@@ -61,7 +61,7 @@ int main() {
   printf_debug("2.1.", 1);
   h.used = h.item_size;
   h.sign = heap_min;
-  (void) heap_add_item(&h, &((struct heap_node) {
+  (void) heap_insert(&h, &((struct heap_node) {
     .value = 1
   }));
   heap_down(&h, h.item_size);
@@ -70,7 +70,7 @@ int main() {
   }
   TEST_PASS;
   printf_debug("2.2.", 1);
-  (void) heap_add_item(&h, &((struct heap_node) {
+  (void) heap_insert(&h, &((struct heap_node) {
     .value = 2
   }));
   heap_down(&h, h.item_size);
@@ -94,7 +94,7 @@ int main() {
   printf_debug("2.4.", 1);
   h.used = h.item_size;
   h.sign = heap_max;
-  (void) heap_add_item(&h, &((struct heap_node) {
+  (void) heap_insert(&h, &((struct heap_node) {
     .value = 1
   }));
   heap_down(&h, h.item_size);
@@ -103,7 +103,7 @@ int main() {
   }
   TEST_PASS;
   printf_debug("2.5.", 1);
-  (void) heap_add_item(&h, &((struct heap_node) {
+  (void) heap_insert(&h, &((struct heap_node) {
     .value = 0
   }));
   heap_down(&h, h.item_size);
@@ -130,7 +130,7 @@ int main() {
   h.sign = heap_min;
   unsigned long i1[] = { 1, 3, 2, 4 };
   for(unsigned long i = 0; i < 4; ++i) {
-    (void) heap_add_item(&h, &((struct heap_node) {
+    (void) heap_insert(&h, &((struct heap_node) {
       .value = i1[i]
     }));
   }
@@ -145,7 +145,7 @@ int main() {
   h.sign = heap_max;
   printf_debug("3.2.", 1);
   for(unsigned long i = 0; i < 4; ++i) {
-    (void) heap_add_item(&h, &((struct heap_node) {
+    (void) heap_insert(&h, &((struct heap_node) {
       .value = i1[i]
     }));
   }
@@ -166,7 +166,7 @@ int main() {
       i2[i] = 1UL + rand();
     }
     for(unsigned long i = 0; i < count; ++i) {
-      (void) heap_add_item(&h, &((struct heap_node) {
+      (void) heap_insert(&h, &((struct heap_node) {
         .value = i2[i]
       }));
     }
@@ -208,7 +208,7 @@ int main() {
       i2[i] = 1UL + rand();
     }
     for(unsigned long i = 0; i < count; ++i) {
-      (void) heap_add_item(&h, &((struct heap_node) {
+      (void) heap_insert(&h, &((struct heap_node) {
         .value = i2[i]
       }));
     }
