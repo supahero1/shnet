@@ -8,16 +8,16 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o #build/net.o
+FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o
 
 build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
-	$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
-	$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
-	$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
-	#$(COMP) tests/net.c -o build/net -lshnet -lm && build/net
+	#$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
+	#$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
+	#$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
+	#$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
+	$(COMP) tests/net.c -o build/net -lshnet -lm && build/net
 
 clean:
 	rm -r -f build logs.txt
@@ -81,5 +81,5 @@ build/misc.o:
 build/time.o: build/refheap.o
 	$(COMP) -fPIC -c src/time.c -o build/time.o
 
-#build/net.o: build/time.o
-	#$(COMP) -fPIC -c src/net.c -o build/net.o
+build/net.o: build/time.o
+	$(COMP) -fPIC -c src/net.c -o build/net.o
