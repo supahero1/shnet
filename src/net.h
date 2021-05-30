@@ -57,6 +57,12 @@ extern int net_string_to_address(void* const, const char* const);
 
 extern int net_address_to_string(void* const, char* const);
 
+extern void net_set_family(void* const, const int);
+
+extern void net_any_address(void* const);
+
+extern void net_set_address(void* const, const void* const);
+
 extern void net_set_port(void* const, const in_port_t);
 
 extern in_port_t net_get_port(void* const);
@@ -104,7 +110,7 @@ extern void net_epoll_stop(struct net_epoll* const);
 
 extern void net_epoll_free(struct net_epoll* const);
 
-struct net_server_base_part {
+struct net_server_base {
   int sfd;
   int events;
   struct contmem sockets;
@@ -112,26 +118,26 @@ struct net_server_base_part {
   void (*on_event)(struct net_epoll*, struct epoll_event);
 };
 
-extern int net_server_base_part(struct net_server_base_part* const, const unsigned long, const unsigned long, const unsigned long, void (*)(struct net_epoll*, struct epoll_event));
+extern int net_server_base(struct net_server_base* const, const unsigned long, const unsigned long, const unsigned long, void (*)(struct net_epoll*, struct epoll_event));
 
-extern void net_server_base_part_free(struct net_server_base_part* const);
+extern void net_server_base_free(struct net_server_base* const);
 
-struct net_socket_base_part {
+struct net_socket_base {
   int sfd;
   int events;
-  struct net_server_base_part* server;
+  struct net_server_base* server;
 };
 
-extern int net_epoll_add_socket(struct net_epoll* const, struct net_socket_base_part* const);
+extern int net_epoll_add_socket(struct net_epoll* const, struct net_socket_base* const);
 
-extern int net_epoll_mod_socket(struct net_epoll* const, struct net_socket_base_part* const);
+extern int net_epoll_mod_socket(struct net_epoll* const, struct net_socket_base* const);
 
-extern int net_epoll_remove_socket(struct net_epoll* const, struct net_socket_base_part* const);
+extern int net_epoll_remove_socket(struct net_epoll* const, struct net_socket_base* const);
 
-extern int net_epoll_add_server(struct net_epoll* const, struct net_server_base_part* const);
+extern int net_epoll_add_server(struct net_epoll* const, struct net_server_base* const);
 
-extern int net_epoll_mod_server(struct net_epoll* const, struct net_server_base_part* const);
+extern int net_epoll_mod_server(struct net_epoll* const, struct net_server_base* const);
 
-extern int net_epoll_remove_server(struct net_epoll* const, struct net_server_base_part* const);
+extern int net_epoll_remove_server(struct net_epoll* const, struct net_server_base* const);
 
 #endif // MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i

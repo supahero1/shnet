@@ -68,6 +68,30 @@ int net_address_to_string(void* const addr, char* const buffer) {
   return net_success;
 }
 
+void net_set_family(void* const addr, const int family) {
+  if(((struct sockaddr*) addr)->sa_family == ipv4) {
+    ((struct sockaddr_in*) addr)->sin_family = family;
+  } else {
+    ((struct sockaddr_in6*) addr)->sin6_family = family;
+  }
+}
+
+void net_any_address(void* const addr) {
+  if(((struct sockaddr*) addr)->sa_family == ipv4) {
+    ((struct sockaddr_in*) addr)->sin_addr.s_addr = INADDR_ANY;
+  } else {
+    ((struct sockaddr_in6*) addr)->sin6_addr = in6addr_any;
+  }
+}
+
+void net_set_address(void* const addr, const void* const address) {
+  if(((struct sockaddr*) addr)->sa_family == ipv4) {
+    ((struct sockaddr_in*) addr)->sin_addr.s_addr = htons(*(uint32_t*) address);
+  } else {
+    (void) memcpy(((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, address, 16);
+  }
+}
+
 void net_set_port(void* const addr, const in_port_t port) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
     ((struct sockaddr_in*) addr)->sin_port = htons(port);
@@ -171,9 +195,9 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
     for(int i = 0; i < count; ++i) {
       (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
       if(((uintptr_t) events[i].data.ptr & 1) == 0) {
-        ((struct net_socket_base_part*)(events[i].data.ptr))->server->on_event(epoll, events[i]);
+        ((struct net_socket_base*)(events[i].data.ptr))->server->on_event(epoll, events[i]);
       } else {
-        ((struct net_server_base_part*)(events[i].data.ptr))->on_event(epoll, events[i]);
+        ((struct net_server_base*)(events[i].data.ptr))->on_event(epoll, events[i]);
       }
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
       pthread_testcancel();
@@ -217,7 +241,7 @@ void net_epoll_free(struct net_epoll* const epoll) {
   (void) close(epoll->sfd);
 }
 
-int net_server_base_part(struct net_server_base_part* const server, const unsigned long item_size, const unsigned long descriptors_per_part, const unsigned long tolerance, void (*on_event)(struct net_epoll*, struct epoll_event)) {
+int net_server_base(struct net_server_base* const server, const unsigned long item_size, const unsigned long descriptors_per_part, const unsigned long tolerance, void (*on_event)(struct net_epoll*, struct epoll_event)) {
   struct contmem sockets;
   int err = contmem(&sockets, descriptors_per_part, item_size, tolerance);
   if(err == contmem_out_of_memory) {
@@ -230,20 +254,18 @@ int net_server_base_part(struct net_server_base_part* const server, const unsign
     errno = err;
     return net_failure;
   }
-  *server = (struct net_server_base_part) {
-    .sockets = sockets,
-    .mutex = mutex,
-    .on_event = on_event
-  };
+  server->sockets = sockets;
+  server->mutex = mutex;
+  server->on_event = on_event;
   return net_success;
 }
 
-void net_server_base_part_free(struct net_server_base_part* const server) {
+void net_server_base_free(struct net_server_base* const server) {
   contmem_free(&server->sockets);
   mufex_destroy(&server->mutex);
 }
 
-int net_epoll_add_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+int net_epoll_add_socket(struct net_epoll* const epoll, struct net_socket_base* const socket) {
   mufex_lock(&socket->server->mutex, mufex_not_shared);
   void* const mem = contmem_get(&socket->server->sockets);
   if(mem == NULL) {
@@ -266,7 +288,7 @@ int net_epoll_add_socket(struct net_epoll* const epoll, struct net_socket_base_p
   return err;
 }
 
-int net_epoll_mod_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+int net_epoll_mod_socket(struct net_epoll* const epoll, struct net_socket_base* const socket) {
   const int err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
     .events = socket->events,
     .data = (epoll_data_t) {
@@ -279,11 +301,11 @@ int net_epoll_mod_socket(struct net_epoll* const epoll, struct net_socket_base_p
   return net_success;
 }
 
-int net_epoll_remove_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+int net_epoll_remove_socket(struct net_epoll* const epoll, struct net_socket_base* const socket) {
   mufex_lock(&socket->server->mutex, mufex_not_shared);
   int err = epoll_ctl(epoll->sfd, EPOLL_CTL_DEL, socket->sfd, NULL);
   if(err == 0) {
-    struct net_socket_base_part* const last = contmem_last(&socket->server->sockets);
+    struct net_socket_base* const last = contmem_last(&socket->server->sockets);
     err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, last->sfd, &((struct epoll_event) {
       .events = last->events,
       .data = (epoll_data_t) {
@@ -303,7 +325,7 @@ int net_epoll_remove_socket(struct net_epoll* const epoll, struct net_socket_bas
   return err;
 }
 
-static int net_epoll_modify_server(struct net_epoll* const epoll, struct net_server_base_part* const server, const int method) {
+static int net_epoll_modify_server(struct net_epoll* const epoll, struct net_server_base* const server, const int method) {
   const int err = epoll_ctl(epoll->sfd, method, server->sfd, &((struct epoll_event) {
     .events = server->events,
     .data = (epoll_data_t) {
@@ -316,14 +338,14 @@ static int net_epoll_modify_server(struct net_epoll* const epoll, struct net_ser
   return net_success;
 }
 
-int net_epoll_add_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+int net_epoll_add_server(struct net_epoll* const epoll, struct net_server_base* const server) {
   return net_epoll_modify_server(epoll, server, EPOLL_CTL_ADD);
 }
 
-int net_epoll_mod_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+int net_epoll_mod_server(struct net_epoll* const epoll, struct net_server_base* const server) {
   return net_epoll_modify_server(epoll, server, EPOLL_CTL_MOD);
 }
 
-int net_epoll_remove_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+int net_epoll_remove_server(struct net_epoll* const epoll, struct net_server_base* const server) {
   return net_epoll_modify_server(epoll, server, EPOLL_CTL_DEL);
 }
