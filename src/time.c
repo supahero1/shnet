@@ -9,12 +9,48 @@ uint64_t time_sec_to_ns(const uint64_t sec) {
   return sec * 1000000000;
 }
 
-uint64_t time_ms_to_ns(const uint64_t sec) {
+uint64_t time_sec_to_us(const uint64_t sec) {
   return sec * 1000000;
 }
 
-uint64_t time_us_to_ns(const uint64_t sec) {
+uint64_t time_sec_to_ms(const uint64_t sec) {
   return sec * 1000;
+}
+
+uint64_t time_ms_to_ns(const uint64_t ms) {
+  return ms * 1000000;
+}
+
+uint64_t time_ms_to_us(const uint64_t ms) {
+  return ms * 1000;
+}
+
+uint64_t time_us_to_ns(const uint64_t us) {
+  return us * 1000;
+}
+
+uint64_t time_ns_to_sec(const uint64_t ns) {
+  return ns / 1000000000;
+}
+
+uint64_t time_us_to_sec(const uint64_t us) {
+  return us / 1000000;
+}
+
+uint64_t time_ms_to_sec(const uint64_t ms) {
+  return ms / 1000;
+}
+
+uint64_t time_ns_to_ms(const uint64_t ns) {
+  return ns / 1000000;
+}
+
+uint64_t time_us_to_ms(const uint64_t us) {
+  return us / 1000;
+}
+
+uint64_t time_ns_to_us(const uint64_t ns) {
+  return ns / 1000;
 }
 
 uint64_t time_get_ns(const uint64_t ns) {
@@ -185,12 +221,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
 #undef manager
 
 int time_manager_start(struct time_manager* const manager) {
-  switch(threads_add(&manager->thread, 1)) {
-    case threads_success: return time_success;
-    case threads_out_of_memory: return time_out_of_memory;
-    case threads_failure:
-    default: return time_failure;
-  }
+  return threads_add(&manager->thread, 1);
 }
 
 int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_timeout** const timeout) {

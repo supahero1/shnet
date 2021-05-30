@@ -23,9 +23,27 @@ enum time_consts {
 
 extern uint64_t time_sec_to_ns(const uint64_t);
 
+extern uint64_t time_sec_to_us(const uint64_t);
+
+extern uint64_t time_sec_to_ms(const uint64_t);
+
 extern uint64_t time_ms_to_ns(const uint64_t);
 
+extern uint64_t time_ms_to_us(const uint64_t);
+
 extern uint64_t time_us_to_ns(const uint64_t);
+
+extern uint64_t time_ns_to_sec(const uint64_t);
+
+extern uint64_t time_us_to_sec(const uint64_t);
+
+extern uint64_t time_ms_to_sec(const uint64_t);
+
+extern uint64_t time_ns_to_ms(const uint64_t);
+
+extern uint64_t time_us_to_ms(const uint64_t);
+
+extern uint64_t time_ns_to_us(const uint64_t);
 
 extern uint64_t time_get_ns(const uint64_t);
 
