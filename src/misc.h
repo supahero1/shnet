@@ -37,6 +37,7 @@ extern void contmem_free(struct contmem* const);
  *  M U T U A L   F U N C T I O N   E X C L U S I O N
  */
 
+#include <stdint.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -47,7 +48,7 @@ enum mufex_consts {
 
 struct mufex {
   pthread_mutex_t mutex;
-  _Atomic unsigned long long counter;
+  _Atomic uint32_t counter;
 };
 
 extern int mufex(struct mufex* const);

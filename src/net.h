@@ -105,6 +105,8 @@ extern void net_epoll_stop(struct net_epoll* const);
 extern void net_epoll_free(struct net_epoll* const);
 
 struct net_server_base_part {
+  int sfd;
+  int events;
   struct contmem sockets;
   struct mufex mutex;
   void (*on_event)(struct net_epoll*, struct epoll_event);
@@ -112,14 +114,24 @@ struct net_server_base_part {
 
 extern int net_server_base_part(struct net_server_base_part* const, const unsigned long, const unsigned long, const unsigned long, void (*)(struct net_epoll*, struct epoll_event));
 
+extern void net_server_base_part_free(struct net_server_base_part* const);
+
 struct net_socket_base_part {
   int sfd;
   int events;
   struct net_server_base_part* server;
 };
 
-extern int net_epoll_add(struct net_epoll* const, struct net_server_base_part* const, const struct net_socket_base_part* const);
+extern int net_epoll_add_socket(struct net_epoll* const, struct net_socket_base_part* const);
 
-extern int net_epoll_remove(struct net_epoll* const, struct net_server_base_part* const, struct net_socket_base_part* const);
+extern int net_epoll_mod_socket(struct net_epoll* const, struct net_socket_base_part* const);
+
+extern int net_epoll_remove_socket(struct net_epoll* const, struct net_socket_base_part* const);
+
+extern int net_epoll_add_server(struct net_epoll* const, struct net_server_base_part* const);
+
+extern int net_epoll_mod_server(struct net_epoll* const, struct net_server_base_part* const);
+
+extern int net_epoll_remove_server(struct net_epoll* const, struct net_server_base_part* const);
 
 #endif // MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i

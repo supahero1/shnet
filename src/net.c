@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <endian.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -69,17 +70,17 @@ int net_address_to_string(void* const addr, char* const buffer) {
 
 void net_set_port(void* const addr, const in_port_t port) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    ((struct sockaddr_in*) addr)->sin_port = port;
+    ((struct sockaddr_in*) addr)->sin_port = htons(port);
   } else {
-    ((struct sockaddr_in6*) addr)->sin6_port = port;
+    ((struct sockaddr_in6*) addr)->sin6_port = htons(port);
   }
 }
 
 in_port_t net_get_port(void* const addr) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    return ((struct sockaddr_in*) addr)->sin_port;
+    return ntohs(((struct sockaddr_in*) addr)->sin_port);
   } else {
-    return ((struct sockaddr_in6*) addr)->sin6_port;
+    return ntohs(((struct sockaddr_in6*) addr)->sin6_port);
   }
 }
 
@@ -169,7 +170,11 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
     int count = epoll_wait(epoll->sfd, events, 100, -1);
     for(int i = 0; i < count; ++i) {
       (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-      ((struct net_socket_base_part*)(events[i].data.ptr))->server->on_event(epoll, events[i]);
+      if(((uintptr_t) events[i].data.ptr & 1) == 0) {
+        ((struct net_socket_base_part*)(events[i].data.ptr))->server->on_event(epoll, events[i]);
+      } else {
+        ((struct net_server_base_part*)(events[i].data.ptr))->on_event(epoll, events[i]);
+      }
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
       pthread_testcancel();
     }
@@ -233,42 +238,60 @@ int net_server_base_part(struct net_server_base_part* const server, const unsign
   return net_success;
 }
 
-int net_epoll_add(struct net_epoll* const epoll, struct net_server_base_part* const server, const struct net_socket_base_part* const item) {
-  mufex_lock(&server->mutex, mufex_not_shared);
-  void* const mem = contmem_get(&server->sockets);
+void net_server_base_part_free(struct net_server_base_part* const server) {
+  contmem_free(&server->sockets);
+  mufex_destroy(&server->mutex);
+}
+
+int net_epoll_add_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+  mufex_lock(&socket->server->mutex, mufex_not_shared);
+  void* const mem = contmem_get(&socket->server->sockets);
   if(mem == NULL) {
     return net_out_of_memory;
   }
-  (void) memcpy(mem, item, server->sockets.item_size);
-  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_ADD, item->sfd, &((struct epoll_event) {
-    .events = item->events,
+  (void) memcpy(mem, socket, socket->server->sockets.item_size);
+  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_ADD, socket->sfd, &((struct epoll_event) {
+    .events = socket->events,
     .data = (epoll_data_t) {
       .ptr = mem
     }
   }));
   if(err != 0) {
-    (void) contmem_pop(&server->sockets, mem);
+    (void) contmem_pop(&socket->server->sockets, mem);
     err = net_failure;
   } else {
     err = net_success;
   }
-  mufex_unlock(&server->mutex, mufex_not_shared);
+  mufex_unlock(&socket->server->mutex, mufex_not_shared);
   return err;
 }
 
-int net_epoll_remove(struct net_epoll* const epoll, struct net_server_base_part* const server, struct net_socket_base_part* const item) {
-  mufex_lock(&server->mutex, mufex_not_shared);
-  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_DEL, item->sfd, NULL);
+int net_epoll_mod_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+  const int err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
+    .events = socket->events,
+    .data = (epoll_data_t) {
+      .ptr = socket
+    }
+  }));
+  if(err != 0) {
+    return net_failure;
+  }
+  return net_success;
+}
+
+int net_epoll_remove_socket(struct net_epoll* const epoll, struct net_socket_base_part* const socket) {
+  mufex_lock(&socket->server->mutex, mufex_not_shared);
+  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_DEL, socket->sfd, NULL);
   if(err == 0) {
-    struct net_socket_base_part* const last = contmem_last(&server->sockets);
+    struct net_socket_base_part* const last = contmem_last(&socket->server->sockets);
     err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, last->sfd, &((struct epoll_event) {
       .events = last->events,
       .data = (epoll_data_t) {
-        .ptr = item
+        .ptr = socket
       }
     }));
     if(err == 0) {
-      (void) contmem_pop(&server->sockets, item);
+      (void) contmem_pop(&socket->server->sockets, socket);
       err = net_success;
     } else {
       err = net_failure;
@@ -276,6 +299,31 @@ int net_epoll_remove(struct net_epoll* const epoll, struct net_server_base_part*
   } else {
     err = net_failure;
   }
-  mufex_unlock(&server->mutex, mufex_not_shared);
+  mufex_unlock(&socket->server->mutex, mufex_not_shared);
   return err;
+}
+
+static int net_epoll_modify_server(struct net_epoll* const epoll, struct net_server_base_part* const server, const int method) {
+  const int err = epoll_ctl(epoll->sfd, method, server->sfd, &((struct epoll_event) {
+    .events = server->events,
+    .data = (epoll_data_t) {
+      .ptr = (void*)((uintptr_t) server | 1)
+    }
+  }));
+  if(err != 0) {
+    return net_failure;
+  }
+  return net_success;
+}
+
+int net_epoll_add_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+  return net_epoll_modify_server(epoll, server, EPOLL_CTL_ADD);
+}
+
+int net_epoll_mod_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+  return net_epoll_modify_server(epoll, server, EPOLL_CTL_MOD);
+}
+
+int net_epoll_remove_server(struct net_epoll* const epoll, struct net_server_base_part* const server) {
+  return net_epoll_modify_server(epoll, server, EPOLL_CTL_DEL);
 }
