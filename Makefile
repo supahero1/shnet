@@ -14,12 +14,12 @@ SOURCES=src/debug.c src/debug.h src/heap.c src/heap.h src/refheap.c src/refheap.
 build: prepare $(FILENAMES) $(SOURCES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	#$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
-	#$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
-	#$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
-	#$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
-	#$(COMP) tests/net.c -o build/net -lshnet && build/net
-	#$(COMP) tests/udp.c -o build/udp -lshnet && build/udp
+	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
+	$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
+	$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
+	$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
+	$(COMP) tests/net.c -o build/net -lshnet && build/net
+	$(COMP) tests/udp.c -o build/udp -lshnet && build/udp
 
 clean:
 	rm -r -f build logs.txt
