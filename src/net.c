@@ -58,9 +58,9 @@ int net_string_to_address(void* const addr, const char* const buffer) {
 int net_address_to_string(void* const addr, char* const buffer) {
   const void* err;
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    err = inet_ntop(ipv4, &((struct sockaddr_in*) addr)->sin_addr.s_addr, buffer, 16);
+    err = inet_ntop(ipv4, &((struct sockaddr_in*) addr)->sin_addr.s_addr, buffer, ipv4_strlen);
   } else {
-    err = inet_ntop(ipv6, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, buffer, 41);
+    err = inet_ntop(ipv6, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
   }
   if(err == NULL) {
     return net_failure;
@@ -245,25 +245,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
     int count = epoll_wait(epoll->sfd, events, 100, -1);
     for(int i = 0; i < count; ++i) {
       (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-      void* const clean_ptr = (uintptr_t) events[i].data.ptr & (UINTPTR_MAX ^ 3);
-      switch((uintptr_t) events[i].data.ptr & 3) {
-        case 0: {
-          ((struct net_epoll_socket_base*) clean_ptr)->epoll_server->on_event(epoll, events + i, clean_ptr, net_esocket_eserver);
-          break;
-        }
-        case 1: {
-          ((struct net_epoll_socket_base*) clean_ptr)->on_event(epoll, events + i, clean_ptr, net_esocket_server);
-          break;
-        }
-        case 2: {
-          ((struct net_epoll_socket_base*) clean_ptr)->on_event(epoll, events + i, clean_ptr, net_esocket);
-          break;
-        }
-        case 3: {
-          ((struct net_epoll_server_base*) clean_ptr)->on_event(epoll, events + i, clean_ptr, net_eserver);
-          break;
-        }
-      }
+      epoll->on_event(epoll, events[i].events, events[i].data.ptr);
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
       pthread_testcancel();
     }
@@ -272,7 +254,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
 
 #undef epoll
 
-int net_epoll(struct net_epoll* const epoll) {
+int net_epoll(struct net_epoll* const epoll, void (*on_event)(struct net_epoll*, int, void*)) {
   {
     const int err = threads(&epoll->thread);
     if(err != threads_success) {
@@ -287,6 +269,7 @@ int net_epoll(struct net_epoll* const epoll) {
   epoll->sfd = sfd;
   epoll->thread.func = net_epoll_thread;
   epoll->thread.data = epoll;
+  epoll->on_event = on_event;
   return net_success;
 }
 
@@ -303,107 +286,11 @@ void net_epoll_free(struct net_epoll* const epoll) {
   (void) close(epoll->sfd);
 }
 
-int net_server_base(void* const server, const unsigned long item_size, const unsigned long descriptors_per_part, const unsigned long tolerance) {
-  struct contmem sockets;
-  int err = contmem(&sockets, descriptors_per_part, item_size, tolerance);
-  if(err == contmem_out_of_memory) {
-    return net_out_of_memory;
-  }
-  struct mufex mutex;
-  err = mufex(&mutex);
-  if(err != 0) {
-    contmem_free(&sockets);
-    errno = err;
-    return net_failure;
-  }
-  ((struct net_server_base*) server)->sockets = sockets;
-  (void) memcpy(&((struct net_server_base*) server)->mutex, &mutex, sizeof(pthread_mutex_t) + 4);
-  return net_success;
-}
-
-void net_server_base_free(void* const server) {
-  contmem_free(&((struct net_server_base*) server)->sockets);
-  mufex_destroy(&((struct net_server_base*) server)->mutex);
-}
-
-/*
- *  ANY SERVER + EPOLL SOCKET
- */
-
-int net_epoll_add_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  mufex_lock(&socket->server->mutex, mufex_not_shared);
-  void* const mem = contmem_get(&socket->server->sockets);
-  if(mem == NULL) {
-    return net_out_of_memory;
-  }
-  (void) memcpy(mem, socket, socket->server->sockets.item_size);
-  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_ADD, socket->sfd, &((struct epoll_event) {
-    .events = socket->events,
-    .data = (epoll_data_t) {
-      .ptr = (void*)((uintptr_t) mem | (socket->on_event != NULL ? 1 : 0))
-    }
-  }));
-  if(err != 0) {
-    (void) contmem_pop(&socket->server->sockets, mem);
-    err = net_failure;
-  } else {
-    err = net_success;
-  }
-  mufex_unlock(&socket->server->mutex, mufex_not_shared);
-  return err;
-}
-
-int net_epoll_mod_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  const int err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, socket->sfd, &((struct epoll_event) {
-    .events = socket->events,
-    .data = (epoll_data_t) {
-      .ptr = (void*)((uintptr_t) socket | (socket->on_event != NULL ? 1 : 0))
-    }
-  }));
-  if(err != 0) {
-    return net_failure;
-  }
-  return net_success;
-}
-
-int net_epoll_remove_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  mufex_lock(&socket->server->mutex, mufex_not_shared);
-  int err = epoll_ctl(epoll->sfd, EPOLL_CTL_DEL, socket->sfd, NULL);
-  if(err == 0) {
-    const struct net_epoll_socket_base* const last = contmem_last(&socket->server->sockets);
-    if(socket != last) {
-      err = epoll_ctl(epoll->sfd, EPOLL_CTL_MOD, last->sfd, &((struct epoll_event) {
-        .events = last->events,
-        .data = (epoll_data_t) {
-          .ptr = (void*)((uintptr_t) socket | (last->on_event != NULL ? 1 : 0))
-        }
-      }));
-      if(err == 0) {
-        (void) contmem_pop(&socket->server->sockets, socket);
-        err = net_success;
-      } else {
-        err = net_failure;
-      }
-    } else {
-      (void) contmem_pop(&socket->server->sockets, socket);
-      err = net_success;
-    }
-  } else {
-    err = net_failure;
-  }
-  mufex_unlock(&socket->server->mutex, mufex_not_shared);
-  return err;
-}
-
-/*
- *  NO SERVER + EPOLL SOCKET
- */
-
-static int net_epoll_modify_serverless_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket, const int method) {
+static int net_epoll_modify(struct net_epoll* const epoll, struct net_socket_base* const socket, const int method) {
   const int err = epoll_ctl(epoll->sfd, method, socket->sfd, &((struct epoll_event) {
     .events = socket->events,
     .data = (epoll_data_t) {
-      .ptr = (void*)((uintptr_t) socket | 2)
+      .ptr = socket
     }
   }));
   if(err != 0) {
@@ -412,43 +299,14 @@ static int net_epoll_modify_serverless_socket(struct net_epoll* const epoll, str
   return net_success;
 }
 
-int net_epoll_add_serverless_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  return net_epoll_modify_serverless_socket(epoll, socket, EPOLL_CTL_ADD);
+int net_epoll_add(struct net_epoll* const epoll, struct net_socket_base* const socket) {
+  return net_epoll_modify(epoll, socket, EPOLL_CTL_ADD);
 }
 
-int net_epoll_mod_serverless_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  return net_epoll_modify_serverless_socket(epoll, socket, EPOLL_CTL_MOD);
+int net_epoll_mod(struct net_epoll* const epoll, struct net_socket_base* const socket) {
+  return net_epoll_modify(epoll, socket, EPOLL_CTL_MOD);
 }
 
-int net_epoll_remove_serverless_socket(struct net_epoll* const epoll, struct net_epoll_socket_base* const socket) {
-  return net_epoll_modify_serverless_socket(epoll, socket, EPOLL_CTL_DEL);
-}
-
-/*
- *  EPOLL SERVER + ANY SOCKET
- */
-
-static int net_epoll_modify_server(struct net_epoll* const epoll, struct net_epoll_server_base* const server, const int method) {
-  const int err = epoll_ctl(epoll->sfd, method, server->sfd, &((struct epoll_event) {
-    .events = server->events,
-    .data = (epoll_data_t) {
-      .ptr = (void*)((uintptr_t) server | 3)
-    }
-  }));
-  if(err != 0) {
-    return net_failure;
-  }
-  return net_success;
-}
-
-int net_epoll_add_server(struct net_epoll* const epoll, struct net_epoll_server_base* const server) {
-  return net_epoll_modify_server(epoll, server, EPOLL_CTL_ADD);
-}
-
-int net_epoll_mod_server(struct net_epoll* const epoll, struct net_epoll_server_base* const server) {
-  return net_epoll_modify_server(epoll, server, EPOLL_CTL_MOD);
-}
-
-int net_epoll_remove_server(struct net_epoll* const epoll, struct net_epoll_server_base* const server) {
-  return net_epoll_modify_server(epoll, server, EPOLL_CTL_DEL);
+int net_epoll_remove(struct net_epoll* const epoll, struct net_socket_base* const socket) {
+  return net_epoll_modify(epoll, socket, EPOLL_CTL_DEL);
 }

@@ -8,17 +8,17 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o #build/udp.o
-SOURCES=src/debug.c src/debug.h src/heap.c src/heap.h src/refheap.c src/refheap.h src/avl.c src/avl.h src/threads.c src/threads.h src/misc.c src/misc.h src/time.c src/time.h src/net.c src/net.h #src/udp.c src/udp.h
+FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o build/udp.o build/udplite.o
+SOURCES=src/debug.c src/debug.h src/heap.c src/heap.h src/refheap.c src/refheap.h src/avl.c src/avl.h src/threads.c src/threads.h src/misc.c src/misc.h src/time.c src/time.h src/net.c src/net.h src/udp.c src/udp.h src/udplite.c src/udplite.h
 
 build: prepare $(FILENAMES) $(SOURCES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
-	$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
-	$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
-	$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
-	$(COMP) tests/net.c -o build/net -lshnet && build/net
+	#$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
+	#$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
+	#$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
+	#$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
+	#$(COMP) tests/net.c -o build/net -lshnet && build/net
 	#$(COMP) tests/udp.c -o build/udp -lshnet && build/udp
 
 clean:
@@ -86,5 +86,8 @@ build/time.o: $(wildcard src/time.*) $(wildcard src/refheap.*) $(wildcard src/th
 build/net.o: $(wildcard src/net.*) $(wildcard src/misc.*) $(wildcard src/threads.*)
 	$(COMP) -fPIC -c src/net.c -o build/net.o
 
-#build/udp.o: $(wildcard src/udp.*) $(wildcard src/net.*)
-	#$(COMP) -fPIC -c src/udp.c -o build/udp.o
+build/udp.o: $(wildcard src/udp.*) $(wildcard src/net.*)
+	$(COMP) -fPIC -c src/udp.c -o build/udp.o
+
+build/udplite.o: $(wildcard src/udplite.*) $(wildcard src/udp.*)
+	$(COMP) -fPIC -c src/udplite.c -o build/udplite.o

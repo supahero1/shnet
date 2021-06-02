@@ -15,11 +15,6 @@ enum net_consts {
   net_out_of_memory,
   net_failure,
   
-  net_esocket_eserver = 0,
-  net_esocket_server,
-  net_esocket,
-  net_eserver,
-  
   /* FAMILY */
   any_family = AF_UNSPEC,
   ipv4 = AF_INET,
@@ -45,7 +40,11 @@ enum net_consts {
   numeric_service = AI_NUMERICSERV,
   wants_own_ip_version = AI_ADDRCONFIG,
   wants_all_addresses = AI_ALL,
-  wants_mapped_ipv4 = AI_V4MAPPED
+  wants_mapped_ipv4 = AI_V4MAPPED,
+  
+  ip_max_strlen = INET6_ADDRSTRLEN,
+  ipv4_strlen = INET_ADDRSTRLEN,
+  ipv6_strlen = INET6_ADDRSTRLEN
 };
 
 extern struct addrinfo net_get_addr_struct(const int, const int, const int, const int);
@@ -117,9 +116,10 @@ extern int net_socket_base_options(const int);
 struct net_epoll {
   struct threads thread;
   int sfd;
+  void (*on_event)(struct net_epoll*, int, void*);
 };
 
-extern int net_epoll(struct net_epoll* const);
+extern int net_epoll(struct net_epoll* const, void (*)(struct net_epoll*, int, void*));
 
 extern int net_epoll_start(struct net_epoll* const);
 
@@ -127,68 +127,15 @@ extern void net_epoll_stop(struct net_epoll* const);
 
 extern void net_epoll_free(struct net_epoll* const);
 
-struct net_server_base {
-  struct contmem sockets;
-  union {
-    struct mufex mutex;
-    struct {
-      pthread_mutex_t __unused1;
-      uint32_t __unused2;
-      int sfd;
-    };
-  };
-};
-
-struct net_epoll_server_base {
-  struct contmem sockets;
-  union {
-    struct mufex mutex;
-    struct {
-      pthread_mutex_t __unused1;
-      uint32_t __unused2;
-      int sfd;
-    };
-  };
-  int events;
-  void (*on_event)(struct net_epoll*, struct epoll_event*, void*, int);
-};
-
-extern int net_server_base(void* const, const unsigned long, const unsigned long, const unsigned long);
-
-extern void net_server_base_free(void* const);
-
 struct net_socket_base {
   int sfd;
-};
-
-struct net_epoll_socket_base {
-  int sfd;
   int events;
-  union {
-    struct net_server_base* server;
-    struct net_epoll_server_base* epoll_server;
-  };
-  void (*on_event)(struct net_epoll*, struct epoll_event*, void*, int);
 };
 
-extern int net_epoll_add_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
+extern int net_epoll_add(struct net_epoll* const, struct net_socket_base* const);
 
-extern int net_epoll_mod_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
+extern int net_epoll_mod(struct net_epoll* const, struct net_socket_base* const);
 
-extern int net_epoll_remove_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
-
-
-extern int net_epoll_add_serverless_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
-
-extern int net_epoll_mod_serverless_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
-
-extern int net_epoll_remove_serverless_socket(struct net_epoll* const, struct net_epoll_socket_base* const);
-
-
-extern int net_epoll_add_server(struct net_epoll* const, struct net_epoll_server_base* const);
-
-extern int net_epoll_mod_server(struct net_epoll* const, struct net_epoll_server_base* const);
-
-extern int net_epoll_remove_server(struct net_epoll* const, struct net_epoll_server_base* const);
+extern int net_epoll_remove(struct net_epoll* const, struct net_socket_base* const);
 
 #endif // MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
