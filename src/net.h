@@ -1,7 +1,6 @@
 #ifndef MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
 #define MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i 1
 
-#include "misc.h"
 #include "threads.h"
 
 #include <netdb.h>
@@ -14,6 +13,7 @@ enum net_consts {
   net_success,
   net_out_of_memory,
   net_failure,
+  net_no_success,
   
   /* FAMILY */
   any_family = AF_UNSPEC,
@@ -121,7 +121,7 @@ struct net_epoll {
 
 extern int net_epoll(struct net_epoll* const, void (*)(struct net_epoll*, int, void*));
 
-extern int net_epoll_start(struct net_epoll* const);
+extern int net_epoll_start(struct net_epoll* const, const unsigned long);
 
 extern void net_epoll_stop(struct net_epoll* const);
 
@@ -130,6 +130,7 @@ extern void net_epoll_free(struct net_epoll* const);
 struct net_socket_base {
   int sfd;
   int events;
+  struct sockaddr_in6 addr;
 };
 
 extern int net_epoll_add(struct net_epoll* const, struct net_socket_base* const);

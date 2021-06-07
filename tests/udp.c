@@ -5,7 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <shnet/udp.h>
-#include <shnet/time.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -23,7 +22,7 @@ void on_event(struct net_epoll* epoll, int event, void* ptr) {
   uint8_t recv_buf[65535];
   if(socket->base.sfd == socket_sfd) {
     if((event & EPOLLIN) != 0) {
-      ssize_t bytes = udp_socket_read(socket, recv_buf, 65535, 0);
+      ssize_t bytes = recv(socket->base.sfd, recv_buf, 65535, 0);
       if(bytes != amount) {
         TEST_FAIL;
       }
@@ -36,7 +35,7 @@ void on_event(struct net_epoll* epoll, int event, void* ptr) {
     if((event & EPOLLIN) != 0) {
       struct sockaddr_in6 server_addr;
       socklen_t server_len = sizeof(server_addr);
-      ssize_t bytes = udp_server_read(socket, (struct sockaddr*)&server_addr, &server_len, recv_buf, 65535, 0);
+      ssize_t bytes = recvfrom(socket->base.sfd, recv_buf, 65535, 0, (struct sockaddr*)&server_addr, &server_len);
       if(bytes != amount) {
         TEST_FAIL;
       }
@@ -44,8 +43,8 @@ void on_event(struct net_epoll* epoll, int event, void* ptr) {
       if(net_address_to_string(&server_addr, ip) == net_failure) {
         TEST_FAIL;
       }
-      int code = udp_server_send(socket, (struct sockaddr*)&server_addr, server_len, recv_buf, amount, MSG_CONFIRM);
-      if(code != net_success) {
+      bytes = sendto(socket->base.sfd, recv_buf, amount, MSG_CONFIRM, (struct sockaddr*)&server_addr, server_len);
+      if(bytes != amount) {
         TEST_FAIL;
       }
     }
@@ -75,16 +74,16 @@ int main() {
   struct net_epoll epoll;
   err = net_epoll(&epoll, on_event);
   check_err;
-  err = net_epoll_start(&epoll);
+  err = net_epoll_start(&epoll, 1);
   check_err;
   
   
   
   struct udp_socket server;
   server.base.events = EPOLLIN | EPOLLOUT | EPOLLET;
-  net_set_family(&server.addr, ipv4);
-  net_set_port(&server.addr, 8099);
-  net_set_any_addr(&server.addr);
+  net_set_family(&server.base.addr, ipv4);
+  net_set_port(&server.base.addr, 8099);
+  net_set_any_addr(&server.base.addr);
   err = udp_create_server(&server);
   check_err;
   err = net_epoll_add(&epoll, &server.base);
@@ -95,9 +94,9 @@ int main() {
   
   struct udp_socket socket;
   socket.base.events = EPOLLIN | EPOLLOUT | EPOLLET;
-  net_set_family(&socket.addr, ipv4);
-  net_set_port(&socket.addr, 8091);
-  net_set_any_addr(&socket.addr);
+  net_set_family(&socket.base.addr, ipv4);
+  net_set_port(&socket.base.addr, 8091);
+  net_set_any_addr(&socket.base.addr);
   err = udp_create_socket(&socket);
   check_err;
   err = net_epoll_add(&epoll, &socket.base);
@@ -111,8 +110,8 @@ int main() {
     TEST_FAIL;
   }
   
-  int code = udp_socket_send(&socket, trash, amount, 0);
-  if(code != net_success) {
+  ssize_t code = send(socket.base.sfd, trash, amount, 0);
+  if(code != amount) {
     TEST_FAIL;
   }
   

@@ -1,7 +1,7 @@
 empty: ;
 .PHONY: empty build test clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 
-CMPE_CORE=gcc -pthread -Wall -pedantic -D_GNU_SOURCE
+CMPE_CORE=gcc -pthread -Wall -pedantic
 CMPE=O3
 ifneq ($(debug),)
 COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
@@ -9,9 +9,8 @@ else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
 FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o build/udp.o build/udplite.o
-SOURCES=src/debug.c src/debug.h src/heap.c src/heap.h src/refheap.c src/refheap.h src/avl.c src/avl.h src/threads.c src/threads.h src/misc.c src/misc.h src/time.c src/time.h src/net.c src/net.h src/udp.c src/udp.h src/udplite.c src/udplite.h
 
-build: prepare $(FILENAMES) $(SOURCES)
+build: prepare $(FILENAMES)
 
 test: $(wildcard tests/*.c) $(wildcard tests/*.h)
 	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
@@ -48,7 +47,7 @@ strip-static: build-static copy-headers
 	cp build/libshnet.a shnet/
 
 build-dynamic: build
-	$(COMP) $(FILENAMES) -shared -o build/libshnet.so
+	$(COMP) $(FILENAMES) -shared -o build/libshnet.so -lssl -lcrypto
 
 dynamic: build-dynamic include
 	cp build/libshnet.so /usr/lib/
@@ -62,32 +61,32 @@ uninstall:
 	rm -r -f /usr/include/shnet /usr/local/include/shnet shnet
 
 
-build/debug.o: $(wildcard src/debug.*)
+build/debug.o: src/debug.h src/debug.c
 	$(COMP) -fPIC -c src/debug.c -o build/debug.o
 
-build/heap.o: $(wildcard src/heap.*)
+build/heap.o: src/heap.h src/heap.c
 	$(COMP) -fPIC -c src/heap.c -o build/heap.o
 
-build/refheap.o: $(wildcard src/refheap.*) $(wildcard src/heap.*)
+build/refheap.o: src/refheap.h src/refheap.c build/heap.o
 	$(COMP) -fPIC -c src/refheap.c -o build/refheap.o
 
-build/avl.o: $(wildcard src/avl.*)
+build/avl.o: src/avl.h src/avl.c
 	$(COMP) -fPIC -c src/avl.c -o build/avl.o
 
-build/threads.o: $(wildcard src/threads.*)
+build/threads.o: src/threads.h src/threads.c
 	$(COMP) -fPIC -c src/threads.c -o build/threads.o
 
-build/misc.o: $(wildcard src/misc.*)
+build/misc.o: src/misc.h src/misc.c
 	$(COMP) -fPIC -c src/misc.c -o build/misc.o
 
-build/time.o: $(wildcard src/time.*) $(wildcard src/refheap.*) $(wildcard src/threads.*)
+build/time.o: src/time.h src/time.c build/refheap.o build/threads.o
 	$(COMP) -fPIC -c src/time.c -o build/time.o
 
-build/net.o: $(wildcard src/net.*) $(wildcard src/misc.*) $(wildcard src/threads.*)
+build/net.o: src/net.h src/net.c build/misc.o build/threads.o
 	$(COMP) -fPIC -c src/net.c -o build/net.o
 
-build/udp.o: $(wildcard src/udp.*) $(wildcard src/net.*)
+build/udp.o: src/udp.h src/udp.c build/net.o
 	$(COMP) -fPIC -c src/udp.c -o build/udp.o
 
-build/udplite.o: $(wildcard src/udplite.*) $(wildcard src/udp.*)
+build/udplite.o: src/udplite.h src/udplite.c build/udp.o
 	$(COMP) -fPIC -c src/udplite.c -o build/udplite.o

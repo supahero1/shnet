@@ -3,9 +3,15 @@
 
 #include "udp.h"
 
+#ifndef IPPROTO_UDPLITE
 #define IPPROTO_UDPLITE     136
+#endif
+#ifndef UDPLITE_SEND_CSCOV
 #define UDPLITE_SEND_CSCOV  10
+#endif
+#ifndef UDPLITE_RECV_CSCOV
 #define UDPLITE_RECV_CSCOV  11
+#endif
 
 extern int udplite_create_socket(struct udp_socket* const);
 

@@ -1,5 +1,6 @@
 #include "misc.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -84,11 +85,12 @@ int mufex(struct mufex* const m) {
   struct mufex mx;
   int err = pthread_mutex_init(&mx.mutex, NULL);
   if(err != 0) {
-    return err;
+    errno = err;
+    return mufex_failure;
   }
   atomic_store(&mx.counter, 0);
   *m = mx;
-  return 0;
+  return mufex_success;
 }
 
 void mufex_lock(struct mufex* const mx, const int shared) {

@@ -43,7 +43,10 @@ extern void contmem_free(struct contmem* const);
 
 enum mufex_consts {
   mufex_shared,
-  mufex_not_shared
+  mufex_not_shared,
+  
+  mufex_success = 0,
+  mufex_failure
 };
 
 struct mufex {

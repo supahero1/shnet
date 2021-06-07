@@ -94,7 +94,7 @@ void net_set_loopback_addr(void* const addr) {
 
 void net_set_addr(void* const addr, const void* const address) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    ((struct sockaddr_in*) addr)->sin_addr.s_addr = htons(*(uint32_t*) address);
+    (void) memcpy(&((struct sockaddr_in*) addr)->sin_addr.s_addr, address, 4);
   } else {
     (void) memcpy(((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, address, 16);
   }
@@ -153,11 +153,17 @@ int net_connect_socket(const int sfd, const void* const addr) {
 }
 
 int net_socket_setopt_true(const int sfd, const int level, const int option_name) {
-  return setsockopt(sfd, level, option_name, &(int){1}, sizeof(int));
+  if(setsockopt(sfd, level, option_name, &(int){1}, sizeof(int)) == 0) {
+    return net_success;
+  }
+  return net_failure;
 }
 
 int net_socket_setopt_false(const int sfd, const int level, const int option_name) {
-  return setsockopt(sfd, level, option_name, &(int){0}, sizeof(int));
+  if(setsockopt(sfd, level, option_name, &(int){0}, sizeof(int)) == 0) {
+    return net_success;
+  }
+  return net_failure;
 }
 
 int net_socket_reuse_addr(const int sfd) {
@@ -273,8 +279,8 @@ int net_epoll(struct net_epoll* const epoll, void (*on_event)(struct net_epoll*,
   return net_success;
 }
 
-int net_epoll_start(struct net_epoll* const epoll) {
-  return threads_add(&epoll->thread, 1);
+int net_epoll_start(struct net_epoll* const epoll, const unsigned long amount) {
+  return threads_add(&epoll->thread, amount);
 }
 
 void net_epoll_stop(struct net_epoll* const epoll) {
