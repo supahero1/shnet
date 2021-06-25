@@ -13,9 +13,9 @@ enum threads_consts {
 
 struct threads {
   pthread_t* threads;
-  unsigned long used;
-  unsigned long size;
-  _Atomic unsigned long togo;
+  unsigned used;
+  unsigned size;
+  _Atomic unsigned togo;
   pthread_barrier_t* barrier;
   sem_t sem;
   void (*func)(void*);
@@ -24,11 +24,11 @@ struct threads {
 
 extern int threads(struct threads* const);
 
-extern int threads_resize(struct threads* const, const unsigned long);
+extern int threads_resize(struct threads* const, const unsigned);
 
-extern int threads_add(struct threads* const, const unsigned long);
+extern int threads_add(struct threads* const, const unsigned);
 
-extern void threads_remove(struct threads* const, const unsigned long);
+extern void threads_remove(struct threads* const, const unsigned);
 
 extern void threads_shutdown(struct threads* const);
 

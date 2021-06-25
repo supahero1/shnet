@@ -13,11 +13,11 @@
 
 int main() {
   printf_debug("Testing net.c:", 1);
-  char ip[41];
+  char ip[ip_max_strlen];
   struct addrinfo hints = net_get_addr_struct(any_family, any_socktype, any_protocol, numeric_service);
   struct addrinfo* res = net_get_address("google.com", "80", &hints);
   if(res == NULL) {
-    printf("err %s\n", net_get_address_strerror(errno));
+    printf("err %s\n", net_strerror(errno));
     TEST_FAIL;
   }
   struct addrinfo* info = res;
@@ -37,7 +37,7 @@ int main() {
     err = net_get_name(info->ai_addr, net_get_addrlen(info->ai_addr), ip, sizeof(ip), 0);
     if(err != 0) {
       if(err != EAI_NONAME) {
-        printf("err %s\n", net_get_address_strerror(err));
+        printf("err %s\n", net_strerror(err));
         TEST_FAIL;
       }
     }

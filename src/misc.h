@@ -1,6 +1,8 @@
 #ifndef MK_lQMNj8t_DwM9BU_vsZj_kvePzBj_d
 #define MK_lQMNj8t_DwM9BU_vsZj_kvePzBj_d 1
 
+#include <pthread.h>
+
 /*
  *  C O N T I N U O U S   M E M O R Y
  */
@@ -29,38 +31,11 @@ extern void* contmem_get(struct contmem* const);
 
 extern int contmem_pop(struct contmem* const, void* const);
 
+extern void contmem_pop_cleanup(struct contmem* const);
+
 extern void* contmem_last(struct contmem* const);
 
 extern void contmem_free(struct contmem* const);
-
-/*
- *  M U T U A L   F U N C T I O N   E X C L U S I O N
- */
-
-#include <stdint.h>
-#include <pthread.h>
-#include <stdatomic.h>
-
-enum mufex_consts {
-  mufex_shared,
-  mufex_not_shared,
-  
-  mufex_success = 0,
-  mufex_failure
-};
-
-struct mufex {
-  pthread_mutex_t mutex;
-  _Atomic uint32_t counter;
-};
-
-extern int mufex(struct mufex* const);
-
-extern void mufex_lock(struct mufex* const, const int);
-
-extern void mufex_unlock(struct mufex* const, const int);
-
-extern void mufex_destroy(struct mufex* const);
 
 /*
  *  A S Y N C

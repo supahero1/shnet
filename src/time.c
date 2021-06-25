@@ -103,11 +103,10 @@ static long time_interval_compare(const void* a, const void* b) {
 
 static void time_manager_thread(void*);
 
-int time_manager(struct time_manager* const manager, void (*on_timer_expire)(struct time_manager*, struct time_timer, const int), const unsigned long timeouts_alloc_size, const unsigned long intervals_alloc_size) {
+int time_manager(struct time_manager* const manager, const unsigned long timeouts_alloc_size, const unsigned long intervals_alloc_size) {
   *manager = (struct time_manager) {
     .timeouts = refheap(sizeof(struct time_timeout), heap_min, time_timeout_compare, timeouts_alloc_size),
-    .intervals = refheap(sizeof(struct time_interval), heap_min, time_interval_compare, intervals_alloc_size),
-    .on_timer_expire = on_timer_expire
+    .intervals = refheap(sizeof(struct time_interval), heap_min, time_interval_compare, intervals_alloc_size)
   };
   int err = sem_init(&manager->work, 0, 0);
   if(err != 0) {
@@ -201,7 +200,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
         refheap_delete(&manager->timeouts, latest);
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
-        manager->on_timer_expire(manager, (struct time_timer) { .timeout = &timeout }, time_timeout);
+        timeout.func(timeout.data);
       } else {
         struct time_interval* latest = refheap_peak(&manager->intervals, 0);
         struct time_interval interval = *latest;
@@ -210,7 +209,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
         (void) sem_post(&manager->amount);
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
-        manager->on_timer_expire(manager, (struct time_timer) { .interval = &interval }, time_interval);
+        interval.func(interval.data);
       }
     }
     (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);

@@ -30,7 +30,7 @@ static void* threads_thread(void* threads_thread_data) {
 
 #undef thrd
 
-int threads_resize(struct threads* const threads, const unsigned long new_size) {
+int threads_resize(struct threads* const threads, const unsigned new_size) {
   pthread_t* const ptr = realloc(threads->threads, sizeof(pthread_t) * new_size);
   if(ptr == NULL) {
     return threads_out_of_memory;
@@ -40,8 +40,8 @@ int threads_resize(struct threads* const threads, const unsigned long new_size) 
   return threads_success;
 }
 
-int threads_add(struct threads* const threads, const unsigned long amount) {
-  const unsigned long total = threads->used + amount;
+int threads_add(struct threads* const threads, const unsigned amount) {
+  const unsigned total = threads->used + amount;
   if(total > threads->size) {
     int err = threads_resize(threads, total);
     if(err != threads_success) {
@@ -52,7 +52,7 @@ int threads_add(struct threads* const threads, const unsigned long amount) {
   if(barrier == NULL) {
     return threads_out_of_memory;
   }
-  int err = pthread_barrier_init(barrier, NULL, (unsigned int) amount);
+  int err = pthread_barrier_init(barrier, NULL, amount);
   if(err != 0) {
     free(barrier);
     if(err == ENOMEM) {
@@ -63,11 +63,11 @@ int threads_add(struct threads* const threads, const unsigned long amount) {
   }
   threads->barrier = barrier;
   atomic_store(&threads->togo, amount);
-  for(unsigned long i = threads->used; i < total; ++i) {
+  for(unsigned i = threads->used; i < total; ++i) {
     int err = pthread_create(threads->threads + i, NULL, threads_thread, threads);
     if(err != 0) {
       if(i > threads->size) {
-        const unsigned long old = threads->used;
+        const unsigned old = threads->used;
         threads->used = i;
         (void) threads_remove(threads, i - threads->used);
         threads->used = old;
@@ -84,19 +84,19 @@ int threads_add(struct threads* const threads, const unsigned long amount) {
   return threads_success;
 }
 
-void threads_remove(struct threads* const threads, const unsigned long amount) {
-  const unsigned long total = threads->used - amount;
+void threads_remove(struct threads* const threads, const unsigned amount) {
+  const unsigned total = threads->used - amount;
   const pthread_t self = pthread_self();
   atomic_store(&threads->togo, amount);
   int close_ourselves = 0;
-  for(unsigned long i = total; i < threads->used; ++i) {
+  for(unsigned i = total; i < threads->used; ++i) {
     if(pthread_equal(threads->threads[i], self) == 0) {
       (void) pthread_cancel(threads->threads[i]);
     } else {
       close_ourselves = 1;
     }
   }
-  for(unsigned long i = total; i < threads->used; ++i) {
+  for(unsigned i = total; i < threads->used; ++i) {
     if(pthread_equal(threads->threads[i], self) == 0) {
       (void) pthread_join(threads->threads[i], NULL);
     }

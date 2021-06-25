@@ -47,11 +47,15 @@ void* contmem_get(struct contmem* const contmem) {
 }
 
 int contmem_pop(struct contmem* const contmem, void* const mem) {
-  int output = 0;
-  if(contmem_last(contmem) != mem) {
+  const int output = contmem_last(contmem) != mem;
+  if(output) {
     (void) memcpy(mem, contmem_last(contmem), contmem->item_size);
-    output = 1;
   }
+  contmem_pop_cleanup(contmem);
+  return output;
+}
+
+void contmem_pop_cleanup(struct contmem* const contmem) {
   contmem->tail->used -= contmem->item_size;
   if(contmem->tail->used == 0 && contmem->tail->prev != NULL) {
     contmem->tail = contmem->tail->prev;
@@ -60,7 +64,6 @@ int contmem_pop(struct contmem* const contmem, void* const mem) {
     free(contmem->tail->next);
     contmem->tail->next = NULL;
   }
-  return output;
 }
 
 void* contmem_last(struct contmem* const contmem) {
@@ -68,6 +71,9 @@ void* contmem_last(struct contmem* const contmem) {
 }
 
 void contmem_free(struct contmem* const contmem) {
+  if(contmem->tail == NULL) {
+    return;
+  }
   struct contmem_block* block = contmem->tail;
   struct contmem_block* prev;
   do {
@@ -75,38 +81,6 @@ void contmem_free(struct contmem* const contmem) {
     free(block);
     block = prev;
   } while(block != NULL);
-}
-
-/*
- *  M U T U A L   F U N C T I O N   E X C L U S I O N
- */
-
-int mufex(struct mufex* const m) {
-  struct mufex mx;
-  int err = pthread_mutex_init(&mx.mutex, NULL);
-  if(err != 0) {
-    errno = err;
-    return mufex_failure;
-  }
-  atomic_store(&mx.counter, 0);
-  *m = mx;
-  return mufex_success;
-}
-
-void mufex_lock(struct mufex* const mx, const int shared) {
-  if(shared != mufex_shared || atomic_fetch_add(&mx->counter, 1) == 0) {
-    (void) pthread_mutex_lock(&mx->mutex);
-  }
-}
-
-void mufex_unlock(struct mufex* const mx, const int shared) {
-  if(shared != mufex_shared || atomic_fetch_sub(&mx->counter, 1) == 1) {
-    (void) pthread_mutex_unlock(&mx->mutex);
-  }
-}
-
-void mufex_destroy(struct mufex* const mx) {
-  (void) pthread_mutex_destroy(&mx->mutex);
 }
 
 /*

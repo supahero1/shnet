@@ -19,6 +19,7 @@ int udp_create_socket(struct udp_socket* const socket) {
     udp_close(socket);
     return net_failure;
   }
+  socket->base.which = net_socket;
   return net_success;
 }
 
@@ -30,6 +31,7 @@ int udp_create_server(struct udp_socket* const server) {
     udp_close(server);
     return net_failure;
   }
+  server->base.which = net_server;
   return net_success;
 }
 

@@ -1,4 +1,5 @@
 #include "tcp.h"
+#include "debug.h"
 #include "aflags.h"
 
 #include <errno.h>
@@ -7,6 +8,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <netinet/tcp.h>
+
+#include <stdio.h>
 
 /* Race conditions don't matter here. At most, send() or recv() might fail.
 Lock contention would add much more overhead than one or two system calls.
@@ -76,7 +79,10 @@ int tcp_socket_keepalive_explicit(const struct tcp_socket* const socket, const i
 
 
 static void tcp_socket_free(struct tcp_socket* const socket) {
+  printf_debug("tcp_socket_free() socket sfd %d", 0, socket->base.sfd);
+  
   if(socket->server != NULL) {
+    printf_debug("tcp_socket_free() socket is bound to server sfd %d", 0, socket->server->base.sfd);
     /* By design, the server is either tcp_server_closing, or it is not. It can't
     become closing in this function. That means we don't have to lock it's rwlock.
     Additionally, since the order update in net_epoll, socket deletions will always
@@ -111,6 +117,8 @@ static void tcp_socket_free(struct tcp_socket* const socket) {
 /* Attempt to gracefully close the connection */
 
 void tcp_socket_close(const struct tcp_socket* const socket) {
+  printf_debug("tcp_socket_close() socket sfd %d", 0, socket->base.sfd);
+  
   (void) shutdown(socket->base.sfd, SHUT_WR);
 }
 
@@ -119,6 +127,9 @@ it occurs, NOT BEFORE. If you want to close a socket while it is still active,
 use tcp_socket_close() or tcp_socket_force_close(). */
 
 void tcp_socket_confirm_close(struct tcp_socket* const socket) {
+  printf_debug("tcp_socket_confirm_close() socket sfd %d state %d", 0,
+  socket->base.sfd, tcp_socket_get_state(socket));
+  
   if(tcp_socket_get_state(socket) == tcp_closed) {
     /* Epoll has dealt with the socket, now we can simply free it */
     tcp_socket_free(socket);
@@ -143,6 +154,8 @@ such a way that does not lead to starvation, by for instance writing efficient c
 benchmarking, increasing event array size. */
 
 int tcp_socket_force_close(struct tcp_socket* const socket) {
+  printf_debug("tcp_socket_confirm_force_close() socket sfd %d", 0, socket->base.sfd);
+  
   /* If it fails, let it be. It's not a requirement. */
   (void) setsockopt(socket->base.sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
   /* Because we don't instantly close() */
@@ -171,29 +184,35 @@ int tcp_create_socket_base(struct tcp_socket* const sock) {
 }
 
 int tcp_create_socket(struct tcp_socket* const socket) {
+  printf_debug("tcp_create_socket()", 0);
   if(socket->settings->disable_send_buffer == 0) {
     const int ret = pthread_mutex_init(&socket->lock, NULL);
     if(ret != 0) {
       errno = ret;
       return net_failure;
     }
+    printf_debug("tcp_create_socket() pthread_mutex_init()", 0);
   }
   if(tcp_create_socket_base(socket) == net_failure) {
     (void) pthread_mutex_destroy(&socket->lock);
     return net_failure;
   }
+  printf_debug("tcp_create_socket() tcp_create_socket_base()", 0);
   if(net_socket_base_options(socket->base.sfd) == net_failure) {
     tcp_socket_free(socket);
     return net_failure;
   }
+  printf_debug("tcp_create_socket() net_socket_base_options()", 0);
   if(net_connect_socket(socket->base.sfd, &socket->base.addr) != 0 && errno != EINPROGRESS) {
     tcp_socket_free(socket);
     return net_failure;
   }
+  printf_debug("tcp_create_socket() net_connect_socket()", 0);
   if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
     tcp_socket_free(socket);
     return net_failure;
   }
+  printf_debug("tcp_create_socket() net_epoll_add()", 0);
   return net_success;
 }
 
@@ -209,20 +228,26 @@ to reflect the data that wasn't sent or buffered.
 */
 
 int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
+  printf_debug("tcp_send() socket sfd %d", 0, socket->base.sfd);
+  
   if(tcp_socket_get_state(socket) == tcp_closed) {
+    printf_debug("tcp_send() socket sfd %d socket is closed", 0, socket->base.sfd);
     errno = ENOTCONN;
     return 0;
   } else if(tcp_socket_test_flag(socket, tcp_shutdown_wr)) {
+    printf_debug("tcp_send() socket sfd %d tcp_shutdown_wr", 0, socket->base.sfd);
     errno = EPIPE;
     return 0;
   }
   
+  printf_debug("tcp_send() tcp_can_send is %d", 0, tcp_socket_test_flag(socket, tcp_can_send) != 0);
   const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
   int all = size;
   if(tcp_socket_test_flag(socket, tcp_can_send)) {
     /* We are allowed to send data. Do it instead of waiting for epoll to preserve memory. */
     while(1) {
       const ssize_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL | cork);
+      printf_debug("tcp_send() send() yielded %ld bytes, errno %d", 0, bytes, errno);
       if(bytes == -1) {
         switch(errno) {
           case EINTR: continue;
@@ -292,9 +317,13 @@ buffer, waiting to be collected by the application with tcp_read().
 */
 
 int tcp_read(struct tcp_socket* const socket, void* data, int size) {
+  printf_debug("tcp_read() socket sfd %d", 0, socket->base.sfd);
+  
   /* We MUST NOT check if the socket is closed or closing for reading, because
-  there still might be data pending in the kernel buffer that we might want.
-  Doing this check just to not call recv() for nothing. Yes, there is a race
+  there still might be data pending in the kernel buffer that we might want */
+  
+  printf_debug("tcp_read() tcp_data_ended is %d", 0, tcp_socket_test_flag(socket, tcp_data_ended) != 0);
+  /* Doing this check just to not call recv() for nothing. Yes, there is a race
   condition, but this still gives *something*. Better than nothing. */
   if(tcp_socket_test_flag(socket, tcp_data_ended)) {
     errno = EPIPE;
@@ -303,6 +332,7 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
   const int all = size;
   while(1) {
     const ssize_t bytes = recv(socket->base.sfd, data, size, 0);
+    printf_debug("tcp_read() recv() yielded %ld bytes, errno %d", 0, bytes, errno);
     if(bytes == -1) {
       switch(errno) {
         case EINTR: continue;
@@ -352,6 +382,7 @@ tcp_socket_onevent() in the mutex, so that it never is executed at the same time
 
 static void tcp_socket_onevent(int events, struct net_socket_base* base) {
   if(events & EPOLLERR) {
+    printf_debug("tcp_socket_onevent() EPOLLERR socket sfd %d", 0, socket->base.sfd);
     /* Check any errors we could have got from connect() or such */
     int code;
     if(getsockopt(socket->base.sfd, tcp_protocol, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
@@ -362,12 +393,14 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
     return;
   }
   if(events & EPOLLHUP) {
+    printf_debug("tcp_socket_onevent() EPOLLHUP socket sfd %d", 0, socket->base.sfd);
     /* The connection is closed */
     tcp_socket_set_state_closed(socket);
     socket->callbacks->onclose(socket);
     return;
   }
   if((events & EPOLLOUT) || tcp_socket_test_flag(socket, tcp_can_send)) {
+    printf_debug("tcp_socket_onevent() EPOLLOUT socket sfd %d", 0, socket->base.sfd);
     if(events & EPOLLOUT) {
       tcp_socket_set_flag(socket, tcp_can_send);
     }
@@ -449,11 +482,13 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
   responsibility if it wants to read later or not read at all.
   We also get rid of the tcp_can_read flag. */
   if(events & EPOLLIN) {
+    printf_debug("tcp_socket_onevent() EPOLLIN socket sfd %d", 0, socket->base.sfd);
     if(socket->callbacks->onmessage != NULL) {
       socket->callbacks->onmessage(socket);
     }
   }
   if(events & EPOLLRDHUP) {
+    printf_debug("tcp_socket_onevent() EPOLLRDHUP socket sfd %d", 0, socket->base.sfd);
     /* We need to send back a FIN, but let the application choose the right moment */
     if(socket->settings->onreadclose_auto_res == 1) {
       tcp_socket_close(socket);
@@ -469,6 +504,8 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
 
 
 void tcp_server_free(struct tcp_server* const server) {
+  printf_debug("tcp_server_free() server sfd %d", 0, server->base.sfd);
+  
   (void) pthread_rwlock_destroy(&server->lock);
   free(server->sockets);
   free(server->freeidx);
@@ -482,9 +519,11 @@ void tcp_server_free(struct tcp_server* const server) {
 
 static void tcp_server_shutdown_internal(struct net_socket_base* base) {
   if(tcp_server_get_conn_amount(server) > 0) {
+    printf_debug("tcp_server_shutdown_internal() server sfd %d has %u connections to close", 0, server->base.sfd, tcp_server_get_conn_amount(server));
     (void) pthread_rwlock_wrlock(&server->lock);
     for(unsigned i = 0; i < server->settings->max_conn; ++i) {
       if(server->sockets[i].base.sfd > 0) {
+        printf_debug("tcp_server_shutdown_internal() server sfd %d closing socket sfd %d", 0, server->base.sfd, server->sockets[i].base.sfd);
         (void) setsockopt(server->sockets[i].base.sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
         (void) pthread_mutex_destroy(&server->sockets[i].lock);
         if(server->sockets[i].send_buffer != NULL) {
@@ -495,7 +534,13 @@ static void tcp_server_shutdown_internal(struct net_socket_base* base) {
           (void) pthread_rwlock_unlock(&server->lock);
           break;
         }
+      } else if(server->sockets[i].base.sfd < 0) {
+        printf_debug("(WARNING) tcp_server_shutdown_internal() server sfd %d contains socket sfd %d", 0, server->base.sfd, server->sockets[i].base.sfd);
       }
+    }
+    if(tcp_server_get_conn_amount(server) != 0) {
+      printf_debug("tcp_server_shutdown_internal() server sfd %d socket amount mismatch, has %u leftover", 0, server->base.sfd, tcp_server_get_conn_amount(server));
+      exit(12345);
     }
   }
   server->callbacks->onshutdown(server);
@@ -516,6 +561,7 @@ int tcp_create_server_base(struct tcp_server* const server) {
 }
 
 int tcp_create_server(struct tcp_server* const server) {
+  printf_debug("tcp_create_server()", 0);
   if(server->sockets == NULL) {
     server->sockets = calloc(server->settings->max_conn, sizeof(struct tcp_socket));
     if(server->sockets == NULL) {
@@ -539,6 +585,7 @@ int tcp_create_server(struct tcp_server* const server) {
     errno = ret;
     return net_failure;
   }
+  printf_debug("tcp_create_server() pthread_rwlock_init()", 0);
   if(tcp_create_server_base(server) == net_failure) {
     free(server->sockets);
     free(server->freeidx);
@@ -547,18 +594,22 @@ int tcp_create_server(struct tcp_server* const server) {
     (void) pthread_rwlock_destroy(&server->lock);
     return net_failure;
   }
+  printf_debug("tcp_create_server() tcp_create_server_base()", 0);
   if(net_socket_base_options(server->base.sfd) == net_failure) {
     tcp_server_free(server);
     return net_failure;
   }
+  printf_debug("tcp_create_server() net_server_base_options()", 0);
   if(net_bind_socket(server->base.sfd, &server->base.addr) != 0 || listen(server->base.sfd, server->settings->backlog) != 0) {
     tcp_server_free(server);
     return net_failure;
   }
+  printf_debug("tcp_create_server() net_bind_socket() listen()", 0);
   if(net_epoll_add(server->epoll, &server->base) == net_failure) {
     tcp_server_free(server);
     return net_failure;
   }
+  printf_debug("tcp_create_server() net_epoll_add()", 0);
   return net_success;
 }
 
@@ -575,10 +626,13 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
   tryagain:
   while(1) {
     /* Instead of getting an index for the socket, first make sure the connection isn't aborted */
+    printf_debug("tcp_server_onevent()", 0);
     struct sockaddr_in6 addr;
     socklen_t addrlen = sizeof(struct sockaddr_in6);
     int sfd = accept(_server->base.sfd, &addr, &addrlen);
+    printf_debug("tcp_server_onevent() socket sfd %d", 0, sfd);
     if(sfd == -1) {
+      printf_debug("tcp_server_onevent() err errno %d", 0, errno);
       if(errno == EAGAIN) {
         /* No more connections to accept */
         return;
@@ -594,6 +648,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     accept new connections. If yes, just close the socket. This way, it is removed
     from the queue of pending connections and it won't get timed out, wasting system resources. */
     if(_server->settings->max_conn == tcp_server_get_conn_amount(_server) || aflag32_test(&_server->flags, tcp_disallow_connections)) {
+      printf_debug("tcp_server_onevent() terminate", 0);
       (void) pthread_rwlock_unlock(&_server->lock);
       (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
       (void) close(sfd);
@@ -608,8 +663,10 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     well use it. Otherwise, we would need to waste time returning the index. */
     if(_server->freeidx_used == 0) {
       socket = _server->sockets + _server->sockets_used;
+      printf_debug("tcp_server_onevent() socket index %u", 0, _server->sockets_used);
     } else {
       socket = _server->sockets + _server->freeidx[_server->freeidx_used - 1];
+      printf_debug("tcp_server_onevent() socket index %u", 0, _server->freeidx[_server->freeidx_used - 1]);
     }
     /* Now we proceed to initialise required members of the socket. We don't
     have to zero it - it should already be zeroed. */
@@ -620,12 +677,14 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     socket->epoll = _server->epoll;
     net_sockbase_set_whole_addr(&socket->base, &addr);
     if(_server->callbacks->onconnection(_server, socket) == tcp_fatal) {
+      printf_debug("tcp_server_onevent() onconnection() terminate", 0);
       (void) memset(socket, 0, sizeof(struct tcp_socket));
       (void) pthread_rwlock_unlock(&_server->lock);
       (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
       (void) close(sfd);
       goto tryagain;
     }
+    printf_debug("tcp_server_onevent() onconnection()", 0);
     while(1) {
       if(socket->settings->disable_send_buffer == 0) {
         const int err = pthread_mutex_init(&socket->lock, NULL);
@@ -643,6 +702,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
             goto tryagain;
           }
         }
+        printf_debug("tcp_server_onevent() pthread_mutex_init()", 0);
       }
       break;
     }
@@ -656,6 +716,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
       (void) close(sfd);
       goto tryagain;
     }
+    printf_debug("tcp_server_onevent() net_socket_base_options()", 0);
     while(1) {
       if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
         if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
@@ -671,6 +732,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
           goto tryagain;
         }
       }
+      printf_debug("tcp_server_onevent() net_epoll_add()", 0);
       break;
     }
     /* At this point, the socket is fully initialised. We unlock the rwlock only
@@ -726,6 +788,7 @@ it's sockets. The sockets MUST be freed for this to succeed and call the
 onshutdown() callback, so they MUST call tcp_socket_free() from within onclose(). */
 
 int tcp_server_shutdown(struct tcp_server* const server) {
+  printf_debug("tcp_server_shutdown() server sfd %d", 0, server->base.sfd);
   (void) pthread_rwlock_wrlock(&server->lock);
   aflag32_add(&server->flags, tcp_disallow_connections | tcp_server_closing);
   (void) pthread_rwlock_unlock(&server->lock);

@@ -15,10 +15,7 @@ enum time_consts {
   time_failure,
   
   time_instant = 0,
-  time_not_instant,
-  
-  time_timeout = 0,
-  time_interval
+  time_not_instant
 };
 
 extern uint64_t time_sec_to_ns(const uint64_t);
@@ -80,14 +77,13 @@ struct time_manager {
   struct heap timeouts;
   struct heap intervals;
   struct threads thread;
-  void (*on_timer_expire)(struct time_manager*, struct time_timer, const int);
   _Atomic uint64_t latest;
   pthread_mutex_t mutex;
   sem_t work;
   sem_t amount;
 };
 
-extern int time_manager(struct time_manager* const, void (*)(struct time_manager*, struct time_timer, const int), const unsigned long, const unsigned long);
+extern int time_manager(struct time_manager* const, const unsigned long, const unsigned long);
 
 extern int time_manager_start(struct time_manager* const);
 

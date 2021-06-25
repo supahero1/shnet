@@ -17,18 +17,19 @@ const unsigned long amount = 1024;
 
 pthread_mutex_t lock;
 
-void on_event(struct net_epoll* epoll, int event, void* ptr) {
-  struct udp_socket* const socket = ptr;
+#define socket ((struct udp_socket*) ptr)
+
+void on_event(struct net_epoll* epoll, int event, struct net_socket_base* ptr) {
   uint8_t recv_buf[65535];
   if(socket->base.sfd == socket_sfd) {
+    if((event & EPOLLOUT) != 0) {
+      pthread_mutex_unlock(&lock);
+    }
     if((event & EPOLLIN) != 0) {
       ssize_t bytes = recv(socket->base.sfd, recv_buf, 65535, 0);
       if(bytes != amount) {
         TEST_FAIL;
       }
-      pthread_mutex_unlock(&lock);
-    }
-    if((event & EPOLLOUT) != 0) {
       pthread_mutex_unlock(&lock);
     }
   } else {
@@ -51,6 +52,8 @@ void on_event(struct net_epoll* epoll, int event, void* ptr) {
   }
 }
 
+#undef socket
+
 #define check_err \
 do { \
   if(err != net_success) { \
@@ -71,8 +74,10 @@ int main() {
   pthread_mutex_lock(&lock);
   
   
+  
   struct net_epoll epoll;
-  err = net_epoll(&epoll, on_event);
+  memset(&epoll, 0, sizeof(epoll));
+  err = net_epoll(&epoll, on_event, net_epoll_no_wakeup_method);
   check_err;
   err = net_epoll_start(&epoll, 1);
   check_err;
@@ -103,7 +108,9 @@ int main() {
   check_err;
   socket_sfd = socket.base.sfd;
   
+  
   pthread_mutex_lock(&lock);
+  
   
   uint8_t* trash = malloc(amount);
   if(trash == NULL) {
@@ -116,6 +123,7 @@ int main() {
   }
   
   pthread_mutex_lock(&lock);
+  puts("3");
   
   err = net_epoll_remove(&epoll, &socket.base);
   check_err;

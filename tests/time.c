@@ -8,14 +8,6 @@
 #include <unistd.h>
 #include <shnet/time.h>
 
-void on_timer_expire(struct time_manager* manager, struct time_timer timer, const int which) {
-  if(which == time_interval) {
-    timer.interval->func(timer.interval->data);
-  } else {
-    timer.timeout->func(timer.timeout->data);
-  }
-}
-
 _Atomic unsigned char last;
 
 pthread_mutex_t mutexo = PTHREAD_MUTEX_INITIALIZER;
@@ -160,7 +152,7 @@ int main() {
   start:
   printf("\rRound %d/3", counter + 1);
   fflush(stdout);
-  int err = time_manager(&manager, on_timer_expire, 1, 1);
+  int err = time_manager(&manager, 1, 1);
   if(err != time_success) {
     TEST_FAIL;
   }
@@ -192,7 +184,7 @@ int main() {
   benchmark:
   printf_debug("2. Benchmark", 1);
   puts("A \"frame loop\" will be created to see various statistics. An interval will be fired at 60FPS rate and the benchmark will end when 1000 samples have been collected.");
-  err = time_manager(&manager, on_timer_expire, 1, 1);
+  err = time_manager(&manager, 1, 1);
   if(err != time_success) {
     TEST_FAIL;
   }
