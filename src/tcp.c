@@ -355,7 +355,7 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
     /* Check any errors we could have got from connect() or such */
     int code;
     if(getsockopt(socket->base.sfd, tcp_protocol, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
-      socket->close_reason = code;
+      errno = code;
     }
     tcp_socket_set_state_closed(socket);
     socket->callbacks->onclose(socket);
@@ -364,6 +364,7 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
   if(events & EPOLLHUP) {
     /* The connection is closed */
     tcp_socket_set_state_closed(socket);
+    errno = 0;
     socket->callbacks->onclose(socket);
     return;
   }

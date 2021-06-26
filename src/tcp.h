@@ -81,7 +81,6 @@ struct tcp_socket {
   char* send_buffer;
   unsigned send_used;
   unsigned send_size;
-  int close_reason;
   _Atomic uint32_t state;
 };
 
