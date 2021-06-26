@@ -116,7 +116,6 @@ struct tcp_server;
 struct tcp_server_callbacks {
   /* This callback is called when a new connection has been acknowledged by the
   server. The application MUST fill the following information of the socket:
-  - socket->epoll
   - socket->callbacks
   - socket->settings
   The rest will be done by the library. The application should return tcp_proceed.
