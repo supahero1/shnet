@@ -72,8 +72,6 @@ struct tcp_socket_settings {
 It is undefined behavior otherwise. */
 
 struct tcp_socket {
-  /* It is a requirement for both sockets and servers to set base.onclose callback
-  to be notified when it is safe to free any data associated with the structures */
   struct net_socket_base base;
   struct tcp_server* server;
   struct tcp_socket_callbacks* callbacks;
