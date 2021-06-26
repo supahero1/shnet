@@ -123,7 +123,7 @@ int main() {
   }
   
   pthread_mutex_lock(&lock);
-  puts("3");
+  
   
   err = net_epoll_remove(&epoll, &socket.base);
   check_err;
