@@ -6,14 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <semaphore.h>
-#include <shnet/tcp.h>
+#include <shnet/tls.h>
 #include <shnet/time.h>
-
-/* This test suite was inspired by https://github.com/chronoxor/CppServer#tcp-echo-server
-which doesn't even respond to single pings, just resends whatever it received.
-Unlike the CppServer library, we don't lose performance by using more clients, since
-there is no lock contention or anything that would stop the clients other than the
-machine's power. */
 
 sem_t sem;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -23,92 +17,105 @@ unsigned long msges = 0;
 #define ping_size 32UL
 #define time_to_wait_s 1UL
 
-struct tcp_socket_callbacks serversock_cb;
-struct tcp_socket_settings serversock_set;
+struct tcp_socket_callbacks serversock_tcp_cb;
+struct tcp_socket_settings serversock_tcp_set;
 
-struct tcp_server_callbacks server_cb;
+struct tls_socket_callbacks serversock_tls_cb;
+struct tls_socket_settings serversock_tls_set;
+
+struct tcp_socket_callbacks clientsock_tcp_cb;
+struct tcp_socket_settings clientsock_tcp_set;
+
+struct tls_socket_callbacks clientsock_tls_cb;
+struct tls_socket_settings clientsock_tls_set;
+
+struct tcp_server_callbacks server_tcp_cb;
+struct tls_server_callbacks server_tls_cb;
 struct tcp_server_settings server_set;
 
-void serversock_onopen(struct tcp_socket* socket) {
+void serversock_onopen(struct tls_socket* socket) {
   (void) socket;
   sem_post(&sem);
 }
 
-void serversock_onmessage(struct tcp_socket* socket) {
+void serversock_onmessage(struct tls_socket* socket) {
   unsigned char buf[ping_size * how_many_pings];
   errno = 0;
   while(errno == 0) {
-    int read = tcp_read(socket, buf, ping_size * how_many_pings);
+    int read = tls_read(socket, buf, ping_size * how_many_pings);
     if(read == 0) {
       return;
     }
     const int pings = read / ping_size;
     msges += pings;
-    (void) tcp_send(socket, buf, ping_size * pings);
+    (void) tls_send(socket, buf, ping_size * pings);
   }
 }
 
-void serversock_onclose(struct tcp_socket* socket) {
+void serversock_onclose(struct tls_socket* socket) {
   sem_post(&sem);
-  tcp_socket_free(socket);
+  tls_socket_free(socket);
 }
 
 
 
-void onopen(struct tcp_socket* socket) {
+void onopen(struct tls_socket* socket) {
   (void) socket;
   sem_post(&sem);
 }
 
-void onmessage(struct tcp_socket* socket) {
+void onmessage(struct tls_socket* socket) {
   unsigned char buf[ping_size * how_many_pings];
   errno = 0;
   while(errno == 0) {
-    int read = tcp_read(socket, buf, ping_size * how_many_pings);
+    int read = tls_read(socket, buf, ping_size * how_many_pings);
     if(read == 0) {
       return;
     }
     const int pings = read / ping_size;
-    (void) tcp_send(socket, buf, ping_size * pings);
+    (void) tls_send(socket, buf, ping_size * pings);
   }
 }
 
-void onclose(struct tcp_socket* socket) {
+void onclose(struct tls_socket* socket) {
   sem_post(&sem);
-  tcp_socket_free(socket);
+  tls_socket_free(socket);
 }
 
-int sock_onnomem(struct tcp_socket* socket) {
-  TEST_FAIL;
-  return net_failure;
-}
-
-
-
-int onconnection(struct tcp_socket* socket) {
-  socket->callbacks = &serversock_cb;
-  socket->settings = &serversock_set;
+int onconnection(struct tls_socket* socket) {
+  socket->callbacks = &serversock_tcp_cb;
+  socket->settings = &serversock_tcp_set;
+  socket->tls_callbacks = &serversock_tls_cb;
+  socket->tls_settings = &serversock_tls_set;
+  if(tls_socket_init(socket, net_server) == net_failure) {
+    TEST_FAIL;
+  }
   return net_success;
 }
 
-int onnomem(struct tcp_server* server) {
+int sock_onnomem(struct tls_socket* socket) {
   TEST_FAIL;
   return net_failure;
 }
 
-void onshutdown(struct tcp_server* server) {
-  tcp_server_free(server);
+int serv_onnomem(struct tls_server* server) {
+  TEST_FAIL;
+  return net_failure;
+}
+
+void onshutdown(struct tls_server* server) {
+  tls_server_free(server);
   sem_post(&sem);
 }
 
-#define server ((struct tcp_server*) data)
+#define server ((struct tls_server*) data)
 
 int server_pick_address(struct addrinfo* info, void* data) {
   char ip[ip_max_strlen];
   net_sockbase_set_family(&server->base, net_addrinfo_get_family(info));
   net_sockbase_set_whole_addr(&server->base, net_addrinfo_get_whole_addr(info));
   (void) net_address_to_string(net_sockbase_get_whole_addr(&server->base), ip);
-  if(tcp_create_server(server) != net_success) {
+  if(tls_create_server(server) != net_success) {
     printf("server_pick_address() err %s errno %d\n", net_strerror(errno), errno);
     return net_failure;
   } else {
@@ -117,14 +124,14 @@ int server_pick_address(struct addrinfo* info, void* data) {
 }
 
 #undef server
-#define socket ((struct tcp_socket*) data)
+#define socket ((struct tls_socket*) data)
 
 int socket_pick_address(struct addrinfo* info, void* data) {
   char ip[ip_max_strlen];
   net_sockbase_set_family(&socket->base, net_addrinfo_get_family(info));
   net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(info));
   (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->base), ip);
-  if(tcp_create_socket(socket) != net_success) {
+  if(tls_create_socket(socket) != net_success) {
     printf("socket_pick_address() err %s errno %d\n", net_strerror(errno), errno);
     return net_failure;
   } else {
@@ -140,33 +147,77 @@ void unlock_mutexo(void* da) {
 }
 
 int main(int argc, char **argv) {
-  puts("Testing tcp.c:");
+  puts("Testing tls.c:");
   srand(time_get_time());
   sem_init(&sem, 0, 0);
   pthread_mutex_lock(&mutex);
+  tls_ignore_sigpipe();
   
-  memset(&serversock_cb, 0, sizeof(serversock_cb));
-  serversock_cb.onopen = serversock_onopen;
-  serversock_cb.onmessage = serversock_onmessage;
-  serversock_cb.onnomem = sock_onnomem;
-  serversock_cb.onclose = serversock_onclose;
-  
-  memset(&serversock_set, 0, sizeof(serversock_set));
-  serversock_set.send_buffer_cleanup_threshold = UINT_MAX; /* Never cleanup (only free) */
-  serversock_set.send_buffer_allow_freeing = 0; /* Only free on socket free */
-  /* Maybe the kernel has smaller default TCP window size; it is probably wise to
-  not disable the send buffer */
-  serversock_set.disable_send_buffer = 0;
-  /* Too lazy to do it ourselves + nothing to do on onreadclose event anyway */
-  serversock_set.onreadclose_auto_res = 1;
-  serversock_set.remove_from_epoll_onclose = 0;
-  
-  memset(&server_cb, 0, sizeof(server_cb));
-  server_cb.onconnection = onconnection;
-  server_cb.onnomem = onnomem;
-  server_cb.onshutdown = onshutdown;
-  
+  memset(&serversock_tcp_cb, 0, sizeof(serversock_tcp_cb));
+  memset(&serversock_tcp_set, 0, sizeof(serversock_tcp_set));
+  memset(&serversock_tls_cb, 0, sizeof(serversock_tls_cb));
+  memset(&serversock_tls_set, 0, sizeof(serversock_tls_set));
+  memset(&clientsock_tcp_cb, 0, sizeof(clientsock_tcp_cb));
+  memset(&clientsock_tcp_set, 0, sizeof(clientsock_tcp_set));
+  memset(&clientsock_tls_cb, 0, sizeof(clientsock_tls_cb));
+  memset(&clientsock_tls_set, 0, sizeof(clientsock_tls_set));
+  memset(&server_tcp_cb, 0, sizeof(server_tcp_cb));
+  memset(&server_tls_cb, 0, sizeof(server_tls_cb));
   memset(&server_set, 0, sizeof(server_set));
+  
+  serversock_tcp_cb = tls_default_tcp_socket_callbacks;
+  
+  serversock_tcp_set = (struct tcp_socket_settings) {
+    .send_buffer_cleanup_threshold = 0,
+    .send_buffer_allow_freeing = 0,
+    .disable_send_buffer = 0,
+    .onreadclose_auto_res = 1,
+    .remove_from_epoll_onclose = 0
+  };
+  
+  serversock_tls_cb = (struct tls_socket_callbacks) {
+    .onopen = serversock_onopen,
+    .onmessage = serversock_onmessage,
+    .tcp_onreadclose = NULL,
+    .tls_onreadclose = NULL,
+    .onnomem = sock_onnomem,
+    .onclose = serversock_onclose
+  };
+  
+  serversock_tls_set = (struct tls_socket_settings) {
+    .read_buffer_cleanup_threshold = 0,
+    .read_buffer_growth = 4096,
+    .read_buffer_allow_freeing = 0,
+    .force_close_on_fatal_error = 1,
+    .force_close_on_shutdown_error = 1,
+    .force_close_tcp = 1,
+    .onreadclose_auto_res = tls_onreadclose_tls_close
+  };
+  
+  clientsock_tcp_cb = tls_default_tcp_socket_callbacks;
+  
+  clientsock_tcp_set = serversock_tcp_set;
+  
+  clientsock_tls_cb = (struct tls_socket_callbacks) {
+    .onopen = onopen,
+    .onmessage = onmessage,
+    .tcp_onreadclose = NULL,
+    .tls_onreadclose = NULL,
+    .onnomem = sock_onnomem,
+    .onclose = onclose
+  };
+  
+  clientsock_tls_set = serversock_tls_set;
+  
+  server_tcp_cb = tls_default_tcp_server_callbacks;
+  
+  server_tls_cb = (struct tls_server_callbacks) {
+    .onconnection = onconnection,
+    .ontermination = NULL,
+    .onnomem = serv_onnomem,
+    .onshutdown = onshutdown
+  };
+  
   server_set.max_conn = 10000;
   server_set.backlog = 128;
   
@@ -177,7 +228,7 @@ int main(int argc, char **argv) {
   /* Epoll setup */
   struct net_epoll socket_epoll;
   memset(&socket_epoll, 0, sizeof(socket_epoll));
-  int err = tcp_epoll(&socket_epoll);
+  int err = tls_epoll(&socket_epoll);
   if(err == net_failure) {
     TEST_FAIL;
   }
@@ -188,13 +239,29 @@ int main(int argc, char **argv) {
   struct net_epoll server_epoll;
   if(shared_epoll == 0) {
     memset(&server_epoll, 0, sizeof(server_epoll));
-    err = tcp_epoll(&server_epoll);
+    err = tls_epoll(&server_epoll);
     if(err == net_failure) {
       TEST_FAIL;
     }
     if(net_epoll_start(&server_epoll, 1) != net_success) {
       TEST_FAIL;
     }
+  }
+  
+  SSL_CTX* client_ctx = SSL_CTX_new(TLS_client_method());
+  if(client_ctx == NULL) {
+    TEST_FAIL;
+  }
+  
+  SSL_CTX* server_ctx = SSL_CTX_new(TLS_server_method());
+  if(server_ctx == NULL) {
+    TEST_FAIL;
+  }
+  if(SSL_CTX_use_certificate_file(server_ctx, "/home/franek/c/git/shnet/cert/cert.pem", SSL_FILETYPE_PEM) != 1) {
+    TEST_FAIL;
+  }
+  if(SSL_CTX_use_PrivateKey_file(server_ctx, "/home/franek/c/git/shnet/cert/key.pem", SSL_FILETYPE_PEM) != 1) {
+    TEST_FAIL;
   }
   
   struct addrinfo hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | wants_a_server | wants_own_ip_version);
@@ -204,12 +271,12 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  /* TCP server setup */
-  struct tcp_server* servers = malloc(sizeof(struct tcp_server) * nservers);
+  /* TLS server setup */
+  struct tls_server* servers = malloc(sizeof(struct tls_server) * nservers);
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(servers, 0, sizeof(struct tcp_server) * nservers);
+  memset(servers, 0, sizeof(struct tls_server) * nservers);
   for(int i = 0; i < nservers; ++i) {
     if(shared_epoll == 1) {
       servers[i].epoll = &socket_epoll;
@@ -217,20 +284,16 @@ int main(int argc, char **argv) {
       servers[i].epoll = &server_epoll;
     }
     servers[i].settings = &server_set;
-    servers[i].callbacks = &server_cb;
+    servers[i].callbacks = &server_tcp_cb;
+    servers[i].tls_callbacks = &server_tls_cb;
+    servers[i].ctx = server_ctx;
     if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) == net_failure) {
       TEST_FAIL;
     }
   }
   net_get_address_free(res);
   
-  /* TCP socket setup */
-  struct tcp_socket_callbacks sock_cb;
-  memset(&sock_cb, 0, sizeof(sock_cb));
-  sock_cb.onopen = onopen;
-  sock_cb.onmessage = onmessage;
-  sock_cb.onnomem = sock_onnomem;
-  sock_cb.onclose = onclose;
+  /* TLS socket setup */
   
   hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | numeric_hostname | wants_own_ip_version);
   res = net_get_address("0.0.0.0", "8099", &hints);
@@ -239,15 +302,18 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  struct tcp_socket* sockets = malloc(sizeof(struct tcp_socket) * nclients);
+  struct tls_socket* sockets = malloc(sizeof(struct tls_socket) * nclients);
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(sockets, 0, sizeof(struct tcp_socket) * nclients);
+  memset(sockets, 0, sizeof(struct tls_socket) * nclients);
   for(int i = 0; i < nclients; ++i) {
     sockets[i].epoll = &socket_epoll;
-    sockets[i].callbacks = &sock_cb;
-    sockets[i].settings = &serversock_set;
+    sockets[i].callbacks = &clientsock_tcp_cb;
+    sockets[i].settings = &clientsock_tcp_set;
+    sockets[i].tls_callbacks = &clientsock_tls_cb;
+    sockets[i].tls_settings = &clientsock_tls_set;
+    sockets[i].ctx = client_ctx;
     
     /* Pick an address for the socket */
     if(net_foreach_addrinfo(res, socket_pick_address, &sockets[i]) == net_failure) {
@@ -279,20 +345,20 @@ int main(int argc, char **argv) {
   }
   for(int i = 0; i < nclients; ++i) {
     errno = 0;
-    (void) tcp_send(&sockets[i], buf, ping_size * how_many_pings);
+    (void) tls_send(&sockets[i], buf, ping_size * how_many_pings);
   }
   /* Wait for the timeout to expire, we will be sending data in the background */
   pthread_mutex_lock(&mutex);
   /* Close the clients */
   for(int i = 0; i < nclients; ++i) {
-    tcp_socket_force_close(&sockets[i]);
+    tls_socket_force_close(&sockets[i]);
   }
   for(int i = 0; i < (nclients << 1); ++i) {
     sem_wait(&sem);
   }
   /* Close the servers */
   for(int i = 0; i < nservers; ++i) {
-    if(tcp_server_shutdown(&servers[i]) != net_success) {
+    if(tls_server_shutdown(&servers[i]) != net_success) {
       TEST_FAIL;
     }
     sem_wait(&sem);

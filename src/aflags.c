@@ -7,11 +7,11 @@ uint32_t aflag32_get(const _Atomic uint32_t* const aflag) {
 }
 
 void aflag32_add(_Atomic uint32_t* const aflag, const uint32_t flags) {
-  atomic_store(aflag, atomic_load(aflag) | flags);
+  (void) atomic_fetch_or(aflag, flags);
 }
 
 void aflag32_del(_Atomic uint32_t* const aflag, const uint32_t flags) {
-  atomic_store(aflag, atomic_load(aflag) & ~flags);
+  (void) atomic_fetch_and(aflag, ~flags);
 }
 
 uint32_t aflag32_test(const _Atomic uint32_t* const aflag, const uint32_t flags) {
@@ -29,11 +29,11 @@ uint64_t aflag64_get(const _Atomic uint64_t* const aflag) {
 }
 
 void aflag64_add(_Atomic uint64_t* const aflag, const uint64_t flags) {
-  atomic_store(aflag, atomic_load(aflag) | flags);
+  (void) atomic_fetch_or(aflag, flags);
 }
 
 void aflag64_del(_Atomic uint64_t* const aflag, const uint64_t flags) {
-  atomic_store(aflag, atomic_load(aflag) & ~flags);
+  (void) atomic_fetch_and(aflag, ~flags);
 }
 
 uint64_t aflag64_test(const _Atomic uint64_t* const aflag, const uint64_t flags) {

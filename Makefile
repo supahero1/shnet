@@ -8,7 +8,7 @@ COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
 else
 COMP=$(CMPE_CORE) -$(CMPE)
 endif
-FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o build/udp.o build/udplite.o build/aflags.o build/tcp.o
+FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o build/udp.o build/udplite.o build/aflags.o build/tcp.o build/tls.o
 
 build: prepare $(FILENAMES)
 
@@ -22,7 +22,6 @@ test: $(wildcard tests/*.c) $(wildcard tests/*.h)
 	$(COMP) tests/tcp.c -o build/tcp -lshnet
 	build/tcp 1 1 1
 	build/tcp 1 1 0
-	
 	build/tcp 100 1 1
 	build/tcp 100 1 0
 	build/tcp 100 10 1
@@ -133,6 +132,121 @@ test: $(wildcard tests/*.c) $(wildcard tests/*.h)
 	build/tcp_stress 100 200 0
 	build/tcp_stress 100 1000 1
 	build/tcp_stress 100 1000 0
+	
+	$(COMP) tests/tls.c -o build/tls -lshnet -lssl -lcrypto
+	build/tls 1 1 1
+	build/tls 1 1 0
+	
+	build/tls 100 1 1
+	build/tls 100 1 0
+	build/tls 100 10 1
+	build/tls 100 10 0
+	build/tls 100 100 1
+	build/tls 100 100 0
+	build/tls 100 1000 1
+	build/tls 100 1000 0
+	$(COMP) tests/tls_stress.c -o build/tls_stress -lshnet -lssl -lcrypto
+	build/tls_stress 1 1 1
+	build/tls_stress 1 1 0
+	build/tls_stress 1 2 1
+	build/tls_stress 1 2 0
+	build/tls_stress 1 3 1
+	build/tls_stress 1 3 0
+	build/tls_stress 1 4 1
+	build/tls_stress 1 4 0
+	build/tls_stress 1 5 1
+	build/tls_stress 1 5 0
+	build/tls_stress 1 6 1
+	build/tls_stress 1 6 0
+	build/tls_stress 1 7 1
+	build/tls_stress 1 7 0
+	build/tls_stress 1 8 1
+	build/tls_stress 1 8 0
+	build/tls_stress 1 9 1
+	build/tls_stress 1 9 0
+	build/tls_stress 1 10 1
+	build/tls_stress 1 10 0
+	build/tls_stress 1 15 1
+	build/tls_stress 1 15 0
+	build/tls_stress 1 20 1
+	build/tls_stress 1 20 0
+	build/tls_stress 1 25 1
+	build/tls_stress 1 25 0
+	build/tls_stress 1 30 1
+	build/tls_stress 1 30 0
+	build/tls_stress 1 35 1
+	build/tls_stress 1 35 0
+	build/tls_stress 1 40 1
+	build/tls_stress 1 40 0
+	build/tls_stress 1 45 1
+	build/tls_stress 1 45 0
+	build/tls_stress 1 50 1
+	build/tls_stress 1 50 0
+	build/tls_stress 1 60 1
+	build/tls_stress 1 60 0
+	build/tls_stress 1 70 1
+	build/tls_stress 1 70 0
+	build/tls_stress 1 80 1
+	build/tls_stress 1 80 0
+	build/tls_stress 1 90 1
+	build/tls_stress 1 90 0
+	build/tls_stress 1 100 1
+	build/tls_stress 1 100 0
+	build/tls_stress 1 200 1
+	build/tls_stress 1 200 0
+	build/tls_stress 1 1000 1
+	build/tls_stress 1 1000 0
+	
+	build/tls_stress 100 1 1
+	build/tls_stress 100 1 0
+	build/tls_stress 100 2 1
+	build/tls_stress 100 2 0
+	build/tls_stress 100 3 1
+	build/tls_stress 100 3 0
+	build/tls_stress 100 4 1
+	build/tls_stress 100 4 0
+	build/tls_stress 100 5 1
+	build/tls_stress 100 5 0
+	build/tls_stress 100 6 1
+	build/tls_stress 100 6 0
+	build/tls_stress 100 7 1
+	build/tls_stress 100 7 0
+	build/tls_stress 100 8 1
+	build/tls_stress 100 8 0
+	build/tls_stress 100 9 1
+	build/tls_stress 100 9 0
+	build/tls_stress 100 10 1
+	build/tls_stress 100 10 0
+	build/tls_stress 100 15 1
+	build/tls_stress 100 15 0
+	build/tls_stress 100 20 1
+	build/tls_stress 100 20 0
+	build/tls_stress 100 25 1
+	build/tls_stress 100 25 0
+	build/tls_stress 100 30 1
+	build/tls_stress 100 30 0
+	build/tls_stress 100 35 1
+	build/tls_stress 100 35 0
+	build/tls_stress 100 40 1
+	build/tls_stress 100 40 0
+	build/tls_stress 100 45 1
+	build/tls_stress 100 45 0
+	build/tls_stress 100 50 1
+	build/tls_stress 100 50 0
+	build/tls_stress 100 60 1
+	build/tls_stress 100 60 0
+	build/tls_stress 100 70 1
+	build/tls_stress 100 70 0
+	build/tls_stress 100 80 1
+	build/tls_stress 100 80 0
+	build/tls_stress 100 90 1
+	build/tls_stress 100 90 0
+	build/tls_stress 100 100 1
+	build/tls_stress 100 100 0
+	build/tls_stress 100 200 1
+	build/tls_stress 100 200 0
+	build/tls_stress 100 1000 1
+	build/tls_stress 100 1000 0
 
 clean:
 	rm -r -f build logs.txt
@@ -210,3 +324,6 @@ build/aflags.o: src/aflags.h src/aflags.c
 
 build/tcp.o: src/tcp.h src/tcp.c build/misc.o build/net.o
 	$(COMP) -fPIC -c src/tcp.c -o build/tcp.o
+
+build/tls.o: src/tls.h src/tls.c build/tcp.o
+	$(COMP) -fPIC -c src/tls.c -o build/tls.o

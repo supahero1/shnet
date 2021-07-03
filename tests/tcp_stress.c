@@ -43,7 +43,7 @@ struct tcp_server_settings server_set;
 struct addrinfo* res;
 
 void serversock_onclose(struct tcp_socket* socket) {
-  tcp_socket_confirm_close(socket);
+  tcp_socket_free(socket);
 }
 
 
@@ -56,7 +56,7 @@ void onopen(struct tcp_socket* socket) {
 int socket_pick_address(struct addrinfo*, void*);
 
 void onclose(struct tcp_socket* socket) {
-  tcp_socket_confirm_close(socket);
+  tcp_socket_free(socket);
   /* The socket is mostly zeroed now. We can reconnect. */
   if(atomic_load(&dont_reattempt)) {
     return;
@@ -66,17 +66,22 @@ void onclose(struct tcp_socket* socket) {
   }
 }
 
+int sock_onnomem(struct tcp_socket* socket) {
+  TEST_FAIL;
+  return net_failure;
+}
 
 
-int onconnection(struct tcp_server* server, struct tcp_socket* socket) {
+
+int onconnection(struct tcp_socket* socket) {
   socket->callbacks = &serversock_cb;
   socket->settings = &serversock_set;
-  return tcp_proceed;
+  return net_success;
 }
 
 int onnomem(struct tcp_server* server) {
   TEST_FAIL;
-  return tcp_fatal;
+  return net_failure;
 }
 
 void onshutdown(struct tcp_server* server) {
@@ -129,6 +134,7 @@ int main(int argc, char **argv) {
   pthread_mutex_lock(&mutex);
   
   memset(&serversock_cb, 0, sizeof(serversock_cb));
+  serversock_cb.onnomem = sock_onnomem;
   serversock_cb.onclose = serversock_onclose;
   
   memset(&serversock_set, 0, sizeof(serversock_set));
@@ -136,6 +142,7 @@ int main(int argc, char **argv) {
   serversock_set.send_buffer_allow_freeing = 0;
   serversock_set.disable_send_buffer = 0;
   serversock_set.onreadclose_auto_res = 1;
+  serversock_set.remove_from_epoll_onclose = 0;
   
   memset(&server_cb, 0, sizeof(server_cb));
   server_cb.onconnection = onconnection;
@@ -204,6 +211,7 @@ int main(int argc, char **argv) {
   struct tcp_socket_callbacks sock_cb;
   memset(&sock_cb, 0, sizeof(sock_cb));
   sock_cb.onopen = onopen;
+  sock_cb.onnomem = sock_onnomem;
   sock_cb.onclose = onclose;
   
   hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | numeric_hostname | wants_own_ip_version);
@@ -264,21 +272,7 @@ int main(int argc, char **argv) {
   shared_epoll,
   conns / time_to_wait_s
   );
-  /* Cleanup for valgrind */
-  pthread_mutex_unlock(&mutex);
-  pthread_mutex_destroy(&mutex);
-  sem_destroy(&sem);
-  net_epoll_stop(&socket_epoll);
-  net_epoll_free(&socket_epoll);
-  if(shared_epoll == 0) {
-    net_epoll_stop(&server_epoll);
-    net_epoll_free(&server_epoll);
-  }
-  time_manager_stop(&manager);
-  time_manager_free(&manager);
-  free(sockets);
-  free(servers);
-  net_get_address_free(res);
+  /* Cleanup for valgrind deleted, look tls_stress.c */
   TEST_PASS;
   return 0;
 }

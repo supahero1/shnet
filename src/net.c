@@ -410,14 +410,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
-      if(epoll->bases_tbc[i]->which == net_socket) {
-        epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
-      }
-    }
-    for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
-      if(epoll->bases_tbc[i]->which == net_server) {
-        epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
-      }
+      epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
     }
     if(epoll->bases_tbc_allow_freeing == 1) {
       free(epoll->bases_tbc);
@@ -450,14 +443,7 @@ static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
-      if(epoll->bases_tbc[i]->which == net_socket) {
-        epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
-      }
-    }
-    for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
-      if(epoll->bases_tbc[i]->which == net_server) {
-        epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
-      }
+      epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
     }
     if(epoll->bases_tbc_allow_freeing == 1) {
       free(epoll->bases_tbc);
