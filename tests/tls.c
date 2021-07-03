@@ -257,10 +257,10 @@ int main(int argc, char **argv) {
   if(server_ctx == NULL) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_certificate_file(server_ctx, "path/to/cert/cert.pem", SSL_FILETYPE_PEM) != 1) {
+  if(SSL_CTX_use_certificate_file(server_ctx, "cert.pem", SSL_FILETYPE_PEM) != 1) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_PrivateKey_file(server_ctx, "path/to/cert/key.pem", SSL_FILETYPE_PEM) != 1) {
+  if(SSL_CTX_use_PrivateKey_file(server_ctx, "key.pem", SSL_FILETYPE_PEM) != 1) {
     TEST_FAIL;
   }
   
