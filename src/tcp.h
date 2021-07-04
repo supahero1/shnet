@@ -32,7 +32,38 @@ struct tcp_socket;
 
 /* All callbacks besides onclose() and onnomem() are optional and can be NULL */
 struct tcp_socket_callbacks {
-  /* The socket can only be accessed after onopen() callback is fired */
+  /* This callback is called when the socket is created, no matter if it's a
+  client or a server socket. It is meaningful, because the application might want
+  to initialise something too, by embeding the socket's structure in it's own.
+  The application must return net_success on success and net_failure on failure.
+  A failure has an additional meaning with server sockets - the application can
+  inspect them before it decides to let them in. If such a socket is deemed invalid
+  by the application, it shall return net_failure and not initialise anything.
+  When a new server socket is created and the oncreation() callback is called, it
+  is also the responsibility of the application to fill in required members of the 
+  socket, that is:
+  - socket->callbacks
+  - socket->settings
+  Only then can it return successfully. Otherwise it is undefined behavior and will
+  likely lead to an instant crash.
+  The new socket's epoll will automatically be set to its server's epoll. It is
+  undefined behavior if the application changes it to a different epoll or if it
+  will tamper with the socket's server pointer.
+  Returning net_failure will result in the socket being destroyed.
+  onfree() can be called after oncreation() if the socket failed at any further
+  stage of a server socket's creation. It will also be called as part of tcp_socket_free().
+  onclose() may be called without onopen() if connection fails to be established.
+  Setting this callback to anything other than NULL is meaningless if done as part
+  of onconnection().
+  If the callback fails while initialising the socket, it must cleanup after itself.
+  Only cleanup what you have done in the function and not the whole socket. Example:
+  1. Init a mutex
+  2. Init another mutex, but the call fails
+  3. Instead of returning instantly, first destroy the first mutex
+  4. Return net_failure */
+  int (*oncreation)(struct tcp_socket*);
+  /* The socket can only be accessed after onopen() callback is fired. The application
+  may start sending data inside of the onopen() callback. */
   void (*onopen)(struct tcp_socket*);
   /* The onmessage() callback doesn't mean the application needs to read any data.
   It only informs that data is available. It is up to the application to call tcp_read(). */
@@ -57,12 +88,18 @@ struct tcp_socket_callbacks {
   That also means the application should only call it when it is sure it will no
   longer access the socket in any way. */
   void (*onclose)(struct tcp_socket*);
+  /* Called when the socket is freed. For instance, if the application allocated
+  any resources for the socket when onconnection() was called, the application can
+  also free these resources in this function whenever the socket is freed.
+  If the freed socket is in a server, the application MUST zero whole area of the
+  socket besides the base tcp_socket members. Otherwise, the application must zero
+  anything that is not a constant, i.e. settings or callbacks, that are not part of
+  a tcp_socket. The tcp_socket part will be cleaned by the underlying code. */
+  void (*onfree)(struct tcp_socket*);
 };
 
 struct tcp_socket_settings {
   unsigned send_buffer_cleanup_threshold;
-  unsigned send_buffer_allow_freeing:1;
-  unsigned disable_send_buffer:1;
   unsigned onreadclose_auto_res:1;
   unsigned remove_from_epoll_onclose:1;
 };
@@ -91,15 +128,11 @@ extern int tcp_socket_keepalive(const struct tcp_socket* const);
 
 extern int tcp_socket_keepalive_explicit(const struct tcp_socket* const, const int, const int, const int);
 
-extern void tcp_socket_free_server_part(struct tcp_socket* const);
-
 extern void tcp_socket_free(struct tcp_socket* const);
 
 extern void tcp_socket_close(struct tcp_socket* const);
 
 extern void tcp_socket_force_close(struct tcp_socket* const);
-
-extern int tcp_create_socket_base(struct tcp_socket* const);
 
 extern int tcp_create_socket(struct tcp_socket* const);
 
@@ -112,24 +145,8 @@ extern int tcp_read(struct tcp_socket* const, void*, int);
 struct tcp_server;
 
 struct tcp_server_callbacks {
-  /* This callback is called when a new connection has been acknowledged by the
-  server. The application MUST fill the following information of the socket:
-  - socket->callbacks
-  - socket->settings
-  The rest will be done by the library. The application should return net_success.
-  Otherwise, if the application has some sort of a filter or a firewall to drop
-  connections, it can do it from within this function. The socket's file descriptor
-  and its address will be set. If the application decides to drop the connection,
-  it MUST return net_failure. The rest will be done by the library.
-  WARNING: the socket might still be terminated. It MUST NOT be assumed that the
-  socket will not fail after this function, especially when using TLS.
-  All sockets MUST belong to the same epoll the server is in. It is done
-  automatically by the underlying code. */
+  /* You can read more about this callback above at the oncreation() socket callback */
   int (*onconnection)(struct tcp_socket*);
-  /* If after onconnection() we destroyed the connection for whatever reason, and
-  the application allocated some memory for it in onconnection(), it can release
-  that memory in this callback. It can be NULL. */
-  void (*ontermination)(struct tcp_socket*);
   /* Inside of the epoll thread(s), we could run out of memory while accepting
   a new connection. Some applications prefer to halt the program, others have
   a mechanism for releasing some memory. Let the application choose the approach.
@@ -138,16 +155,18 @@ struct tcp_server_callbacks {
   This function might be called multiple times in a row, in case the application
   freed not enough memory. */
   int (*onnomem)(struct tcp_server*);
-  /* Called when the server completed its shutdown */
+  /* Called when the server completed its shutdown. It is no more in any epoll,
+  it has no more connections. The array of sockets might not be zeroed. */
   void (*onshutdown)(struct tcp_server*);
-  /* Only used internally, applications should not touch this and leave it at NULL */
-  void (*onsockshutdown)(struct tcp_socket*);
 };
 
 struct tcp_server_settings {
   unsigned max_conn;
   int backlog;
-  int socket_size; /* The application must not fill this in, leave it at 0 */
+  /* The application must fill this in if it plans to embed a socket's struct
+  inside its own struct. For servers, it will signal to allocate more memory.
+  Otherwise, leave it at 0 for the underlying code to set to the default. */
+  unsigned socket_size;
 };
 
 struct tcp_server {
@@ -157,23 +176,21 @@ struct tcp_server {
   struct net_epoll* epoll;
   pthread_rwlock_t lock; /* Not a mutex to let the application inspect sockets */
   /* If the application has some memory to spare, it can set the 2 members below.
-  Memory for sockets must be sizeof(struct tcp_socket) * settings->max_connections,
+  Memory for sockets must be settings->socket_size * settings->max_connections,
   and for freeidx it must be sizeof(unsigned) * settings->max_connections. Sockets
   memory must be zeroed, freeidx doesn't need to be.
   If any error occurs during tcp_create_server(), the memory will be freed.
   The application does not need to initialise these. If it doesn't, they will be
   initialised automatically. */
-  struct tcp_socket* sockets;
+  char* sockets;
   unsigned* freeidx;
   unsigned freeidx_used;
   unsigned sockets_used;
-  _Atomic unsigned connections;
-  _Atomic uint32_t flags;
+  unsigned disallow_connections:1;
+  unsigned is_closing:1;
 };
 
 extern void tcp_server_free(struct tcp_server* const);
-
-extern int tcp_create_server_base(struct tcp_server* const);
 
 extern int tcp_create_server(struct tcp_server* const);
 
@@ -185,7 +202,9 @@ extern void tcp_server_accept_conn(struct tcp_server* const);
 
 extern int tcp_server_shutdown(struct tcp_server* const);
 
-extern unsigned tcp_server_get_conn_amount(const struct tcp_server* const);
+extern unsigned tcp_server_get_conn_amount_raw(const struct tcp_server* const);
+
+extern unsigned tcp_server_get_conn_amount(struct tcp_server* const);
 
 
 

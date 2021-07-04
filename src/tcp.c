@@ -1,5 +1,4 @@
 #include "tcp.h"
-#include "debug.h"
 #include "aflags.h"
 
 #include <errno.h>
@@ -35,7 +34,7 @@ void tcp_socket_cork_off(struct tcp_socket* const socket) {
   tcp_socket_clear_flag(socket, tcp_cork);
 }
 
-static int tcp_socket_keepalive_internal(const int sfd, const int retries, const int idle_time, const int reprobe_time) {
+static inline int tcp_socket_keepalive_internal(const int sfd, const int retries, const int idle_time, const int reprobe_time) {
   if(net_socket_setopt_true(sfd, SOL_SOCKET, SO_KEEPALIVE) != 0) {
     return net_failure;
   }
@@ -59,20 +58,11 @@ int tcp_socket_keepalive_explicit(const struct tcp_socket* const socket, const i
   return tcp_socket_keepalive_internal(socket->base.sfd, retries, idle_time, reprobe_time);
 }
 
-
-
-void tcp_socket_free_server_part(struct tcp_socket* const socket) {
-  (void) pthread_mutex_destroy(&socket->lock);
-  if(socket->send_buffer != NULL) {
-    free(socket->send_buffer);
-  }
-  (void) close(socket->base.sfd);
-  /* Return the socket's index for reuse */
-  const unsigned index = ((uintptr_t) socket - (uintptr_t) socket->server->sockets) / socket->server->settings->socket_size;
-  socket->server->freeidx[socket->server->freeidx_used++] = index;
-  (void) atomic_fetch_sub(&socket->server->connections, 1);
-  (void) memset(socket, 0, socket->server->settings->socket_size);
+static inline void tcp_socket_no_linger(const int sfd) {
+  (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
 }
+
+
 
 /* This function MUST only be called from within the onclose() callback or after
 it occurs, NOT BEFORE */
@@ -84,19 +74,35 @@ void tcp_socket_free(struct tcp_socket* const socket) {
     Additionally, since the order update in net_epoll, socket deletions will always
     be handled before server shutdowns, so we are actually GUARANTEED here that
     the server isn't closing. That means we can simply ignore the check and don't
-    need to check if connections is 0 to call the onshutdown callback. */
-    (void) pthread_rwlock_wrlock(&socket->server->lock);
+    need to check if there are 0 connections to call the onshutdown callback. */
     struct tcp_server* const server = socket->server;
-    tcp_socket_free_server_part(socket);
-    (void) pthread_rwlock_unlock(&server->lock);
-  } else {
+    (void) pthread_rwlock_wrlock(&server->lock);
+    if(socket->callbacks->onfree != NULL) {
+      socket->callbacks->onfree(socket);
+    }
     (void) pthread_mutex_destroy(&socket->lock);
     if(socket->send_buffer != NULL) {
       free(socket->send_buffer);
     }
     (void) close(socket->base.sfd);
-    socket->base.sfd = -1;
-    const unsigned offset = offsetof(struct tcp_socket, lock);
+    /* Return the socket's index for reuse */
+    const unsigned index = ((uintptr_t) socket - (uintptr_t) server->sockets) / server->settings->socket_size;
+    server->freeidx[server->freeidx_used++] = index;
+    (void) memset(socket, 0, server->settings->socket_size);
+    (void) pthread_rwlock_unlock(&server->lock);
+  } else {
+    if(socket->callbacks->onfree != NULL) {
+      socket->callbacks->onfree(socket);
+    }
+    (void) pthread_mutex_destroy(&socket->lock);
+    if(socket->send_buffer != NULL) {
+      free(socket->send_buffer);
+    }
+    (void) close(socket->base.sfd);
+    socket->base.sfd = 0;
+    socket->base.which = net_unspecified;
+    socket->base.events = 0;
+    const int offset = offsetof(struct tcp_socket, lock);
     (void) memset((char*) socket + offset, 0, sizeof(struct tcp_socket) - offset);
   }
 }
@@ -112,67 +118,66 @@ void tcp_socket_close(struct tcp_socket* const socket) {
 /* Not gracefully, but quicker */
 
 void tcp_socket_force_close(struct tcp_socket* const socket) {
-  /* If it fails, let it be. It's not a requirement. Thus (void). */
-  (void) setsockopt(socket->base.sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
   tcp_socket_set_flag(socket, tcp_shutdown_wr);
   tcp_socket_clear_flag(socket, tcp_can_send);
+  tcp_socket_no_linger(socket->base.sfd);
   (void) shutdown(socket->base.sfd, SHUT_RDWR);
 }
 
 
 
-int tcp_create_socket_base(struct tcp_socket* const sock) {
-  const int sfd = socket(net_get_family(&sock->base.addr), stream_socktype, tcp_protocol);
-  if(sfd == -1) {
-    return net_failure;
-  }
-  sock->base.sfd = sfd;
-  sock->base.which = net_socket;
-  sock->base.events = EPOLLET | EPOLLRDHUP | EPOLLIN | EPOLLOUT;
-  sock->base.onclose = NULL; /* We don't close sockets using safe_remove */
-  return net_success;
-}
-
-int tcp_create_socket(struct tcp_socket* const socket) {
-  if(socket->settings->disable_send_buffer == 0) {
-    const int ret = pthread_mutex_init(&socket->lock, NULL);
-    if(ret != 0) {
-      errno = ret;
+int tcp_create_socket(struct tcp_socket* const sock) {
+  {
+    const int sfd = socket(net_get_family(&sock->base.addr), stream_socktype, tcp_protocol);
+    if(sfd == -1) {
       return net_failure;
     }
+    sock->base.sfd = sfd;
+    sock->base.which = net_socket;
+    sock->base.events = EPOLLET | EPOLLRDHUP | EPOLLIN | EPOLLOUT;
+    sock->base.onclose = NULL; /* We don't close sockets using safe_remove */
   }
-  if(socket->base.sfd < 1 && tcp_create_socket_base(socket) == net_failure) {
-    (void) pthread_mutex_destroy(&socket->lock);
-    return net_failure;
+  {
+    const int ret = pthread_mutex_init(&sock->lock, NULL);
+    if(ret != 0) {
+      errno = ret;
+      goto sock;
+    }
   }
-  if(net_socket_base_options(socket->base.sfd) == net_failure) {
-    tcp_socket_free(socket);
-    return net_failure;
+  if(net_socket_base_options(sock->base.sfd) == net_failure) {
+    goto mutex;
   }
-  if(net_connect_socket(socket->base.sfd, &socket->base.addr) != 0 && errno != EINPROGRESS) {
-    tcp_socket_free(socket);
-    return net_failure;
+  if(net_connect_socket(sock->base.sfd, &sock->base.addr) != 0 && errno != EINPROGRESS) {
+    goto mutex;
   }
-  if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
-    tcp_socket_free(socket);
-    return net_failure;
+  /* Pretty late so that we don't have to call onfree() numerous times above */
+  if(sock->callbacks->oncreation != NULL && sock->callbacks->oncreation(sock) == net_failure) {
+    goto mutex;
+  }
+  if(net_epoll_add(sock->epoll, &sock->base) == net_failure) {
+    /* Makes sense to use onfree() only if oncreation() is set too */
+    if(sock->callbacks->onfree != NULL) {
+      sock->callbacks->onfree(sock);
+    }
+    goto mutex;
   }
   return net_success;
+  mutex:
+  (void) pthread_mutex_destroy(&sock->lock);
+  (void) memset(&sock->lock, 0, sizeof(pthread_mutex_t));
+  sock:
+  (void) close(sock->base.sfd);
+  /* Don't zero the address */
+  sock->base.sfd = 0;
+  sock->base.which = net_unspecified;
+  sock->base.events = 0;
+  return net_failure;
 }
 
 /* tcp_send() returns the amount of data sent. It might set errno to an error code.
 
-If errno is EPIPE, no data was sent and no data may be sent in the future.
+If errno is EPIPE, no data may be sent in the future and partial or no data was sent.
 That may be because either we closed the channel, or the connection is closed.
-
-If the function returns less bytes than requested, it might be for 2 reasons: either
-the socket is closed and errno is set to EPIPE, or we are out of memory. If the
-latter, the application shall retry the call with adjusted data pointer and size,
-to reflect the data that wasn't sent or buffered. Note though that it is possible
-that the epoll thread will try sending data just as we got OOM here, so we will
-send things without order. That violates TCP - if the application cares about that,
-either don't send the buffered packet at all, which still is a violation of TCP,
-or drop the connection. We can't know when we will hit out of memory anyway.
 */
 
 int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
@@ -180,74 +185,77 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
     errno = EPIPE;
     return 0;
   }
-  if(socket->settings->disable_send_buffer == 0) {
-    (void) pthread_mutex_lock(&socket->lock);
-    if(socket->send_used > 0) {
-      int addon = 0;
-      const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
-      while(1) {
-        const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
-        if(bytes == -1) {
-          if(errno == EINTR) {
-            continue;
-          } else if(errno == EAGAIN) {
-            tcp_socket_clear_flag(socket, tcp_can_send);
-          } else if(errno == EPIPE && socket->settings->send_buffer_allow_freeing) {
-            free(socket->send_buffer);
-            socket->send_buffer = NULL;
-            socket->send_used = 0;
-            socket->send_size = 0;
-          }
-          break;
-        }
-        socket->send_used -= bytes;
-        if(socket->send_used == 0) {
-          break;
-        }
-        addon += bytes;
-      }
-      if(socket->send_used != 0) {
-        (void) memmove(socket->send_buffer, socket->send_buffer + addon, socket->send_used);
-        if(socket->send_size - socket->send_used >= socket->settings->send_buffer_cleanup_threshold) {
-          char* const ptr = realloc(socket->send_buffer, socket->send_used);
-          if(ptr != NULL) {
-            socket->send_buffer = ptr;
-            socket->send_size = socket->send_used;
-          }
-        }
-      } else if(socket->settings->send_buffer_allow_freeing == 1) {
-        free(socket->send_buffer);
-        socket->send_buffer = NULL;
-        socket->send_used = 0;
-        socket->send_size = 0;
-      }
-    }
-    (void) pthread_mutex_unlock(&socket->lock);
-  }
   const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
+  (void) pthread_mutex_lock(&socket->lock);
+  if(socket->send_used > 0) {
+    int addon = 0;
+    while(1) {
+      const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
+      if(bytes == -1) {
+        if(errno == EAGAIN) {
+          tcp_socket_clear_flag(socket, tcp_can_send);
+        } else if(errno == EINTR) {
+          continue;
+        } else if(errno == EPIPE) {
+          tcp_socket_set_flag(socket, tcp_shutdown_wr);
+          tcp_socket_clear_flag(socket, tcp_can_send);
+          free(socket->send_buffer);
+          socket->send_buffer = NULL;
+          socket->send_used = 0;
+          socket->send_size = 0;
+          (void) pthread_mutex_unlock(&socket->lock);
+          return 0;
+        }
+        break;
+      }
+      socket->send_used -= bytes;
+      if(socket->send_used == 0) {
+        break;
+      }
+      addon += bytes;
+    }
+    if(socket->send_used != 0) {
+      (void) memmove(socket->send_buffer, socket->send_buffer + addon, socket->send_used);
+      if(socket->send_size - socket->send_used >= socket->settings->send_buffer_cleanup_threshold) {
+        char* const ptr = realloc(socket->send_buffer, socket->send_used);
+        if(ptr != NULL) {
+          socket->send_buffer = ptr;
+          socket->send_size = socket->send_used;
+        }
+      }
+    } else {
+      free(socket->send_buffer);
+      socket->send_buffer = NULL;
+      socket->send_size = 0;
+    }
+  }
+  (void) pthread_mutex_unlock(&socket->lock);
   const int all = size;
   if(tcp_socket_test_flag(socket, tcp_can_send)) {
     /* We are allowed to send data. Do it instead of waiting for epoll to preserve memory. */
     while(1) {
       const ssize_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL | cork);
       if(bytes == -1) {
-        switch(errno) {
-          case EINTR: continue;
-          case EAGAIN: {
-            tcp_socket_clear_flag(socket, tcp_can_send);
-            goto out;
+        if(errno == EAGAIN) {
+          tcp_socket_clear_flag(socket, tcp_can_send);
+        } else if(errno == EINTR) {
+          continue;
+        } else if(errno == EPIPE) {
+          tcp_socket_set_flag(socket, tcp_shutdown_wr);
+          tcp_socket_clear_flag(socket, tcp_can_send);
+          (void) pthread_mutex_lock(&socket->lock);
+          if(socket->send_buffer != NULL) {
+            free(socket->send_buffer);
+            socket->send_buffer = NULL;
           }
-          case EPIPE: { /* We cannot send any more data */
-            tcp_socket_set_flag(socket, tcp_shutdown_wr);
-            tcp_socket_clear_flag(socket, tcp_can_send);
-            goto ret;
-          }
-          default: {
-            /* Wait until the next epoll iteration. If the error was fatal, the connection
-            will be closed with an EPOLLHUP. Otherwise we can probably ignore it. */
-            goto out;
-          }
+          socket->send_used = 0;
+          socket->send_size = 0;
+          (void) pthread_mutex_unlock(&socket->lock);
+          return all - size;
         }
+        /* Wait until the next epoll iteration. If the error was fatal, the connection
+        will be closed with an EPOLLHUP. Otherwise we can probably ignore it. */
+        break;
       }
       size -= bytes;
       if(size == 0) {
@@ -257,34 +265,28 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
       }
       data = (char*) data + bytes;
     }
-  } else {
-    errno = 0;
   }
-  out:;
-  if(socket->settings->disable_send_buffer == 0) {
-    /* If not everything was processed, store it for later */
-    (void) pthread_mutex_lock(&socket->lock);
-    if(socket->send_used + size > socket->send_size) {
-      while(1) {
-        char* const ptr = realloc(socket->send_buffer, socket->send_used + size);
-        if(ptr != NULL) {
-          socket->send_buffer = ptr;
-          socket->send_size = socket->send_used + size;
-        } else if(socket->callbacks->onnomem(socket) == net_success) {
-          continue;
-        } else {
-          (void) pthread_mutex_unlock(&socket->lock);
-          errno = ENOMEM;
-          return 0;
-        }
+  /* If not everything was processed, store it for later */
+  (void) pthread_mutex_lock(&socket->lock);
+  if(socket->send_used + size > socket->send_size) {
+    while(1) {
+      char* const ptr = realloc(socket->send_buffer, socket->send_used + size);
+      if(ptr != NULL) {
+        socket->send_buffer = ptr;
+        socket->send_size = socket->send_used + size;
+      } else if(socket->callbacks->onnomem(socket) == net_success) {
+        continue;
+      } else {
+        (void) pthread_mutex_unlock(&socket->lock);
+        errno = ENOMEM;
+        return 0;
       }
     }
-    /* Append the data */
-    (void) memcpy(socket->send_buffer + socket->send_used, data, size);
-    socket->send_used += size;
-    (void) pthread_mutex_unlock(&socket->lock);
   }
-  ret:
+  /* Append the data */
+  (void) memcpy(socket->send_buffer + socket->send_used, data, size);
+  socket->send_used += size;
+  (void) pthread_mutex_unlock(&socket->lock);
   return all;
 }
 
@@ -311,22 +313,18 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
   while(1) {
     const ssize_t bytes = recv(socket->base.sfd, data, size, 0);
     if(bytes == -1) {
-      switch(errno) {
-        case EINTR: continue;
-        case EAGAIN: {
-          errno = 0;
-          goto out;
-        }
-        default: {
-          /* Wait until the next epoll iteration. If the error was fatal, the connection
-          will be closed with an EPOLLHUP. Otherwise we can probably ignore it.
-          Yes, the application could be notified about the error, but it doesn't need
-          to check the errno whatsoever if the socket will be closed by epoll anyway.
-          The application can just call tcp_send() and tcp_read() without worrying
-          about the underlying socket's state. */
-          goto out;
-        }
+      if(errno == EAGAIN) {
+        errno = 0;
+      } else if(errno == EINTR) {
+        continue;
       }
+      /* Wait until the next epoll iteration. If the error was fatal, the connection
+      will be closed with an EPOLLHUP. Otherwise we can probably ignore it.
+      Yes, the application could be notified about the error, but it doesn't need
+      to check the errno whatsoever if the socket will be closed by epoll anyway.
+      The application can just call tcp_send() and tcp_read() without worrying
+      about the underlying socket's state. */
+      break;
     } else if(bytes == 0) {
       /* End of data, let epoll deal with the socket */
       tcp_socket_set_flag(socket, tcp_data_ended);
@@ -347,7 +345,6 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
     the next iteration. */
     data = (char*) data + bytes;
   }
-  out:
   return all - size;
 }
 
@@ -391,66 +388,53 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
       }
     } /* There is no "else" statement, because the application could have
     scheduled some data to be sent in the onopen() function */
-    if(socket->settings->disable_send_buffer == 0) {
-      (void) pthread_mutex_lock(&socket->lock);
-      if(socket->send_used > 0) {
-        /* Simply send contents of our send_buffer in FIFO manner. We can't use
-        tcp_send(), because upon failure it would buffer the already-buffered data
-        we are trying to send. */
-        int addon = 0;
-        const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
-        while(1) {
-          const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
-          if(bytes == -1) {
-            if(errno == EINTR) {
-              continue;
-            } else if(errno == EAGAIN) {
-              /* If kernel doesn't accept more data, don't send more in the future */
-              tcp_socket_clear_flag(socket, tcp_can_send);
-            } else if(errno == EPIPE && socket->settings->send_buffer_allow_freeing) {
-              free(socket->send_buffer);
-              socket->send_buffer = NULL;
-              socket->send_used = 0;
-              socket->send_size = 0;
-            }
-            /* Wait until the next epoll iteration. If the error was fatal, the connection
-            will be closed with an EPOLLHUP. Otherwise we can probably ignore it. */
-            break;
+    (void) pthread_mutex_lock(&socket->lock);
+    if(socket->send_used > 0) {
+      /* Simply send contents of our send_buffer in FIFO manner. We can't use
+      tcp_send(), because upon failure it would buffer the already-buffered data
+      we are trying to send. */
+      int addon = 0;
+      const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
+      while(1) {
+        const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
+        if(bytes == -1) {
+          if(errno == EAGAIN) {
+            /* If the kernel doesn't accept more data, don't send more in the future */
+            tcp_socket_clear_flag(socket, tcp_can_send);
+          } else if(errno == EINTR) {
+            continue;
+          } else if(errno == EPIPE) {
+            tcp_socket_set_flag(socket, tcp_shutdown_wr);
+            tcp_socket_clear_flag(socket, tcp_can_send);
+            socket->send_used = 0;
           }
-          socket->send_used -= bytes;
-          if(socket->send_used == 0) {
-            break;
-          }
-          addon += bytes;
+          /* Wait until the next epoll iteration. If the error was fatal, the connection
+          will be closed with an EPOLLHUP. Otherwise we can probably ignore it. */
+          break;
         }
-        /* Shift the data we didn't send, maybe resize the buffer */
-        if(socket->send_used != 0) {
-          (void) memmove(socket->send_buffer, socket->send_buffer + addon, socket->send_used);
-          if(socket->send_size - socket->send_used >= socket->settings->send_buffer_cleanup_threshold) {
-            char* const ptr = realloc(socket->send_buffer, socket->send_used);
-            /* DO NOT take any action if realloc failed. A realloc may fail shrinking
-            a block of memory with a certain type of an allocator, which has buckets
-            for different sizes of blocks, and if a bucket of the smaller size is full,
-            even if there is a lot of free space in other buckets, it will fail.
-            We leave this case up to the application. Either it will call tcp_send()
-            and the function will return less bytes than requested, meaning an ENOMEM,
-            or it will eventually free the socket after it is closed and the memory
-            will vanish too. Either way, to not create more problems, we just keep
-            the old big size of the buffer. */
-            if(ptr != NULL) {
-              socket->send_buffer = ptr;
-              socket->send_size = socket->send_used;
-            }
-          }
-        } else if(socket->settings->send_buffer_allow_freeing == 1) {
-          free(socket->send_buffer);
-          socket->send_buffer = NULL;
-          socket->send_used = 0;
-          socket->send_size = 0;
+        socket->send_used -= bytes;
+        if(socket->send_used == 0) {
+          break;
         }
+        addon += bytes;
       }
-      (void) pthread_mutex_unlock(&socket->lock);
+      /* Shift the data we didn't send, maybe resize the buffer */
+      if(socket->send_used != 0) {
+        (void) memmove(socket->send_buffer, socket->send_buffer + addon, socket->send_used);
+        if(socket->send_size - socket->send_used >= socket->settings->send_buffer_cleanup_threshold) {
+          char* const ptr = realloc(socket->send_buffer, socket->send_used);
+          if(ptr != NULL) {
+            socket->send_buffer = ptr;
+            socket->send_size = socket->send_used;
+          }
+        }
+      } else {
+        free(socket->send_buffer);
+        socket->send_buffer = NULL;
+        socket->send_size = 0;
+      }
     }
+    (void) pthread_mutex_unlock(&socket->lock);
     if(socket->callbacks->onsend != NULL) {
       socket->callbacks->onsend(socket);
     }
@@ -489,51 +473,35 @@ void tcp_server_free(struct tcp_server* const server) {
   free(server->sockets);
   free(server->freeidx);
   (void) close(server->base.sfd);
-  server->base.sfd = -1;
+  server->base.sfd = 0;
+  server->base.which = net_unspecified;
+  server->base.events = 0;
+  server->base.onclose = NULL;
   const unsigned offset = offsetof(struct tcp_server, lock);
   (void) memset((char*) server + offset, 0, sizeof(struct tcp_server) - offset);
 }
 
+static void tcp_server_shutdown_socket_close(struct tcp_socket* socket, void* data) {
+  (void) data;
+  if(socket->callbacks->onfree != NULL) {
+    socket->callbacks->onfree(socket);
+  }
+  tcp_socket_no_linger(socket->base.sfd);
+  (void) pthread_mutex_destroy(&socket->lock);
+  if(socket->send_buffer != NULL) {
+    free(socket->send_buffer);
+  }
+  (void) close(socket->base.sfd);
+}
+
 #define server ((struct tcp_server*) base)
-#define get_sock(i) ((struct tcp_socket*)((char*) server->sockets + i * server->settings->socket_size))
 
 static void tcp_server_shutdown_internal(struct net_socket_base* base) {
-  if(tcp_server_get_conn_amount(server) > 0) {
-    (void) pthread_rwlock_wrlock(&server->lock);
-    for(unsigned i = 0; i < server->settings->max_conn; ++i) {
-      if(get_sock(i)->base.sfd > 0) {
-        (void) setsockopt(get_sock(i)->base.sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
-        (void) pthread_mutex_destroy(&get_sock(i)->lock);
-        if(get_sock(i)->send_buffer != NULL) {
-          free(get_sock(i)->send_buffer);
-        }
-        if(server->callbacks->onsockshutdown != NULL) {
-          server->callbacks->onsockshutdown(get_sock(i));
-        }
-        (void) close(get_sock(i)->base.sfd);
-        if(atomic_fetch_sub(&server->connections, 1) == 1) {
-          (void) pthread_rwlock_unlock(&server->lock);
-          break;
-        }
-      }
-    }
-  }
+  tcp_server_foreach_conn(server, tcp_server_shutdown_socket_close, NULL, 1);
   server->callbacks->onshutdown(server);
 }
 
 #undef server
-
-int tcp_create_server_base(struct tcp_server* const server) {
-  const int sfd = socket(net_get_family(&server->base.addr), stream_socktype, tcp_protocol);
-  if(sfd == -1) {
-    return net_failure;
-  }
-  server->base.sfd = sfd;
-  server->base.which = net_server;
-  server->base.events = EPOLLET | EPOLLIN;
-  server->base.onclose = tcp_server_shutdown_internal;
-  return net_success;
-}
 
 int tcp_create_server(struct tcp_server* const server) {
   if(server->settings->socket_size == 0) {
@@ -548,27 +516,25 @@ int tcp_create_server(struct tcp_server* const server) {
   if(server->freeidx == NULL) {
     server->freeidx = malloc(sizeof(unsigned) * server->settings->max_conn);
     if(server->freeidx == NULL) {
-      free(server->sockets);
-      server->sockets = NULL;
-      return net_failure;
+      goto sockets;
     }
   }
-  const int ret = pthread_rwlock_init(&server->lock, NULL);
-  if(ret != 0) {
-    free(server->sockets);
-    free(server->freeidx);
-    server->sockets = NULL;
-    server->freeidx = NULL;
-    errno = ret;
-    return net_failure;
+  {
+    const int ret = pthread_rwlock_init(&server->lock, NULL);
+    if(ret != 0) {
+      errno = ret;
+      goto freeidx;
+    }
   }
-  if(tcp_create_server_base(server) == net_failure) {
-    free(server->sockets);
-    free(server->freeidx);
-    server->sockets = NULL;
-    server->freeidx = NULL;
-    (void) pthread_rwlock_destroy(&server->lock);
-    return net_failure;
+  {
+    const int sfd = socket(net_get_family(&server->base.addr), stream_socktype, tcp_protocol);
+    if(sfd == -1) {
+      goto rwlock;
+    }
+    server->base.sfd = sfd;
+    server->base.which = net_server;
+    server->base.events = EPOLLET | EPOLLIN;
+    server->base.onclose = tcp_server_shutdown_internal;
   }
   if(net_socket_base_options(server->base.sfd) == net_failure) {
     tcp_server_free(server);
@@ -583,21 +549,31 @@ int tcp_create_server(struct tcp_server* const server) {
     return net_failure;
   }
   return net_success;
+  rwlock:
+  (void) pthread_rwlock_destroy(&server->lock);
+  (void) memset(&server->lock, 0, sizeof(pthread_rwlock_t));
+  freeidx:
+  free(server->freeidx);
+  server->freeidx = NULL;
+  sockets:
+  free(server->sockets);
+  server->sockets = NULL;
+  return net_failure;
 }
 
 #define _server ((struct tcp_server*) base)
 
-/* A server can be in multiple epoll instances. Since the epoll is edge-triggered,
-one can specify a number higher than 1 to net_epoll_start() and bind threads it spawns
-to various CPU cores to increase computing power if needed. Throughput can be increased
-by creating multiple servers listening on the same port to let the kernel load-balance. */
+/* Throughput can be increased by creating multiple servers listening on the same
+port to let the kernel load-balance. For larger amount of servers, own load
+balancer might be needed. */
 
 void tcp_server_onevent(int events, struct net_socket_base* base) {
   /* If we got an event, it will for sure be a new connection. We employ a while loop
   to accept until we hit EAGAIN. That way, we won't cause accidental starvation. */
-  tryagain:
   while(1) {
-    /* Instead of getting an index for the socket, first make sure the connection isn't aborted */
+    tryagain:;
+    /* Instead of getting an index for the socket, first make sure the connection
+    isn't aborted */
     struct sockaddr_in6 addr;
     socklen_t addrlen = sizeof(struct sockaddr_in6);
     int sfd = accept(_server->base.sfd, (struct sockaddr*)&addr, &addrlen);
@@ -605,22 +581,24 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
       if(errno == EAGAIN) {
         /* No more connections to accept */
         return;
-      } else if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
-        /* Case where the application has a mechanism for decreasing memory usage */
-        continue;
+      } else if(errno == ENOMEM) {
+        /* Case where the application has a mechanism for decreasing memory usage.
+        Regardless of if it succeeds, we need to go to the next iteration anyway. */
+        (void) _server->callbacks->onnomem(_server);
       }
-      /* An error we can't fix (either connection error or limit on something) */
-      goto tryagain;
+      /* Else, an error we can't fix (either connection error or limit on something) */
+      continue;
     }
-    (void) pthread_rwlock_wrlock(&_server->lock);
     /* First check if we hit the connection limit for the server, or if we don't
     accept new connections. If yes, just close the socket. This way, it is removed
-    from the queue of pending connections and it won't get timed out, wasting system resources. */
-    if(_server->settings->max_conn == tcp_server_get_conn_amount(_server) || aflag32_test(&_server->flags, tcp_disallow_connections)) {
+    from the queue of pending connections and it won't get timed out, wasting system
+    resources. */
+    (void) pthread_rwlock_wrlock(&_server->lock);
+    if(_server->settings->max_conn == tcp_server_get_conn_amount_raw(_server) || _server->disallow_connections == 1) {
       (void) pthread_rwlock_unlock(&_server->lock);
-      (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
+      tcp_socket_no_linger(sfd);
       (void) close(sfd);
-      goto tryagain;
+      continue;
     }
     /* Otherwise, get memory for the socket */
     struct tcp_socket* socket;
@@ -630,9 +608,9 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     for ourselves for the whole duration of the socket's creation, so might as
     well use it. */
     if(_server->freeidx_used == 0) {
-      socket = (struct tcp_socket*)((char*) _server->sockets + _server->sockets_used * _server->settings->socket_size);
+      socket = (struct tcp_socket*)(_server->sockets + _server->sockets_used * _server->settings->socket_size);
     } else {
-      socket = (struct tcp_socket*)((char*) _server->sockets + _server->freeidx[_server->freeidx_used - 1] * _server->settings->socket_size);
+      socket = (struct tcp_socket*)(_server->sockets + _server->freeidx[_server->freeidx_used - 1] * _server->settings->socket_size);
     }
     /* Now we proceed to initialise required members of the socket. We don't
     have to zero it - it should already be zeroed. */
@@ -645,80 +623,81 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     if(_server->callbacks->onconnection(socket) == net_failure) {
       (void) memset(socket, 0, sizeof(struct tcp_socket));
       (void) pthread_rwlock_unlock(&_server->lock);
-      (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
+      tcp_socket_no_linger(sfd);
       (void) close(sfd);
-      goto tryagain;
+      continue;
     }
     while(1) {
-      if(socket->settings->disable_send_buffer == 0) {
-        const int err = pthread_mutex_init(&socket->lock, NULL);
-        if(err != 0) {
-          errno = err;
-          if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
-            continue;
-          } else {
-            if(_server->callbacks->ontermination != NULL) {
-              _server->callbacks->ontermination(socket);
-            }
-            (void) memset(socket, 0, sizeof(struct tcp_socket));
-            (void) pthread_rwlock_unlock(&_server->lock);
-            (void) close(sfd);
-            goto tryagain;
-          }
-        }
-      }
-      break;
-    }
-    if(net_socket_base_options(sfd) == net_failure) {
-      if(_server->callbacks->ontermination != NULL) {
-        _server->callbacks->ontermination(socket);
-      }
-      (void) pthread_mutex_destroy(&socket->lock);
-      (void) memset(socket, 0, sizeof(struct tcp_socket));
-      (void) pthread_rwlock_unlock(&_server->lock);
-      (void) close(sfd);
-      goto tryagain;
-    }
-    while(1) {
-      if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
-        if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
+      const int err = pthread_mutex_init(&socket->lock, NULL);
+      if(err != 0) {
+        if(err == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
           continue;
         } else {
-          if(_server->callbacks->ontermination != NULL) {
-            _server->callbacks->ontermination(socket);
+          if(socket->callbacks->onfree != NULL) {
+            socket->callbacks->onfree(socket);
           }
-          (void) pthread_mutex_destroy(&socket->lock);
           (void) memset(socket, 0, sizeof(struct tcp_socket));
           (void) pthread_rwlock_unlock(&_server->lock);
+          tcp_socket_no_linger(sfd);
           (void) close(sfd);
           goto tryagain;
         }
       }
       break;
     }
-    /* At this point, the socket is fully initialised. We unlock the rwlock only
-    now and not after done getting memory for the socket so that if the connection
-    gets closed here, we don't trigger undefined behavior. */
+    if(net_socket_base_options(sfd) == net_failure) {
+      if(socket->callbacks->onfree != NULL) {
+        socket->callbacks->onfree(socket);
+      }
+      (void) pthread_mutex_destroy(&socket->lock);
+      (void) memset(socket, 0, sizeof(struct tcp_socket));
+      (void) pthread_rwlock_unlock(&_server->lock);
+      tcp_socket_no_linger(sfd);
+      (void) close(sfd);
+      continue;
+    }
+    while(1) {
+      if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
+        if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
+          continue;
+        } else {
+          if(socket->callbacks->onfree != NULL) {
+            socket->callbacks->onfree(socket);
+          }
+          (void) pthread_mutex_destroy(&socket->lock);
+          (void) memset(socket, 0, sizeof(struct tcp_socket));
+          (void) pthread_rwlock_unlock(&_server->lock);
+          tcp_socket_no_linger(sfd);
+          (void) close(sfd);
+          goto tryagain;
+        }
+      }
+      break;
+    }
+    /* At this point, the socket is fully initialised */
     if(_server->freeidx_used == 0) {
       ++_server->sockets_used;
     } else {
       --_server->freeidx_used;
     }
-    (void) atomic_fetch_add(&_server->connections, 1);
     (void) pthread_rwlock_unlock(&_server->lock);
   }
 }
 
 #undef _server
 
+#define socket ((struct tcp_socket*)(server->sockets + i * server->settings->socket_size))
+
 /* We allow the application to access the connections, but we will do it by ourselves
 so that the application doesn't mess up somewhere. Note that order in which the
 sockets are accessed is not linear.
 If the application wishes to do something send_buffer-related, it MUST first acquire
 the socket's mutex by doing pthread_mutex_lock(&socket->lock), otherwise the behavior
-is undefined. It must only do so if socket->settings->disable_send_buffer == 0, or
-else the mutex won't be initialised and the application won't be able to lock it.
-The behavior is undefined if the callback function will attempt to free the server. */
+is undefined.
+The behavior is undefined if the callback function will attempt to shutdown or free
+the server.
+The program will deadlock if the callback function tries calling
+tcp_server_get_conn_amount(). It should instead call tcp_server_get_conn_amount_raw(). */
 
 void tcp_server_foreach_conn(struct tcp_server* const server, void (*callback)(struct tcp_socket*, void*), void* data, const int write) {
   if(write) {
@@ -726,36 +705,56 @@ void tcp_server_foreach_conn(struct tcp_server* const server, void (*callback)(s
   } else {
     (void) pthread_rwlock_rdlock(&server->lock);
   }
-  for(unsigned i = 0; i < server->settings->max_conn; ++i) {
-    if(((struct tcp_socket*)((char*) server->sockets + i * server->settings->socket_size))->base.sfd != 0) {
-      callback(server->sockets + i, data);
+  unsigned amount = tcp_server_get_conn_amount_raw(server);
+  if(amount != 0) {
+    for(unsigned i = 0; i < server->settings->max_conn; ++i) {
+      if(socket->base.sfd != 0) {
+        callback(socket, data);
+        if(--amount == 0) {
+          break;
+        }
+      }
     }
   }
   (void) pthread_rwlock_unlock(&server->lock);
 }
 
+#undef socket
+
 void tcp_server_dont_accept_conn(struct tcp_server* const server) {
-  aflag32_add(&server->flags, tcp_disallow_connections);
+  (void) pthread_rwlock_wrlock(&server->lock);
+  server->disallow_connections = 1;
+  (void) pthread_rwlock_unlock(&server->lock);
 }
 
 void tcp_server_accept_conn(struct tcp_server* const server) {
-  aflag32_del(&server->flags, tcp_disallow_connections);
+  (void) pthread_rwlock_wrlock(&server->lock);
+  server->disallow_connections = 0;
+  (void) pthread_rwlock_unlock(&server->lock);
 }
 
 /* Asynchronously shutdown the server - remove it from it's epoll, close all of
 it's sockets. If there are still any connected sockets bound to this server, they
-will be instantly forcibly closed and their resources will be freed. Thus, the
-application MUST NOT do any kind of operations on the sockets or the server.  */
+will be quietly dropped (without onclose(), but with onfree()) and their resources
+will be freed. Thus, the application MUST NOT do any kind of operations on the
+sockets or the server in the meantime. */
 
 int tcp_server_shutdown(struct tcp_server* const server) {
   (void) pthread_rwlock_wrlock(&server->lock);
-  aflag32_add(&server->flags, tcp_disallow_connections | tcp_server_closing);
+  server->is_closing = 1;
   (void) pthread_rwlock_unlock(&server->lock);
   return net_epoll_safe_remove(server->epoll, &server->base);
 }
 
-unsigned tcp_server_get_conn_amount(const struct tcp_server* const server) {
-  return atomic_load(&server->connections);
+unsigned tcp_server_get_conn_amount_raw(const struct tcp_server* const server) {
+  return server->sockets_used - server->freeidx_used;
+}
+
+unsigned tcp_server_get_conn_amount(struct tcp_server* const server) {
+  (void) pthread_rwlock_wrlock(&server->lock);
+  const unsigned connections = tcp_server_get_conn_amount_raw(server);
+  (void) pthread_rwlock_unlock(&server->lock);
+  return connections;
 }
 
 static void tcp_onevent(struct net_epoll* epoll, int events, struct net_socket_base* base) {

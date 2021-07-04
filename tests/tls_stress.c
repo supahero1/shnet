@@ -152,25 +152,24 @@ int main(int argc, char **argv) {
   
   serversock_tcp_set = (struct tcp_socket_settings) {
     .send_buffer_cleanup_threshold = UINT_MAX,
-    .send_buffer_allow_freeing = 0,
-    .disable_send_buffer = 0,
     .onreadclose_auto_res = 1,
     .remove_from_epoll_onclose = 0
   };
   
   serversock_tls_cb = (struct tls_socket_callbacks) {
+    .oncreation = NULL,
     .onopen = NULL,
     .onmessage = NULL,
     .tcp_onreadclose = NULL,
     .tls_onreadclose = NULL,
     .onnomem = sock_onnomem,
-    .onclose = serversock_onclose
+    .onclose = serversock_onclose,
+    .onfree = NULL
   };
   
   serversock_tls_set = (struct tls_socket_settings) {
     .read_buffer_cleanup_threshold = 0,
     .read_buffer_growth = 4096,
-    .read_buffer_allow_freeing = 0,
     .force_close_on_fatal_error = 1,
     .force_close_on_shutdown_error = 1,
     .force_close_tcp = 1,
@@ -182,12 +181,14 @@ int main(int argc, char **argv) {
   clientsock_tcp_set = serversock_tcp_set;
   
   clientsock_tls_cb = (struct tls_socket_callbacks) {
+    .oncreation = NULL,
     .onopen = clientsock_onopen,
     .onmessage = NULL,
     .tcp_onreadclose = NULL,
     .tls_onreadclose = NULL,
     .onnomem = sock_onnomem,
-    .onclose = clientsock_onclose
+    .onclose = clientsock_onclose,
+    .onfree = NULL
   };
   
   clientsock_tls_set = serversock_tls_set;
@@ -196,7 +197,6 @@ int main(int argc, char **argv) {
   
   server_tls_cb = (struct tls_server_callbacks) {
     .onconnection = onconnection,
-    .ontermination = NULL,
     .onnomem = serv_onnomem,
     .onshutdown = onshutdown
   };
@@ -240,10 +240,23 @@ int main(int argc, char **argv) {
   if(server_ctx == NULL) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_certificate_file(server_ctx, "cert.pem", SSL_FILETYPE_PEM) != 1) {
+  
+  char cert_dest[512];
+  memset(cert_dest, 0, sizeof(cert_dest));
+  if(getcwd(cert_dest, 490) == NULL) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_PrivateKey_file(server_ctx, "key.pem", SSL_FILETYPE_PEM) != 1) {
+  strcat(cert_dest, "/tests/cert.pem");
+  if(SSL_CTX_use_certificate_file(server_ctx, cert_dest, SSL_FILETYPE_PEM) != 1) {
+    TEST_FAIL;
+  }
+  char key_dest[512];
+  memset(key_dest, 0, sizeof(key_dest));
+  if(getcwd(key_dest, 490) == NULL) {
+    TEST_FAIL;
+  }
+  strcat(key_dest, "/tests/key.pem");
+  if(SSL_CTX_use_PrivateKey_file(server_ctx, key_dest, SSL_FILETYPE_PEM) != 1) {
     TEST_FAIL;
   }
   

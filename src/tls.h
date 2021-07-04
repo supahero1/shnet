@@ -25,6 +25,8 @@ enum tls_consts {
 struct tls_socket;
 
 struct tls_socket_callbacks {
+  int (*oncreation)(struct tls_socket*);
+  
   void (*onopen)(struct tls_socket*);
   
   void (*onmessage)(struct tls_socket*);
@@ -55,12 +57,13 @@ struct tls_socket_callbacks {
   int (*onnomem)(struct tls_socket*);
   
   void (*onclose)(struct tls_socket*);
+  
+  void (*onfree)(struct tls_socket*);
 };
 
 struct tls_socket_settings {
   unsigned read_buffer_cleanup_threshold;
   unsigned read_buffer_growth;
-  unsigned read_buffer_allow_freeing:1;
   unsigned force_close_on_fatal_error:1;
   unsigned force_close_on_shutdown_error:1;
   unsigned force_close_tcp:1;
@@ -105,6 +108,9 @@ extern void tls_socket_close(struct tls_socket* const);
 
 extern void tls_socket_force_close(struct tls_socket* const);
 
+
+extern int tls_oncreation(struct tcp_socket*);
+
 extern void tls_onopen(struct tcp_socket*);
 
 extern void tls_onmessage(struct tcp_socket*);
@@ -117,7 +123,8 @@ extern int tls_socket_onnomem(struct tcp_socket*);
 
 extern void tls_onclose(struct tcp_socket*);
 
-extern int tls_create_socket_base(struct tls_socket* const);
+extern void tls_onfree(struct tcp_socket*);
+
 
 extern int tls_socket_init(struct tls_socket* const, const int);
 
@@ -132,7 +139,7 @@ extern unsigned char tls_peak(const struct tls_socket* const, const int);
 extern unsigned char tls_peak_once(struct tls_socket* const, const int);
 
 #define tls_default_tcp_socket_callbacks (struct tcp_socket_callbacks) \
-{tls_onopen,tls_onmessage,tls_onreadclose,tls_onsend,tls_socket_onnomem,tls_onclose}
+{tls_oncreation,tls_onopen,tls_onmessage,tls_onreadclose,tls_onsend,tls_socket_onnomem,tls_onclose,tls_onfree}
 
 
 
@@ -160,8 +167,6 @@ struct tls_server_callbacks {
   destroy it. */
   int (*onconnection)(struct tls_socket*);
   
-  void (*ontermination)(struct tls_socket*);
-  
   int (*onnomem)(struct tls_server*);
   
   void (*onshutdown)(struct tls_server*);
@@ -173,28 +178,26 @@ struct tls_server {
   struct tcp_server_settings* settings;
   struct net_epoll* epoll;
   pthread_rwlock_t lock;
-  struct tls_socket* sockets;
+  char* sockets;
   unsigned* freeidx;
   unsigned freeidx_used;
   unsigned sockets_used;
-  _Atomic unsigned connections;
-  _Atomic uint32_t flags;
+  unsigned disallow_connections:1;
+  unsigned is_closing:1;
   
   struct tls_server_callbacks* tls_callbacks;
   SSL_CTX* ctx; /* This needs to be provided by the application */
 };
 
-extern int tls_onconnection(struct tcp_socket*);
 
-extern void tls_ontermination(struct tcp_socket*);
+extern int tls_onconnection(struct tcp_socket*);
 
 extern int tls_server_onnomem(struct tcp_server*);
 
 extern void tls_onshutdown(struct tcp_server*);
 
-extern void tls_server_free(struct tls_server* const);
 
-extern int tls_create_server_base(struct tls_server* const);
+extern void tls_server_free(struct tls_server* const);
 
 extern int tls_create_server(struct tls_server* const);
 
@@ -206,10 +209,10 @@ extern void tls_server_accept_conn(struct tls_server* const);
 
 extern int tls_server_shutdown(struct tls_server* const);
 
-extern unsigned tls_server_get_conn_amount(const struct tls_server* const);
+extern unsigned tls_server_get_conn_amount(struct tls_server* const);
 
 #define tls_default_tcp_server_callbacks (struct tcp_server_callbacks) \
-{tls_onconnection,tls_ontermination,tls_server_onnomem,tls_onshutdown}
+{tls_onconnection,tls_server_onnomem,tls_onshutdown}
 
 
 

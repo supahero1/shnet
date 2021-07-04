@@ -369,16 +369,9 @@ int net_socket_block(const int sfd) {
 }
 
 int net_socket_base_options(const int sfd) {
-  int err = net_socket_dont_block(sfd);
-  if(err != net_success) {
-    return net_failure;
-  }
-  err = net_socket_reuse_addr(sfd);
-  if(err != net_success) {
-    return net_failure;
-  }
-  err = net_socket_reuse_port(sfd);
-  if(err != net_success) {
+  if(net_socket_dont_block(sfd) != net_success ||
+     net_socket_reuse_addr(sfd) != net_success ||
+     net_socket_reuse_port(sfd) != net_success) {
     return net_failure;
   }
   return net_success;

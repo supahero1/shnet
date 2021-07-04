@@ -9,21 +9,6 @@
 #include <shnet/tcp.h>
 #include <shnet/time.h>
 
-/* Contrary to tcp.c test, not sharing an epoll harms the performance, because
-connecting and disconnecting a socket happens so fast it is best to be done by one.
-On an intel i5-9600k, 1 client 1 server shared epoll generates 39k clients per second
-on localhost (on one core, since shared epoll), on an Ubuntu 21.04, without ANY system
-tweaks to improve socket-related stuff.
-45k clients per second with 10 clients 10 servers shared epoll. Obviously there is
-an overhead of the sockets connecting and disconnecting, thus making the epoll more
-busy, and additionally it would be far better to give each server an own epoll to
-maximise CPU utilisation (to use all the cores). Could probably reach even higher
-if applying other tweaks, such as system tweaking and setting thread affinity
-to provide optiman NUMA behavior and keeping the CPU caches hot.
-40k clients per second with 1000 clients 1000 servers shared epoll. A proof that
-there is absolutely no userspace lock contention. The slight decrease in cps (5k)
-is most likely caused by the overhead of epoll dealing with 2700 more sockets. */
-
 sem_t sem;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 unsigned long conns = 0;
@@ -139,8 +124,6 @@ int main(int argc, char **argv) {
   
   memset(&serversock_set, 0, sizeof(serversock_set));
   serversock_set.send_buffer_cleanup_threshold = UINT_MAX;
-  serversock_set.send_buffer_allow_freeing = 0;
-  serversock_set.disable_send_buffer = 0;
   serversock_set.onreadclose_auto_res = 1;
   serversock_set.remove_from_epoll_onclose = 0;
   
@@ -188,11 +171,10 @@ int main(int argc, char **argv) {
   }
   
   /* TCP server setup */
-  struct tcp_server* servers = malloc(sizeof(struct tcp_server) * nservers);
+  struct tcp_server* servers = calloc(nservers, sizeof(struct tcp_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(servers, 0, sizeof(struct tcp_server) * nservers);
   for(int i = 0; i < nservers; ++i) {
     if(shared_epoll == 1) {
       servers[i].epoll = &socket_epoll;
@@ -221,11 +203,10 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  struct tcp_socket* sockets = malloc(sizeof(struct tcp_server) * nclients);
+  struct tcp_socket* sockets = calloc(nclients, sizeof(struct tcp_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(sockets, 0, sizeof(struct tcp_socket) * nclients);
   for(int i = 0; i < nclients; ++i) {
     sockets[i].epoll = &socket_epoll;
     sockets[i].callbacks = &sock_cb;

@@ -11,9 +11,9 @@
 
 /* This test suite was inspired by https://github.com/chronoxor/CppServer#tcp-echo-server
 which doesn't even respond to single pings, just resends whatever it received.
-Unlike the CppServer library, we don't lose performance by using more clients, since
-there is no lock contention or anything that would stop the clients other than the
-machine's power. */
+Unlike the CppServer library, we don't lose much performance by using more clients,
+since there is no lock contention or anything that would stop the clients other
+than the machine's power. */
 
 sem_t sem;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -49,8 +49,8 @@ void serversock_onmessage(struct tcp_socket* socket) {
 }
 
 void serversock_onclose(struct tcp_socket* socket) {
-  sem_post(&sem);
   tcp_socket_free(socket);
+  sem_post(&sem);
 }
 
 
@@ -74,8 +74,8 @@ void onmessage(struct tcp_socket* socket) {
 }
 
 void onclose(struct tcp_socket* socket) {
-  sem_post(&sem);
   tcp_socket_free(socket);
+  sem_post(&sem);
 }
 
 int sock_onnomem(struct tcp_socket* socket) {
@@ -153,11 +153,6 @@ int main(int argc, char **argv) {
   
   memset(&serversock_set, 0, sizeof(serversock_set));
   serversock_set.send_buffer_cleanup_threshold = UINT_MAX; /* Never cleanup (only free) */
-  serversock_set.send_buffer_allow_freeing = 0; /* Only free on socket free */
-  /* Maybe the kernel has smaller default TCP window size; it is probably wise to
-  not disable the send buffer */
-  serversock_set.disable_send_buffer = 0;
-  /* Too lazy to do it ourselves + nothing to do on onreadclose event anyway */
   serversock_set.onreadclose_auto_res = 1;
   serversock_set.remove_from_epoll_onclose = 0;
   
@@ -205,11 +200,10 @@ int main(int argc, char **argv) {
   }
   
   /* TCP server setup */
-  struct tcp_server* servers = malloc(sizeof(struct tcp_server) * nservers);
+  struct tcp_server* servers = calloc(nservers, sizeof(struct tcp_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(servers, 0, sizeof(struct tcp_server) * nservers);
   for(int i = 0; i < nservers; ++i) {
     if(shared_epoll == 1) {
       servers[i].epoll = &socket_epoll;
@@ -239,11 +233,10 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  struct tcp_socket* sockets = malloc(sizeof(struct tcp_socket) * nclients);
+  struct tcp_socket* sockets = calloc(nclients, sizeof(struct tcp_socket));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(sockets, 0, sizeof(struct tcp_socket) * nclients);
   for(int i = 0; i < nclients; ++i) {
     sockets[i].epoll = &socket_epoll;
     sockets[i].callbacks = &sock_cb;

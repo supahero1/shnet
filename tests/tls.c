@@ -169,42 +169,43 @@ int main(int argc, char **argv) {
   
   serversock_tcp_set = (struct tcp_socket_settings) {
     .send_buffer_cleanup_threshold = 0,
-    .send_buffer_allow_freeing = 0,
-    .disable_send_buffer = 0,
     .onreadclose_auto_res = 1,
     .remove_from_epoll_onclose = 0
   };
   
   serversock_tls_cb = (struct tls_socket_callbacks) {
+    .oncreation = NULL,
     .onopen = serversock_onopen,
     .onmessage = serversock_onmessage,
     .tcp_onreadclose = NULL,
     .tls_onreadclose = NULL,
     .onnomem = sock_onnomem,
-    .onclose = serversock_onclose
+    .onclose = serversock_onclose,
+    .onfree = NULL
   };
   
   serversock_tls_set = (struct tls_socket_settings) {
     .read_buffer_cleanup_threshold = 0,
     .read_buffer_growth = 4096,
-    .read_buffer_allow_freeing = 0,
     .force_close_on_fatal_error = 1,
     .force_close_on_shutdown_error = 1,
     .force_close_tcp = 1,
     .onreadclose_auto_res = tls_onreadclose_tls_close
   };
   
-  clientsock_tcp_cb = tls_default_tcp_socket_callbacks;
+  clientsock_tcp_cb = serversock_tcp_cb;
   
   clientsock_tcp_set = serversock_tcp_set;
   
   clientsock_tls_cb = (struct tls_socket_callbacks) {
+    .oncreation = NULL,
     .onopen = onopen,
     .onmessage = onmessage,
     .tcp_onreadclose = NULL,
     .tls_onreadclose = NULL,
     .onnomem = sock_onnomem,
-    .onclose = onclose
+    .onclose = onclose,
+    .onfree = NULL
   };
   
   clientsock_tls_set = serversock_tls_set;
@@ -213,7 +214,6 @@ int main(int argc, char **argv) {
   
   server_tls_cb = (struct tls_server_callbacks) {
     .onconnection = onconnection,
-    .ontermination = NULL,
     .onnomem = serv_onnomem,
     .onshutdown = onshutdown
   };
@@ -257,12 +257,27 @@ int main(int argc, char **argv) {
   if(server_ctx == NULL) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_certificate_file(server_ctx, "cert.pem", SSL_FILETYPE_PEM) != 1) {
+  
+  char cert_dest[512];
+  memset(cert_dest, 0, sizeof(cert_dest));
+  if(getcwd(cert_dest, 490) == NULL) {
     TEST_FAIL;
   }
-  if(SSL_CTX_use_PrivateKey_file(server_ctx, "key.pem", SSL_FILETYPE_PEM) != 1) {
+  strcat(cert_dest, "/tests/cert.pem");
+  if(SSL_CTX_use_certificate_file(server_ctx, cert_dest, SSL_FILETYPE_PEM) != 1) {
     TEST_FAIL;
   }
+  char key_dest[512];
+  memset(key_dest, 0, sizeof(key_dest));
+  if(getcwd(key_dest, 490) == NULL) {
+    TEST_FAIL;
+  }
+  strcat(key_dest, "/tests/key.pem");
+  if(SSL_CTX_use_PrivateKey_file(server_ctx, key_dest, SSL_FILETYPE_PEM) != 1) {
+    TEST_FAIL;
+  }
+  
+  
   
   struct addrinfo hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | wants_a_server | wants_own_ip_version);
   struct addrinfo* res = net_get_address(NULL, "8099", &hints);
@@ -301,6 +316,8 @@ int main(int argc, char **argv) {
     printf("err %s\n", net_strerror(errno));
     TEST_FAIL;
   }
+  
+  
   
   struct tls_socket* sockets = malloc(sizeof(struct tls_socket) * nclients);
   if(servers == NULL) {
