@@ -1,6 +1,5 @@
 #include "debug.h"
 
-#ifdef SHNET_DEBUG
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,8 +35,13 @@ void printf_debug(const char* fmt, const int console_log, ...) {
     }
   }
 }
+
+#ifdef SHNET_DEBUG
+void print_debug(const char* fmt, const int console_log, ...) {
+  return printf_debug(fmt, console_log);
+}
 #else
-void printf_debug(const char* fmt, const int console_log, ...) {
+void print_debug(const char* fmt, const int console_log, ...) {
   (void) fmt;
   (void) console_log;
 }
