@@ -1,25 +1,25 @@
 #include "udplite.h"
 
 int udplite_create_socket(struct udp_socket* const sock) {
-  if(udp_create_socket_base(sock, udp_lite_protocol) == net_failure) {
-    return net_failure;
+  if(udp_create_socket_base(sock, udp_lite_protocol) != 0) {
+    return -1;
   }
-  if(net_socket_base_options(sock->base.sfd) == net_failure || net_connect_socket(sock->base.sfd, &sock->base.addr) == net_failure) {
+  if(net_socket_base_options(sock->base.sfd) != 0 || net_connect_socket(sock->base.sfd, &sock->base.addr) != 0) {
     udp_close(sock);
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 int udplite_create_server(struct udp_socket* const server) {
-  if(udp_create_socket_base(server, udp_lite_protocol) == net_failure) {
-    return net_failure;
+  if(udp_create_socket_base(server, udp_lite_protocol) != 0) {
+    return -1;
   }
-  if(net_socket_base_options(server->base.sfd) == net_failure || net_bind_socket(server->base.sfd, &server->base.addr) == net_failure) {
+  if(net_socket_base_options(server->base.sfd) != 0 || net_bind_socket(server->base.sfd, &server->base.addr) != 0) {
     udp_close(server);
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 int udplite_set_send_cscov(const struct udp_socket* const socket, const int coverage) {

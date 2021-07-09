@@ -12,7 +12,7 @@ struct heap_node {
   unsigned long value;
 };
 
-static long cmp(const void* i1, const void* i2) {
+static int cmp(const void* i1, const void* i2) {
   const unsigned long m1 = *((unsigned long*) i1);
   const unsigned long m2 = *((unsigned long*) i2);
   if(m1 > m2) {
@@ -32,27 +32,15 @@ int main() {
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
   printf_debug("1. Initialisation", 1);
-  struct heap h = heap(sizeof(struct heap_node), heap_min, cmp, 1);
-  if(h.item_size != sizeof(struct heap_node)) {
-    TEST_FAIL;
-  }
-  if(h.used != h.item_size) {
-    TEST_FAIL;
-  }
-  if(h.size != h.used) {
-    TEST_FAIL;
-  }
-  if(h.array != NULL) {
-    TEST_FAIL;
-  }
-  if(h.sign != heap_min) {
-    TEST_FAIL;
-  }
-  if(h.compare != cmp) {
-    TEST_FAIL;
-  }
+  struct heap h;
+  memset(&h, 0, sizeof(h));
+  h.sign = heap_min;
+  h.compare = cmp;
+  h.item_size = sizeof(struct heap_node);
+  h.used = h.item_size;
+  h.size = h.used;
   int err = heap_resize(&h, (count + 1) * sizeof(struct heap_node));
-  if(err != heap_success) {
+  if(err != 0) {
     printf_debug("can't allocate mem", 1);
     TEST_FAIL;
   }

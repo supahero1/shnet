@@ -10,10 +10,6 @@
 #include <semaphore.h>
 
 enum time_consts {
-  time_success,
-  time_out_of_memory,
-  time_failure,
-  
   time_instant = 0,
   time_not_instant
 };
@@ -66,24 +62,17 @@ struct time_interval {
   void* data;
 };
 
-struct time_timer {
-  union {
-    const struct time_timeout* timeout;
-    const struct time_interval* interval;
-  };
-};
-
 struct time_manager {
   struct heap timeouts;
   struct heap intervals;
   struct threads thread;
-  _Atomic uint64_t latest;
   pthread_mutex_t mutex;
+  _Atomic uint64_t latest;
   sem_t work;
   sem_t amount;
 };
 
-extern int time_manager(struct time_manager* const, const unsigned long, const unsigned long);
+extern int time_manager(struct time_manager* const);
 
 extern int time_manager_start(struct time_manager* const);
 

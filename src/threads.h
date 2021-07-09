@@ -1,34 +1,29 @@
 #ifndef _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_
 #define _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_ 1
 
+#include <stdint.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <semaphore.h>
 
-enum threads_consts {
-  threads_success,
-  threads_out_of_memory,
-  threads_failure
-};
-
 struct threads {
   pthread_t* threads;
-  unsigned used;
-  unsigned size;
-  _Atomic unsigned togo;
   pthread_barrier_t* barrier;
-  sem_t sem;
   void (*func)(void*);
   void* data;
+  sem_t sem;
+  uint32_t used;
+  uint32_t size;
+  _Atomic uint32_t togo;
 };
 
 extern int threads(struct threads* const);
 
-extern int threads_resize(struct threads* const, const unsigned);
+extern int threads_resize(struct threads* const, const uint32_t);
 
-extern int threads_add(struct threads* const, const unsigned);
+extern int threads_add(struct threads* const, const uint32_t);
 
-extern void threads_remove(struct threads* const, const unsigned);
+extern void threads_remove(struct threads* const, const uint32_t);
 
 extern void threads_shutdown(struct threads* const);
 

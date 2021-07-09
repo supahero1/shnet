@@ -24,14 +24,15 @@ int main() {
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
   struct threads thrds;
+  memset(&thrds, 0, sizeof(thrds));
   int err = threads(&thrds);
-  if(err != threads_success) {
+  if(err != 0) {
     TEST_FAIL;
   }
   thrds.func = cb;
   thrds.data = &thrds;
   err = threads_add(&thrds, thread_count);
-  if(err != threads_success) {
+  if(err != 0) {
     TEST_FAIL;
   }
   unsigned long how_much;
@@ -42,9 +43,9 @@ int main() {
     threads_remove(&thrds, how_much);
     how_much = 1 + (rand() % (thread_count - thrds.used));
     err = threads_add(&thrds, how_much);
-    if(err != threads_success) {
+    if(err != 0) {
       printf("\r");
-      if(err == threads_out_of_memory) {
+      if(errno == ENOMEM) {
         TEST_FAIL;
       }
       TEST_FAIL;
@@ -58,9 +59,9 @@ int main() {
     fflush(stdout);
     how_much = 1 + (rand() % (thread_count - thrds.used));
     err = threads_add(&thrds, how_much);
-    if(err != threads_success) {
+    if(err != 0) {
       printf("\r");
-      if(err == threads_out_of_memory) {
+      if(errno == ENOMEM) {
         TEST_FAIL;
       }
       TEST_FAIL;

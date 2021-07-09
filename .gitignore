@@ -1,5 +1,6 @@
 build/
 shnet/
 dev/
+fuzz/
 logs.txt
 valgrind*

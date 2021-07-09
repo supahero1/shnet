@@ -101,7 +101,7 @@ unsigned long GetTime(const unsigned long nanoseconds) {
   return nanoseconds + tp.tv_sec * 1000000000 + tp.tv_nsec;
 }
 
-long cmp(const void* a, const void* b) {
+int cmp(const void* a, const void* b) {
   if(*((unsigned long*) a) > *((unsigned long*) b)) {
     return 1;
   } else if(*((unsigned long*) b) > *((unsigned long*) a)) {
@@ -149,7 +149,10 @@ int main() {
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
   printf_debug("1. Stress test", 1);
-  tree = avl_tree(sizeof(unsigned long), newnode, cmp);
+  memset(&tree, 0, sizeof(tree));
+  tree.item_size = sizeof(unsigned long);
+  tree.new_node = newnode;
+  tree.compare = cmp;
   for(unsigned long i = 0; i < TIMES; ++i) {
     if(used != 5000) {
       int how_much;
@@ -171,7 +174,7 @@ int main() {
         if(ptr == NULL) {
           TEST_FAIL;
         }
-        if(tree.is_empty != 1) {
+        if(tree.not_empty == 1) {
           avl_integrity_check(&tree, tree.head, 0);
           avl_balance_check(&tree, tree.head);
           delnode(ptr);

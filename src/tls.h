@@ -138,8 +138,8 @@ extern unsigned char tls_peak(const struct tls_socket* const, const int);
 
 extern unsigned char tls_peak_once(struct tls_socket* const, const int);
 
-#define tls_default_tcp_socket_callbacks (struct tcp_socket_callbacks) \
-{tls_oncreation,tls_onopen,tls_onmessage,tls_onreadclose,tls_onsend,tls_socket_onnomem,tls_onclose,tls_onfree}
+#define tls_default_tcp_socket_callbacks ((struct tcp_socket_callbacks) \
+{tls_oncreation,tls_onopen,tls_onmessage,tls_onreadclose,tls_onsend,tls_socket_onnomem,tls_onclose,tls_onfree})
 
 
 
@@ -211,8 +211,8 @@ extern int tls_server_shutdown(struct tls_server* const);
 
 extern unsigned tls_server_get_conn_amount(struct tls_server* const);
 
-#define tls_default_tcp_server_callbacks (struct tcp_server_callbacks) \
-{tls_onconnection,tls_server_onnomem,tls_onshutdown}
+#define tls_default_tcp_server_callbacks ((struct tcp_server_callbacks) \
+{tls_onconnection,tls_server_onnomem,tls_onshutdown})
 
 
 

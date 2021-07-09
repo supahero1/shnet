@@ -46,14 +46,14 @@ void onclose(struct tcp_socket* socket) {
   if(atomic_load(&dont_reattempt)) {
     return;
   }
-  if(net_foreach_addrinfo(res, socket_pick_address, socket) == net_failure) {
+  if(net_foreach_addrinfo(res, socket_pick_address, socket) == -1) {
     TEST_FAIL;
   }
 }
 
 int sock_onnomem(struct tcp_socket* socket) {
   TEST_FAIL;
-  return net_failure;
+  return -1;
 }
 
 
@@ -61,12 +61,12 @@ int sock_onnomem(struct tcp_socket* socket) {
 int onconnection(struct tcp_socket* socket) {
   socket->callbacks = &serversock_cb;
   socket->settings = &serversock_set;
-  return net_success;
+  return 0;
 }
 
 int onnomem(struct tcp_server* server) {
   TEST_FAIL;
-  return net_failure;
+  return -1;
 }
 
 void onshutdown(struct tcp_server* server) {
@@ -81,11 +81,11 @@ int server_pick_address(struct addrinfo* info, void* data) {
   net_sockbase_set_family(&server->base, net_addrinfo_get_family(info));
   net_sockbase_set_whole_addr(&server->base, net_addrinfo_get_whole_addr(info));
   (void) net_address_to_string(net_sockbase_get_whole_addr(&server->base), ip);
-  if(tcp_create_server(server) != net_success) {
+  if(tcp_create_server(server) != 0) {
     printf("server_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return net_failure;
+    return -1;
   } else {
-    return net_success;
+    return 0;
   }
 }
 
@@ -97,11 +97,11 @@ int socket_pick_address(struct addrinfo* info, void* data) {
   net_sockbase_set_family(&socket->base, net_addrinfo_get_family(info));
   net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(info));
   (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->base), ip);
-  if(tcp_create_socket(socket) != net_success) {
+  if(tcp_create_socket(socket) != 0) {
     printf("socket_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return net_failure;
+    return -1;
   } else {
-    return net_success;
+    return 0;
   }
 }
 
@@ -143,22 +143,20 @@ int main(int argc, char **argv) {
   /* Epoll setup */
   struct net_epoll socket_epoll;
   memset(&socket_epoll, 0, sizeof(socket_epoll));
-  int err = tcp_epoll(&socket_epoll);
-  if(err == net_failure) {
+  if(tcp_epoll(&socket_epoll) != 0) {
     TEST_FAIL;
   }
-  if(net_epoll_start(&socket_epoll, 1) != net_success) {
+  if(net_epoll_start(&socket_epoll, 1) != 0) {
     TEST_FAIL;
   }
   
   struct net_epoll server_epoll;
   if(shared_epoll == 0) {
     memset(&server_epoll, 0, sizeof(server_epoll));
-    err = tcp_epoll(&server_epoll);
-    if(err == net_failure) {
+    if(tcp_epoll(&server_epoll) != 0) {
       TEST_FAIL;
     }
-    if(net_epoll_start(&server_epoll, 1) != net_success) {
+    if(net_epoll_start(&server_epoll, 1) != 0) {
       TEST_FAIL;
     }
   }
@@ -183,7 +181,7 @@ int main(int argc, char **argv) {
     }
     servers[i].settings = &server_set;
     servers[i].callbacks = &server_cb;
-    if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) == net_failure) {
+    if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) == -1) {
       TEST_FAIL;
     }
   }
@@ -213,23 +211,21 @@ int main(int argc, char **argv) {
     sockets[i].settings = &serversock_set;
     
     /* Pick an address for the socket */
-    if(net_foreach_addrinfo(res, socket_pick_address, &sockets[i]) == net_failure) {
+    if(net_foreach_addrinfo(res, socket_pick_address, &sockets[i]) == -1) {
       TEST_FAIL;
     }
   }
   
   /* Time setup to stop the test */
   struct time_manager manager;
-  err = time_manager(&manager, 1, 1);
-  if(err != time_success) {
+  memset(&manager, 0, sizeof(manager));
+  if(time_manager(&manager) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_start(&manager);
-  if(err != time_success) {
+  if(time_manager_start(&manager) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_add_timeout(&manager, time_get_sec(time_to_wait_s), unlock_mutexo, NULL, NULL);
-  if(err != time_success) {
+  if(time_manager_add_timeout(&manager, time_get_sec(time_to_wait_s), unlock_mutexo, NULL, NULL) != 0) {
     TEST_FAIL;
   }
   /* Wait for the timeout to expire */
@@ -237,7 +233,7 @@ int main(int argc, char **argv) {
   /* Shutdown the servers to deny new connections and close existing ones */
   atomic_store(&dont_reattempt, 1);
   for(int i = 0; i < nservers; ++i) {
-    if(tcp_server_shutdown(&servers[i]) != net_success) {
+    if(tcp_server_shutdown(&servers[i]) != 0) {
       TEST_FAIL;
     }
     sem_wait(&sem);

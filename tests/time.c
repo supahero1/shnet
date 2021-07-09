@@ -20,8 +20,7 @@ void cbfunc1(void* data) {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  int err = time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL);
-  if(err != time_success) {
+  if(time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL) != 0) {
     TEST_FAIL;
   }
 }
@@ -47,31 +46,25 @@ void cbfunc5(void*);
 void cbfunc6(void*);
 
 void cbfunc4(void* data) {
-  int err;
   if(atomic_fetch_add(&last, 1) == 0) {
     for(int i = 0; i < 11; ++i) {
-      err = time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL);
-      if(err != time_success) {
+      if(time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL) != 0) {
         TEST_FAIL;
       }
     }
-    err = time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL);
-    if(err != time_success) {
+    if(time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL) != 0) {
       TEST_FAIL;
     }
     struct time_timeout* timeout;
     struct time_timeout* timeout2;
     struct time_interval* interval;
-    err = time_manager_add_timeout(data, time_get_ms(750), cbfunc6, data, &timeout);
-    if(err != time_success) {
+    if(time_manager_add_timeout(data, time_get_ms(750), cbfunc6, data, &timeout) != 0) {
       TEST_FAIL;
     }
-    err = time_manager_add_interval(data, time_get_ms(100), time_ms_to_ns(100), cbfunc6, data, &interval, time_not_instant);
-    if(err != time_success) {
+    if(time_manager_add_interval(data, time_get_ms(100), time_ms_to_ns(100), cbfunc6, data, &interval, time_not_instant) != 0) {
       TEST_FAIL;
     }
-    err = time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2);
-    if(err != time_success) {
+    if(time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2) != 0) {
       TEST_FAIL;
     }
     time_manager_cancel_timeout(data, timeout);
@@ -101,8 +94,6 @@ uint64_t min = 100000000000;
 uint64_t max = 0;
 uint64_t avg[1000];
 
-int canQuit = 0;
-
 void cbbenchfunc(void* data) {
   uint64_t now = time_get_time();
   uint64_t diff = now - last_time;
@@ -131,7 +122,7 @@ void cbbenchfunc(void* data) {
     printf_debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
     time_manager_stop(data);
-    canQuit = 1;
+    pthread_mutex_unlock(&mutexo);
     pthread_exit(NULL);
   }
 }
@@ -152,25 +143,21 @@ int main() {
   start:
   printf("\rRound %d/3", counter + 1);
   fflush(stdout);
-  int err = time_manager(&manager, 1, 1);
-  if(err != time_success) {
+  memset(&manager, 0, sizeof(manager));
+  if(time_manager(&manager) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_start(&manager);
-  if(err != time_success) {
+  if(time_manager_start(&manager) != 0) {
     TEST_FAIL;
   }
   atomic_store(&last, 0);
-  err = time_manager_add_timeout(&manager, time_get_ms(1500), cbfunc1, &manager, NULL);
-  if(err != time_success) {
+  if(time_manager_add_timeout(&manager, time_get_ms(1500), cbfunc1, &manager, NULL) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_add_timeout(&manager, time_get_ms(500), cbfunc3, &manager, NULL);
-  if(err != time_success) {
+  if(time_manager_add_timeout(&manager, time_get_ms(500), cbfunc3, &manager, NULL) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_add_timeout(&manager, time_get_sec(1), cbfunc2, &manager, NULL);
-  if(err != time_success) {
+  if(time_manager_add_timeout(&manager, time_get_sec(1), cbfunc2, &manager, NULL) != 0) {
     TEST_FAIL;
   }
   (void) pthread_mutex_lock(&mutexo);
@@ -184,24 +171,20 @@ int main() {
   benchmark:
   printf_debug("2. Benchmark", 1);
   puts("A \"frame loop\" will be created to see various statistics. An interval will be fired at 60FPS rate and the benchmark will end when 1000 samples have been collected.");
-  err = time_manager(&manager, 1, 1);
-  if(err != time_success) {
+  memset(&manager, 0, sizeof(manager));
+  if(time_manager(&manager) != 0) {
     TEST_FAIL;
   }
-  err = time_manager_start(&manager);
-  if(err != time_success) {
+  if(time_manager_start(&manager) != 0) {
     TEST_FAIL;
   }
   begin = time_get_ns(16666666);
   last_time = begin - 16666666;
   times = 1;
-  err = time_manager_add_interval(&manager, begin, 16666666, cbbenchfunc, &manager, NULL, time_instant);
-  if(err != time_success) {
+  if(time_manager_add_interval(&manager, begin, 16666666, cbbenchfunc, &manager, NULL, time_instant) != 0) {
     TEST_FAIL;
   }
-  while(canQuit == 0) {
-    usleep(100000);
-  }
+  pthread_mutex_lock(&mutexo);
   time_manager_free(&manager);
   return 0;
 }

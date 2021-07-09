@@ -35,10 +35,10 @@ struct tcp_socket_callbacks {
   /* This callback is called when the socket is created, no matter if it's a
   client or a server socket. It is meaningful, because the application might want
   to initialise something too, by embeding the socket's structure in it's own.
-  The application must return net_success on success and net_failure on failure.
+  The application must return 0 on success and -1 on failure.
   A failure has an additional meaning with server sockets - the application can
   inspect them before it decides to let them in. If such a socket is deemed invalid
-  by the application, it shall return net_failure and not initialise anything.
+  by the application, it shall return -1 and not initialise anything.
   When a new server socket is created and the oncreation() callback is called, it
   is also the responsibility of the application to fill in required members of the 
   socket, that is:
@@ -49,7 +49,7 @@ struct tcp_socket_callbacks {
   The new socket's epoll will automatically be set to its server's epoll. It is
   undefined behavior if the application changes it to a different epoll or if it
   will tamper with the socket's server pointer.
-  Returning net_failure will result in the socket being destroyed.
+  Returning -1 will result in the socket being destroyed.
   onfree() can be called after oncreation() if the socket failed at any further
   stage of a server socket's creation. It will also be called as part of tcp_socket_free().
   onclose() may be called without onopen() if connection fails to be established.
@@ -60,7 +60,7 @@ struct tcp_socket_callbacks {
   1. Init a mutex
   2. Init another mutex, but the call fails
   3. Instead of returning instantly, first destroy the first mutex
-  4. Return net_failure */
+  4. Return -1 */
   int (*oncreation)(struct tcp_socket*);
   /* The socket can only be accessed after onopen() callback is fired. The application
   may start sending data inside of the onopen() callback. */
@@ -78,8 +78,8 @@ struct tcp_socket_callbacks {
   called regardless of the setting. Some applications might want to know right away
   when they can send more data, for instance to perform a benchmark. */
   void (*onsend)(struct tcp_socket*);
-  /* We are out of memory. Either free some and return net_success, or halt, or
-  close the socket and return net_failure. */
+  /* We are out of memory. Either free some and return 0, or halt, or close the socket
+  and return -1. */
   int (*onnomem)(struct tcp_socket*);
   /* The underlying protocol has been closed. There still might be data pending,
   so it is not forbidden to call tcp_read(), however tcp_send() can't be called.
@@ -150,8 +150,8 @@ struct tcp_server_callbacks {
   /* Inside of the epoll thread(s), we could run out of memory while accepting
   a new connection. Some applications prefer to halt the program, others have
   a mechanism for releasing some memory. Let the application choose the approach.
-  If the application fails to release memory, it should return net_failure.
-  Otherwise, if it attempted to do something, it should return net_success.
+  If the application fails to release memory, it should return -1.
+  Otherwise, if it attempted to do something, it should return 0.
   This function might be called multiple times in a row, in case the application
   freed not enough memory. */
   int (*onnomem)(struct tcp_server*);

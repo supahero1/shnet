@@ -6,13 +6,12 @@
 #include <signal.h>
 
 int threads(struct threads* const threads) {
-  (void) memset(threads, 0, sizeof(struct threads));
   int err = sem_init(&threads->sem, 0, 0);
   if(err != 0) {
     errno = err;
-    return threads_failure;
+    return -1;
   }
-  return threads_success;
+  return 0;
 }
 
 #define thrd ((struct threads*) threads_thread_data)
@@ -30,44 +29,40 @@ static void* threads_thread(void* threads_thread_data) {
 
 #undef thrd
 
-int threads_resize(struct threads* const threads, const unsigned new_size) {
+int threads_resize(struct threads* const threads, const uint32_t new_size) {
   pthread_t* const ptr = realloc(threads->threads, sizeof(pthread_t) * new_size);
   if(ptr == NULL) {
-    return threads_out_of_memory;
+    return -1;
   }
   threads->threads = ptr;
   threads->size = new_size;
-  return threads_success;
+  return 0;
 }
 
-int threads_add(struct threads* const threads, const unsigned amount) {
-  const unsigned total = threads->used + amount;
+int threads_add(struct threads* const threads, const uint32_t amount) {
+  const uint32_t total = threads->used + amount;
   if(total > threads->size) {
-    int err = threads_resize(threads, total);
-    if(err != threads_success) {
-      return err;
+    if(threads_resize(threads, total) != 0) {
+      return -1;
     }
   }
   pthread_barrier_t* const barrier = malloc(sizeof(pthread_barrier_t));
   if(barrier == NULL) {
-    return threads_out_of_memory;
+    return -1;
   }
   int err = pthread_barrier_init(barrier, NULL, amount);
   if(err != 0) {
     free(barrier);
-    if(err == ENOMEM) {
-      return threads_out_of_memory;
-    }
     errno = err;
-    return threads_failure;
+    return -1;
   }
   threads->barrier = barrier;
   atomic_store(&threads->togo, amount);
-  for(unsigned i = threads->used; i < total; ++i) {
+  for(uint32_t i = threads->used; i < total; ++i) {
     int err = pthread_create(threads->threads + i, NULL, threads_thread, threads);
     if(err != 0) {
-      if(i > threads->size) {
-        const unsigned old = threads->used;
+      if(i > threads->used) {
+        const uint32_t old = threads->used;
         threads->used = i;
         (void) threads_remove(threads, i - threads->used);
         threads->used = old;
@@ -76,27 +71,27 @@ int threads_add(struct threads* const threads, const unsigned amount) {
         free(barrier);
       }
       errno = err;
-      return threads_failure;
+      return -1;
     }
   }
   threads->used = total;
   (void) sem_wait(&threads->sem);
-  return threads_success;
+  return 0;
 }
 
-void threads_remove(struct threads* const threads, const unsigned amount) {
-  const unsigned total = threads->used - amount;
+void threads_remove(struct threads* const threads, const uint32_t amount) {
+  const uint32_t total = threads->used - amount;
   const pthread_t self = pthread_self();
   atomic_store(&threads->togo, amount);
   int close_ourselves = 0;
-  for(unsigned i = total; i < threads->used; ++i) {
+  for(uint32_t i = total; i < threads->used; ++i) {
     if(pthread_equal(threads->threads[i], self) == 0) {
       (void) pthread_cancel(threads->threads[i]);
     } else {
       close_ourselves = 1;
     }
   }
-  for(unsigned i = total; i < threads->used; ++i) {
+  for(uint32_t i = total; i < threads->used; ++i) {
     if(pthread_equal(threads->threads[i], self) == 0) {
       (void) pthread_join(threads->threads[i], NULL);
     }

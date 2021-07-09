@@ -41,7 +41,7 @@ void on_event(struct net_epoll* epoll, int event, struct net_socket_base* ptr) {
         TEST_FAIL;
       }
       char ip[ip_max_strlen];
-      if(net_address_to_string(&server_addr, ip) == net_failure) {
+      if(net_address_to_string(&server_addr, ip) != 0) {
         TEST_FAIL;
       }
       bytes = sendto(socket->base.sfd, recv_buf, amount, MSG_CONFIRM, (struct sockaddr*)&server_addr, server_len);
@@ -56,7 +56,7 @@ void on_event(struct net_epoll* epoll, int event, struct net_socket_base* ptr) {
 
 #define check_err \
 do { \
-  if(err != net_success) { \
+  if(err != 0) { \
     printf("\nError, errno %d\n", errno); \
     TEST_FAIL; \
   } \
@@ -77,7 +77,8 @@ int main() {
   
   struct net_epoll epoll;
   memset(&epoll, 0, sizeof(epoll));
-  err = net_epoll(&epoll, on_event, net_epoll_no_wakeup_method);
+  epoll.on_event = on_event;
+  err = net_epoll(&epoll, net_epoll_no_wakeup_method);
   check_err;
   err = net_epoll_start(&epoll, 1);
   check_err;

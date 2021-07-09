@@ -13,9 +13,6 @@
 #define NET_EPOLL_DEFAULT_MAX_EVENTS 100
 
 enum net_consts {
-  net_success,
-  net_failure,
-  
   /* FAMILY */
   any_family = AF_UNSPEC,
   ipv4 = AF_INET,
@@ -155,7 +152,6 @@ extern int net_get_ipv4_addrlen(void);
 
 extern int net_get_ipv6_addrlen(void);
 
-
 extern int net_get_addrlen(const void* const);
 
 extern int net_addrinfo_get_addrlen(const struct addrinfo* const);
@@ -199,20 +195,20 @@ extern int net_socket_base_options(const int);
 struct net_epoll {
   struct threads threads;
   struct net_socket_base base;
-  struct net_socket_base** bases_tbc;
-  unsigned bases_tbc_used:31;
-  unsigned bases_tbc_allow_freeing:1;
-  unsigned bases_tbc_size;
   void (*on_event)(struct net_epoll*, int, struct net_socket_base*);
+  struct net_socket_base** bases_tbc;
+  pthread_mutex_t lock;
   struct epoll_event* events;
   int events_size;
   int fd;
-  pthread_mutex_t lock;
+  uint32_t bases_tbc_used:31;
+  uint32_t bases_tbc_allow_freeing:1;
+  uint32_t bases_tbc_size;
 };
 
-extern int net_epoll(struct net_epoll* const, void (*)(struct net_epoll*, int, struct net_socket_base*), const int);
+extern int net_epoll(struct net_epoll* const, const int);
 
-extern int net_epoll_start(struct net_epoll* const, const unsigned);
+extern int net_epoll_start(struct net_epoll* const, const uint32_t);
 
 extern void net_epoll_stop(struct net_epoll* const);
 
@@ -226,7 +222,7 @@ extern int net_epoll_mod(struct net_epoll* const, struct net_socket_base* const)
 extern int net_epoll_remove(struct net_epoll* const, struct net_socket_base* const);
 
 
-extern int net_epoll_tbc_resize(struct net_epoll* const, const unsigned);
+extern int net_epoll_tbc_resize(struct net_epoll* const, const uint32_t);
 
 extern int net_epoll_safe_remove(struct net_epoll* const, struct net_socket_base* const);
 

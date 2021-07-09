@@ -75,7 +75,7 @@ uint64_t time_get_time() {
   return time_get_ns(0);
 }
 
-static long time_timeout_compare(const void* a, const void* b) {
+static int time_timeout_compare(const void* a, const void* b) {
   const struct time_timeout* const x = a;
   const struct time_timeout* const y = b;
   if(x->time > y->time) {
@@ -87,7 +87,7 @@ static long time_timeout_compare(const void* a, const void* b) {
   }
 }
 
-static long time_interval_compare(const void* a, const void* b) {
+static int time_interval_compare(const void* a, const void* b) {
   const struct time_interval* const x = a;
   const struct time_interval* const y = b;
   const uint64_t t1 = x->base_time + x->interval * x->count;
@@ -103,40 +103,49 @@ static long time_interval_compare(const void* a, const void* b) {
 
 static void time_manager_thread(void*);
 
-int time_manager(struct time_manager* const manager, const unsigned long timeouts_alloc_size, const unsigned long intervals_alloc_size) {
-  *manager = (struct time_manager) {
-    .timeouts = refheap(sizeof(struct time_timeout), heap_min, time_timeout_compare, timeouts_alloc_size),
-    .intervals = refheap(sizeof(struct time_interval), heap_min, time_interval_compare, intervals_alloc_size)
-  };
+int time_manager(struct time_manager* const manager) {
+  manager->timeouts.sign = heap_min;
+  manager->timeouts.compare = time_timeout_compare;
+  manager->timeouts.item_size = sizeof(struct time_timeout) + sizeof(void**);
+  manager->timeouts.used = manager->timeouts.item_size;
+  manager->timeouts.size = manager->timeouts.item_size;
+  
+  manager->intervals.sign = heap_min;
+  manager->intervals.compare = time_interval_compare;
+  manager->intervals.item_size = sizeof(struct time_interval) + sizeof(void**);
+  manager->intervals.used = manager->intervals.item_size;
+  manager->intervals.size = manager->intervals.item_size;
+  
   int err = sem_init(&manager->work, 0, 0);
   if(err != 0) {
     errno = err;
-    return time_failure;
+    return -1;
   }
   err = sem_init(&manager->amount, 0, 0);
   if(err != 0) {
-    (void) sem_destroy(&manager->work);
     errno = err;
-    return time_failure;
+    goto err_sem;
   }
   err = pthread_mutex_init(&manager->mutex, NULL);
   if(err != 0) {
-    (void) sem_destroy(&manager->work);
-    (void) sem_destroy(&manager->amount);
     errno = err;
-    return time_failure;
+    goto err_sem2;
   }
   err = threads(&manager->thread);
-  if(err != threads_success) {
-    (void) sem_destroy(&manager->work);
-    (void) sem_destroy(&manager->amount);
+  if(err != 0) {
     (void) pthread_mutex_destroy(&manager->mutex);
-    return time_failure;
+    goto err_sem2;
   }
   manager->thread.func = time_manager_thread;
   manager->thread.data = manager;
   atomic_store(&manager->latest, 0);
-  return time_success;
+  return 0;
+  
+  err_sem2:
+  (void) sem_destroy(&manager->amount);
+  err_sem:
+  (void) sem_destroy(&manager->work);
+  return -1;
 }
 
 static int time_manager_set_latest(struct time_manager* const manager) {
@@ -226,10 +235,10 @@ int time_manager_start(struct time_manager* const manager) {
 int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_timeout** const timeout) {
   (void) pthread_mutex_lock(&manager->mutex);
   {
-    const int err = refheap_insert(&manager->timeouts, &((struct time_timeout) { .time = time, .func = func, .data = data }), (void**) timeout);
-    if(err == heap_out_of_memory) {
+    const int err = refheap_insert(&manager->timeouts, &(struct time_timeout){ .time = time, .func = func, .data = data }, (void**) timeout);
+    if(err == -1) {
       (void) pthread_mutex_unlock(&manager->mutex);
-      return time_out_of_memory;
+      return -1;
     }
   }
   if(time_manager_set_latest(manager) == 0) {
@@ -237,16 +246,16 @@ int time_manager_add_timeout(struct time_manager* const manager, const uint64_t 
   }
   (void) sem_post(&manager->amount);
   (void) pthread_mutex_unlock(&manager->mutex);
-  return time_success;
+  return 0;
 }
 
 int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t intrvl, void (*func)(void*), void* const data, struct time_interval** const interval, const unsigned long instant) {
   (void) pthread_mutex_lock(&manager->mutex);
   {
-    const int err = refheap_insert(&manager->intervals, &((struct time_interval) { .base_time = base_time, .interval = intrvl, .count = instant, .func = func, .data = data }), (void**) interval);
-    if(err == heap_out_of_memory) {
+    const int err = refheap_insert(&manager->intervals, &(struct time_interval){ .base_time = base_time, .interval = intrvl, .count = instant, .func = func, .data = data }, (void**) interval);
+    if(err == -1) {
       (void) pthread_mutex_unlock(&manager->mutex);
-      return time_out_of_memory;
+      return -1;
     }
   }
   if(time_manager_set_latest(manager) == 0) {
@@ -254,7 +263,7 @@ int time_manager_add_interval(struct time_manager* const manager, const uint64_t
   }
   (void) sem_post(&manager->amount);
   (void) pthread_mutex_unlock(&manager->mutex);
-  return time_success;
+  return 0;
 }
 
 void time_manager_cancel_timeout(struct time_manager* const manager, struct time_timeout* const timeout) {

@@ -36,18 +36,18 @@ void tcp_socket_cork_off(struct tcp_socket* const socket) {
 
 static inline int tcp_socket_keepalive_internal(const int sfd, const int retries, const int idle_time, const int reprobe_time) {
   if(net_socket_setopt_true(sfd, SOL_SOCKET, SO_KEEPALIVE) != 0) {
-    return net_failure;
+    return -1;
   }
   if(setsockopt(sfd, IPPROTO_TCP, TCP_KEEPCNT, &retries, sizeof(int)) != 0) {
-    return net_failure;
+    return -1;
   }
   if(setsockopt(sfd, IPPROTO_TCP, TCP_KEEPIDLE, &idle_time, sizeof(int)) != 0) {
-    return net_failure;
+    return -1;
   }
   if(setsockopt(sfd, IPPROTO_TCP, TCP_KEEPINTVL, &reprobe_time, sizeof(int)) != 0) {
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 int tcp_socket_keepalive(const struct tcp_socket* const socket) {
@@ -130,7 +130,7 @@ int tcp_create_socket(struct tcp_socket* const sock) {
   {
     const int sfd = socket(net_get_family(&sock->base.addr), stream_socktype, tcp_protocol);
     if(sfd == -1) {
-      return net_failure;
+      return -1;
     }
     sock->base.sfd = sfd;
     sock->base.which = net_socket;
@@ -144,24 +144,24 @@ int tcp_create_socket(struct tcp_socket* const sock) {
       goto sock;
     }
   }
-  if(net_socket_base_options(sock->base.sfd) == net_failure) {
+  if(net_socket_base_options(sock->base.sfd) != 0) {
     goto mutex;
   }
   if(net_connect_socket(sock->base.sfd, &sock->base.addr) != 0 && errno != EINPROGRESS) {
     goto mutex;
   }
   /* Pretty late so that we don't have to call onfree() numerous times above */
-  if(sock->callbacks->oncreation != NULL && sock->callbacks->oncreation(sock) == net_failure) {
+  if(sock->callbacks->oncreation != NULL && sock->callbacks->oncreation(sock) != 0) {
     goto mutex;
   }
-  if(net_epoll_add(sock->epoll, &sock->base) == net_failure) {
+  if(net_epoll_add(sock->epoll, &sock->base) != 0) {
     /* Makes sense to use onfree() only if oncreation() is set too */
     if(sock->callbacks->onfree != NULL) {
       sock->callbacks->onfree(sock);
     }
     goto mutex;
   }
-  return net_success;
+  return 0;
   mutex:
   (void) pthread_mutex_destroy(&sock->lock);
   (void) memset(&sock->lock, 0, sizeof(pthread_mutex_t));
@@ -171,7 +171,7 @@ int tcp_create_socket(struct tcp_socket* const sock) {
   sock->base.sfd = 0;
   sock->base.which = net_unspecified;
   sock->base.events = 0;
-  return net_failure;
+  return -1;
 }
 
 /* tcp_send() returns the amount of data sent. It might set errno to an error code.
@@ -274,7 +274,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
       if(ptr != NULL) {
         socket->send_buffer = ptr;
         socket->send_size = socket->send_used + size;
-      } else if(socket->callbacks->onnomem(socket) == net_success) {
+      } else if(socket->callbacks->onnomem(socket) == 0) {
         continue;
       } else {
         (void) pthread_mutex_unlock(&socket->lock);
@@ -510,7 +510,7 @@ int tcp_create_server(struct tcp_server* const server) {
   if(server->sockets == NULL) {
     server->sockets = calloc(server->settings->max_conn, server->settings->socket_size);
     if(server->sockets == NULL) {
-      return net_failure;
+      return -1;
     }
   }
   if(server->freeidx == NULL) {
@@ -536,19 +536,19 @@ int tcp_create_server(struct tcp_server* const server) {
     server->base.events = EPOLLET | EPOLLIN;
     server->base.onclose = tcp_server_shutdown_internal;
   }
-  if(net_socket_base_options(server->base.sfd) == net_failure) {
+  if(net_socket_base_options(server->base.sfd) != 0) {
     tcp_server_free(server);
-    return net_failure;
+    return -1;
   }
   if(net_bind_socket(server->base.sfd, &server->base.addr) != 0 || listen(server->base.sfd, server->settings->backlog) != 0) {
     tcp_server_free(server);
-    return net_failure;
+    return -1;
   }
-  if(net_epoll_add(server->epoll, &server->base) == net_failure) {
+  if(net_epoll_add(server->epoll, &server->base) != 0) {
     tcp_server_free(server);
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
   rwlock:
   (void) pthread_rwlock_destroy(&server->lock);
   (void) memset(&server->lock, 0, sizeof(pthread_rwlock_t));
@@ -558,7 +558,7 @@ int tcp_create_server(struct tcp_server* const server) {
   sockets:
   free(server->sockets);
   server->sockets = NULL;
-  return net_failure;
+  return -1;
 }
 
 #define _server ((struct tcp_server*) base)
@@ -620,7 +620,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     socket->server = _server;
     socket->epoll = _server->epoll;
     net_sockbase_set_whole_addr(&socket->base, &addr);
-    if(_server->callbacks->onconnection(socket) == net_failure) {
+    if(_server->callbacks->onconnection(socket) != 0) {
       (void) memset(socket, 0, sizeof(struct tcp_socket));
       (void) pthread_rwlock_unlock(&_server->lock);
       tcp_socket_no_linger(sfd);
@@ -630,7 +630,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     while(1) {
       const int err = pthread_mutex_init(&socket->lock, NULL);
       if(err != 0) {
-        if(err == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
+        if(err == ENOMEM && _server->callbacks->onnomem(_server) == 0) {
           continue;
         } else {
           if(socket->callbacks->onfree != NULL) {
@@ -645,7 +645,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
       }
       break;
     }
-    if(net_socket_base_options(sfd) == net_failure) {
+    if(net_socket_base_options(sfd) != 0) {
       if(socket->callbacks->onfree != NULL) {
         socket->callbacks->onfree(socket);
       }
@@ -657,8 +657,8 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
       continue;
     }
     while(1) {
-      if(net_epoll_add(socket->epoll, &socket->base) == net_failure) {
-        if(errno == ENOMEM && _server->callbacks->onnomem(_server) == net_success) {
+      if(net_epoll_add(socket->epoll, &socket->base) != 0) {
+        if(errno == ENOMEM && _server->callbacks->onnomem(_server) == 0) {
           continue;
         } else {
           if(socket->callbacks->onfree != NULL) {
@@ -766,5 +766,6 @@ static void tcp_onevent(struct net_epoll* epoll, int events, struct net_socket_b
 }
 
 int tcp_epoll(struct net_epoll* const epoll) {
-  return net_epoll(epoll, tcp_onevent, net_epoll_wakeup_method);
+  epoll->on_event = tcp_onevent;
+  return net_epoll(epoll, net_epoll_wakeup_method);
 }

@@ -73,13 +73,13 @@ static int tls_internal_read(struct tls_socket* const);
 #define socket ((struct tls_socket*) soc)
 
 int tls_oncreation(struct tcp_socket* soc) {
-  if(tls_socket_init(socket, net_socket) == net_failure) {
-    return net_failure;
+  if(tls_socket_init(socket, net_socket) != 0) {
+    return -1;
   }
   if(socket->tls_callbacks->oncreation != NULL) {
     return socket->tls_callbacks->oncreation(socket);
   }
-  return net_success;
+  return 0;
 }
 
 void tls_onopen(struct tcp_socket* soc) {
@@ -204,25 +204,25 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
   int err = pthread_mutex_init(&socket->read_lock, NULL);
   if(err != 0) {
     errno = err;
-    return net_failure;
+    return -1;
   }
   err = pthread_mutex_init(&socket->ssl_lock, NULL);
   if(err != 0) {
     errno = err;
     (void) pthread_mutex_destroy(&socket->read_lock);
-    return net_failure;
+    return -1;
   }
   socket->ssl = SSL_new(socket->ctx);
   if(socket->ssl == NULL) {
     (void) pthread_mutex_destroy(&socket->read_lock);
     (void) pthread_mutex_destroy(&socket->ssl_lock);
-    return net_failure;
+    return -1;
   }
   if(SSL_set_fd(socket->ssl, socket->base.sfd) == 0) {
     (void) pthread_mutex_destroy(&socket->read_lock);
     (void) pthread_mutex_destroy(&socket->ssl_lock);
     SSL_free(socket->ssl);
-    return net_failure;
+    return -1;
   }
   if(which == net_socket) {
     SSL_set_connect_state(socket->ssl);
@@ -231,7 +231,7 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
   }
   /* Required to shrink and grow the buffer of records to be sent */
   SSL_set_mode(socket->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-  return net_success;
+  return 0;
 }
 
 int tls_create_socket(struct tls_socket* const socket) {
@@ -354,7 +354,7 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
             socket->send_buffer = ptr;
             socket->send_size = socket->send_used + total_size;
             break;
-          } else if(socket->tls_callbacks->onnomem(socket) == net_success) {
+          } else if(socket->tls_callbacks->onnomem(socket) == 0) {
             continue;
           } else {
             (void) pthread_mutex_unlock(&socket->lock);
@@ -408,7 +408,7 @@ static int tls_internal_read(struct tls_socket* const socket) {
           socket->read_buffer = ptr;
           socket->read_size += socket->tls_settings->read_buffer_growth;
           break;
-        } else if(socket->tls_callbacks->onnomem(socket) == net_success) {
+        } else if(socket->tls_callbacks->onnomem(socket) == 0) {
           continue;
         } else {
           (void) pthread_mutex_unlock(&socket->read_lock);

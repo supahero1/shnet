@@ -42,15 +42,15 @@ void net_get_address_free(struct addrinfo* const info) {
 
 int net_foreach_addrinfo(struct addrinfo* info, int (*callback)(struct addrinfo*, void*), void* data) {
   do {
-    if(callback(info, data) == net_success) {
-      return net_success;
+    if(callback(info, data) == 0) {
+      return 0;
     }
     info = info->ai_next;
   } while(info != NULL);
   if(info == NULL) {
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 
@@ -68,10 +68,10 @@ int net_string_to_address(void* const addr, const char* const buffer) {
   } else {
     err = inet_pton(ipv6, buffer, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr);
   }
-  if(err == 1) {
-    return net_success;
+  if(err != 1) {
+    return -1;
   }
-  return net_failure;
+  return 0;
 }
 
 int net_address_to_string(void* const whole_addr, char* const buffer) {
@@ -82,9 +82,9 @@ int net_address_to_string(void* const whole_addr, char* const buffer) {
     err = inet_ntop(ipv6, ((struct sockaddr_in6*) whole_addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
   }
   if(err == NULL) {
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 
@@ -263,8 +263,6 @@ int net_get_ipv6_addrlen() {
   return sizeof(struct sockaddr_in6);
 }
 
-
-
 int net_get_addrlen(const void* const addr) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
     return net_get_ipv4_addrlen();
@@ -295,16 +293,16 @@ int net_connect_socket(const int sfd, const void* const addr) {
 
 int net_socket_setopt_true(const int sfd, const int level, const int option_name) {
   if(setsockopt(sfd, level, option_name, &(int){1}, sizeof(int)) == 0) {
-    return net_success;
+    return 0;
   }
-  return net_failure;
+  return -1;
 }
 
 int net_socket_setopt_false(const int sfd, const int level, const int option_name) {
   if(setsockopt(sfd, level, option_name, &(int){0}, sizeof(int)) == 0) {
-    return net_success;
+    return 0;
   }
-  return net_failure;
+  return -1;
 }
 
 
@@ -344,37 +342,37 @@ int net_socket_get_protocol(const int sfd, int* const protocol) {
 int net_socket_dont_block(const int sfd) {
   const int flags = fcntl(sfd, F_GETFL, 0);
   if(flags == -1) {
-    return net_failure;
+    return -1;
   }
   const int res = fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
   if(res == -1) {
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 int net_socket_block(const int sfd) {
   int flags = fcntl(sfd, F_GETFL, 0);
   if(flags == -1) {
-    return net_failure;
+    return -1;
   }
   if((flags ^ O_NONBLOCK) != 0) {
     flags ^= O_NONBLOCK;
   }
   const int res = fcntl(sfd, F_SETFL, flags);
   if(res == -1) {
-    return net_failure;
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 int net_socket_base_options(const int sfd) {
-  if(net_socket_dont_block(sfd) != net_success ||
-     net_socket_reuse_addr(sfd) != net_success ||
-     net_socket_reuse_port(sfd) != net_success) {
-    return net_failure;
+  if(net_socket_dont_block(sfd) != 0 ||
+     net_socket_reuse_addr(sfd) != 0 ||
+     net_socket_reuse_port(sfd) != 0) {
+    return -1;
   }
-  return net_success;
+  return 0;
 }
 
 
@@ -402,7 +400,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
       epoll->on_event(epoll, events[i].events, (struct net_socket_base*) events[i].data.ptr);
     }
     (void) pthread_mutex_lock(&epoll->lock);
-    for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
+    for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
       epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
     }
     if(epoll->bases_tbc_allow_freeing == 1) {
@@ -435,7 +433,7 @@ static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
       epoll->on_event(epoll, epoll->events[i].events, (struct net_socket_base*) epoll->events[i].data.ptr);
     }
     (void) pthread_mutex_lock(&epoll->lock);
-    for(unsigned i = 0; i < epoll->bases_tbc_used; ++i) {
+    for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
       epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
     }
     if(epoll->bases_tbc_allow_freeing == 1) {
@@ -450,45 +448,32 @@ static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
 
 #undef epoll
 
-int net_epoll(struct net_epoll* const epoll, void (*on_event)(struct net_epoll*, int, struct net_socket_base*), const int wakeup_method) {
-  {
-    const int err = threads(&epoll->threads);
-    if(err != threads_success) {
-      return err;
-    }
+int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
+  if(threads(&epoll->threads) != 0) {
+    return -1;
   }
   int fd = epoll_create1(0);
   if(fd == -1) {
-    threads_free(&epoll->threads);
-    return net_failure;
+    goto err_threads;
   }
   epoll->fd = fd;
   if(wakeup_method == net_epoll_wakeup_method) {
     fd = pthread_mutex_init(&epoll->lock, NULL);
     if(fd != 0) {
       errno = fd;
-      (void) close(epoll->fd);
-      threads_free(&epoll->threads);
-      return net_failure;
+      goto err_fd;
     }
     fd = eventfd(0, 0);
     if(fd == -1) {
-      (void) close(epoll->fd);
-      threads_free(&epoll->threads);
-      return net_failure;
+      goto err_mutex;
     }
     epoll->base.events = EPOLLIN;
     epoll->base.which = net_wakeup_method;
     epoll->base.sfd = fd;
-    fd = net_epoll_add(epoll, &epoll->base);
-    if(fd != net_success) {
-      (void) close(epoll->fd);
+    if(net_epoll_add(epoll, &epoll->base) != 0) {
       (void) close(epoll->base.sfd);
-      threads_free(&epoll->threads);
-      return fd;
+      goto err_mutex;
     }
-  } else {
-    epoll->base.sfd = -1;
   }
   if(epoll->events == NULL) {
     epoll->threads.func = net_epoll_thread;
@@ -496,11 +481,18 @@ int net_epoll(struct net_epoll* const epoll, void (*on_event)(struct net_epoll*,
     epoll->threads.func = net_epoll_thread_eventless;
   }
   epoll->threads.data = epoll;
-  epoll->on_event = on_event;
-  return net_success;
+  return 0;
+  
+  err_mutex:
+  pthread_mutex_destroy(&epoll->lock);
+  err_fd:
+  (void) close(epoll->fd);
+  err_threads:
+  threads_free(&epoll->threads);
+  return -1;
 }
 
-int net_epoll_start(struct net_epoll* const epoll, const unsigned amount) {
+int net_epoll_start(struct net_epoll* const epoll, const uint32_t amount) {
   return threads_add(&epoll->threads, amount);
 }
 
@@ -516,16 +508,12 @@ void net_epoll_free(struct net_epoll* const epoll) {
 }
 
 static int net_epoll_modify(struct net_epoll* const epoll, struct net_socket_base* const base, const int method) {
-  const int err = epoll_ctl(epoll->fd, method, base->sfd, &((struct epoll_event) {
+  return epoll_ctl(epoll->fd, method, base->sfd, &((struct epoll_event) {
     .events = base->events,
     .data = (epoll_data_t) {
       .ptr = base
     }
   }));
-  if(err != 0) {
-    return net_failure;
-  }
-  return net_success;
 }
 
 int net_epoll_add(struct net_epoll* const epoll, struct net_socket_base* const base) {
@@ -542,17 +530,17 @@ int net_epoll_remove(struct net_epoll* const epoll, struct net_socket_base* cons
 
 
 
-int net_epoll_tbc_resize(struct net_epoll* const epoll, const unsigned new_size) {
+int net_epoll_tbc_resize(struct net_epoll* const epoll, const uint32_t new_size) {
   (void) pthread_mutex_lock(&epoll->lock);
   struct net_socket_base** const ptr = realloc(epoll->bases_tbc, sizeof(struct net_socket_base*) * new_size);
   if(ptr == NULL) {
     (void) pthread_mutex_unlock(&epoll->lock);
-    return net_failure;
+    return -1;
   }
   epoll->bases_tbc = ptr;
   ++epoll->bases_tbc_size;
   (void) pthread_mutex_unlock(&epoll->lock);
-  return net_success;
+  return 0;
 }
 
 /* This will ONLY work when the base is in 1 epoll */
@@ -563,7 +551,7 @@ int net_epoll_safe_remove(struct net_epoll* const epoll, struct net_socket_base*
     struct net_socket_base** const ptr = realloc(epoll->bases_tbc, sizeof(struct net_socket_base*) * (epoll->bases_tbc_size + 1));
     if(ptr == NULL) {
       (void) pthread_mutex_unlock(&epoll->lock);
-      return net_failure;
+      return -1;
     }
     epoll->bases_tbc = ptr;
     ++epoll->bases_tbc_size;
@@ -572,5 +560,5 @@ int net_epoll_safe_remove(struct net_epoll* const epoll, struct net_socket_base*
   (void) pthread_mutex_unlock(&epoll->lock);
   const int ret = eventfd_write(epoll->base.sfd, 1);
   (void) ret;
-  return net_success;
+  return 0;
 }
