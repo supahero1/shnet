@@ -20,9 +20,9 @@ The `tcp` module implements non-blocking `tcp` clients and servers using the eve
 
 The `tls` module is built using OpenSSL and runs on top of the `tcp` module using callbacks that the `tcp` module provides. TLS clients have higher lock contention than TCP ones due to 2 more locks that are required to function. TLS functions are almost an exact copy of TCP ones to make it as intuitive to use as possible.
 
-The upcoming `compress` module will implement DEFLATE and Brotli compression & decompression.
+The `compress` module implements DEFLATE and Brotli compression & decompression.
 
-The upcoming `http_p` module will implement high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers will not be RFC compliant. The application will be able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application will be able to be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers will not start from the beginning again, but rather resume right where they stopped.
+The `http_p` module implements high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers is not be RFC compliant. The application is able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application can be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers is not start from the beginning again, but rather resume right where they stopped.
 
 The upcoming `http` module will implement highly customizable HTTP 1.1 TCP and TLS clients and servers.
 
