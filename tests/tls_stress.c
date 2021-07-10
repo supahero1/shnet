@@ -130,7 +130,7 @@ void unlock_mutexo(void* da) {
 }
 
 int main(int argc, char **argv) {
-  puts("Testing tls_stress.c:");
+  puts("Testing tls_stress:");
   srand(time_get_time());
   sem_init(&sem, 0, 0);
   pthread_mutex_lock(&mutex);

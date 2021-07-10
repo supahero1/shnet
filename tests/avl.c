@@ -142,7 +142,7 @@ void delnode(struct avl_node* node) {
 }
 
 int main() {
-  printf_debug("Testing avl.c:", 1);
+  printf_debug("Testing avl:", 1);
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);

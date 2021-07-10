@@ -130,14 +130,10 @@ void cbbenchfunc(void* data) {
 int counter = 0;
 
 int main() {
-  printf_debug("Testing time.c:", 1);
+  printf_debug("Testing time:", 1);
   printf_debug("1. Stress test", 1);
   puts("If a round takes longer than 5 seconds, consider the test failed and feel free to break out using an interrupt (^C).");
-  {
-    struct timespec tp;
-    (void) clock_gettime(CLOCK_REALTIME, &tp);
-    srand(tp.tv_nsec + tp.tv_sec * 1000000000);
-  }
+  srand(time_get_time());
   (void) pthread_mutex_lock(&mutexo);
   struct time_manager manager;
   start:

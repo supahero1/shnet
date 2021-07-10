@@ -147,7 +147,7 @@ void unlock_mutexo(void* da) {
 }
 
 int main(int argc, char **argv) {
-  puts("Testing tls.c:");
+  puts("Testing tls:");
   srand(time_get_time());
   sem_init(&sem, 0, 0);
   pthread_mutex_lock(&mutex);

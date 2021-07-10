@@ -5,7 +5,7 @@
 
 void printf_debug(const char*, const int, ...);
 
-void print_debug(const char*, const int, ...)
+void print_debug(const char*, const int, ...);
 
 #define die(msg, err) printf_debug("%s failed at line %d file %s with code %d errno %d", 0, msg, __LINE__, __FILE__, err, errno);
 

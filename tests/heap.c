@@ -25,7 +25,7 @@ static int cmp(const void* i1, const void* i2) {
 }
 
 int main() {
-  printf_debug("Testing heap.c:", 1);
+  printf_debug("Testing heap:", 1);
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);

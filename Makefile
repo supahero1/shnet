@@ -1,251 +1,89 @@
 empty: ;
-.PHONY: empty build test clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
+.PHONY: empty build test build-tests clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 
-CMPE_CORE=gcc -pthread -Wall -pedantic
-CMPE=O3
+CC = gcc
+CFLAGS += -pthread -Wall -pedantic -O3
+LDLIBS += -lshnet
+TESTLIBS = -lm -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
+
 ifneq ($(debug),)
-COMP=$(CMPE_CORE) -$(CMPE) -D SHNET_DEBUG
-else
-COMP=$(CMPE_CORE) -$(CMPE)
+CFLAGS += -D SHNET_DEBUG
 endif
-FILENAMES=build/debug.o build/heap.o build/refheap.o build/avl.o build/threads.o build/misc.o build/time.o build/net.o build/udp.o build/udplite.o build/aflags.o build/tcp.o build/tls.o
 
-build: prepare $(FILENAMES)
+SOURCES = $(wildcard src/*.c)
+OBJECTS = $(SOURCES:src/%.c=build/%.o)
 
-test: $(wildcard tests/*.c) $(wildcard tests/*.h)
-	$(COMP) tests/heap.c -o build/heap -lshnet && build/heap
-	$(COMP) tests/avl.c -o build/avl -lshnet && build/avl
-	$(COMP) tests/threads.c -o build/threads -lshnet && build/threads
-	$(COMP) tests/time.c -o build/time -lshnet -lm && build/time
-	$(COMP) tests/udp.c -o build/udp -lshnet && build/udp
-	$(COMP) tests/tcp.c -o build/tcp -lshnet
-	build/tcp 1 1 1
-	build/tcp 1 1 0
-	build/tcp 100 1 1
-	build/tcp 100 1 0
-	build/tcp 100 10 1
-	build/tcp 100 10 0
-	build/tcp 100 100 1
-	build/tcp 100 100 0
-	build/tcp 100 1000 1
-	build/tcp 100 1000 0
-	$(COMP) tests/tcp_stress.c -o build/tcp_stress -lshnet
-	build/tcp_stress 1 1 1
-	build/tcp_stress 1 1 0
-	build/tcp_stress 1 2 1
-	build/tcp_stress 1 2 0
-	build/tcp_stress 1 3 1
-	build/tcp_stress 1 3 0
-	build/tcp_stress 1 4 1
-	build/tcp_stress 1 4 0
-	build/tcp_stress 1 5 1
-	build/tcp_stress 1 5 0
-	build/tcp_stress 1 6 1
-	build/tcp_stress 1 6 0
-	build/tcp_stress 1 7 1
-	build/tcp_stress 1 7 0
-	build/tcp_stress 1 8 1
-	build/tcp_stress 1 8 0
-	build/tcp_stress 1 9 1
-	build/tcp_stress 1 9 0
-	build/tcp_stress 1 10 1
-	build/tcp_stress 1 10 0
-	build/tcp_stress 1 15 1
-	build/tcp_stress 1 15 0
-	build/tcp_stress 1 20 1
-	build/tcp_stress 1 20 0
-	build/tcp_stress 1 25 1
-	build/tcp_stress 1 25 0
-	build/tcp_stress 1 30 1
-	build/tcp_stress 1 30 0
-	build/tcp_stress 1 35 1
-	build/tcp_stress 1 35 0
-	build/tcp_stress 1 40 1
-	build/tcp_stress 1 40 0
-	build/tcp_stress 1 45 1
-	build/tcp_stress 1 45 0
-	build/tcp_stress 1 50 1
-	build/tcp_stress 1 50 0
-	build/tcp_stress 1 60 1
-	build/tcp_stress 1 60 0
-	build/tcp_stress 1 70 1
-	build/tcp_stress 1 70 0
-	build/tcp_stress 1 80 1
-	build/tcp_stress 1 80 0
-	build/tcp_stress 1 90 1
-	build/tcp_stress 1 90 0
-	build/tcp_stress 1 100 1
-	build/tcp_stress 1 100 0
-	build/tcp_stress 1 200 1
-	build/tcp_stress 1 200 0
-	build/tcp_stress 1 1000 1
-	build/tcp_stress 1 1000 0
+TEST_SUITES = $(wildcard tests/*.c)
+TEST_EXECS = $(TEST_SUITES:tests/%.c=build/test_%)
+
+build: prepare $(OBJECTS)
+
+test: prepare $(TEST_EXECS)
+	build/test_heap
+	build/test_avl
+	build/test_threads
+	build/test_time
+	build/test_udp
 	
-	build/tcp_stress 100 1 1
-	build/tcp_stress 100 1 0
-	build/tcp_stress 100 2 1
-	build/tcp_stress 100 2 0
-	build/tcp_stress 100 3 1
-	build/tcp_stress 100 3 0
-	build/tcp_stress 100 4 1
-	build/tcp_stress 100 4 0
-	build/tcp_stress 100 5 1
-	build/tcp_stress 100 5 0
-	build/tcp_stress 100 6 1
-	build/tcp_stress 100 6 0
-	build/tcp_stress 100 7 1
-	build/tcp_stress 100 7 0
-	build/tcp_stress 100 8 1
-	build/tcp_stress 100 8 0
-	build/tcp_stress 100 9 1
-	build/tcp_stress 100 9 0
-	build/tcp_stress 100 10 1
-	build/tcp_stress 100 10 0
-	build/tcp_stress 100 15 1
-	build/tcp_stress 100 15 0
-	build/tcp_stress 100 20 1
-	build/tcp_stress 100 20 0
-	build/tcp_stress 100 25 1
-	build/tcp_stress 100 25 0
-	build/tcp_stress 100 30 1
-	build/tcp_stress 100 30 0
-	build/tcp_stress 100 35 1
-	build/tcp_stress 100 35 0
-	build/tcp_stress 100 40 1
-	build/tcp_stress 100 40 0
-	build/tcp_stress 100 45 1
-	build/tcp_stress 100 45 0
-	build/tcp_stress 100 50 1
-	build/tcp_stress 100 50 0
-	build/tcp_stress 100 60 1
-	build/tcp_stress 100 60 0
-	build/tcp_stress 100 70 1
-	build/tcp_stress 100 70 0
-	build/tcp_stress 100 80 1
-	build/tcp_stress 100 80 0
-	build/tcp_stress 100 90 1
-	build/tcp_stress 100 90 0
-	build/tcp_stress 100 100 1
-	build/tcp_stress 100 100 0
-	build/tcp_stress 100 200 1
-	build/tcp_stress 100 200 0
-	build/tcp_stress 100 1000 1
-	build/tcp_stress 100 1000 0
+	build/test_tcp 1 1 1
+	build/test_tcp 1 1 0
+	build/test_tcp 100 1 1
+	build/test_tcp 100 1 0
+	build/test_tcp 100 100 1
+	build/test_tcp 100 100 0
+	build/test_tcp 100 1000 1
+	build/test_tcp 100 1000 0
 	
-	$(COMP) tests/tls.c -o build/tls -lshnet -lssl -lcrypto
-	build/tls 1 1 1
-	build/tls 1 1 0
+	build/test_tcp_stress 1 1 1
+	build/test_tcp_stress 1 1 0
+	build/test_tcp_stress 1 10 1
+	build/test_tcp_stress 1 10 0
+	build/test_tcp_stress 1 100 1
+	build/test_tcp_stress 1 100 0
+	build/test_tcp_stress 1 1000 1
+	build/test_tcp_stress 1 1000 0
 	
-	build/tls 100 1 1
-	build/tls 100 1 0
-	build/tls 100 10 1
-	build/tls 100 10 0
-	build/tls 100 100 1
-	build/tls 100 100 0
-	build/tls 100 1000 1
-	build/tls 100 1000 0
-	$(COMP) tests/tls_stress.c -o build/tls_stress -lshnet -lssl -lcrypto
-	build/tls_stress 1 1 1
-	build/tls_stress 1 1 0
-	build/tls_stress 1 2 1
-	build/tls_stress 1 2 0
-	build/tls_stress 1 3 1
-	build/tls_stress 1 3 0
-	build/tls_stress 1 4 1
-	build/tls_stress 1 4 0
-	build/tls_stress 1 5 1
-	build/tls_stress 1 5 0
-	build/tls_stress 1 6 1
-	build/tls_stress 1 6 0
-	build/tls_stress 1 7 1
-	build/tls_stress 1 7 0
-	build/tls_stress 1 8 1
-	build/tls_stress 1 8 0
-	build/tls_stress 1 9 1
-	build/tls_stress 1 9 0
-	build/tls_stress 1 10 1
-	build/tls_stress 1 10 0
-	build/tls_stress 1 15 1
-	build/tls_stress 1 15 0
-	build/tls_stress 1 20 1
-	build/tls_stress 1 20 0
-	build/tls_stress 1 25 1
-	build/tls_stress 1 25 0
-	build/tls_stress 1 30 1
-	build/tls_stress 1 30 0
-	build/tls_stress 1 35 1
-	build/tls_stress 1 35 0
-	build/tls_stress 1 40 1
-	build/tls_stress 1 40 0
-	build/tls_stress 1 45 1
-	build/tls_stress 1 45 0
-	build/tls_stress 1 50 1
-	build/tls_stress 1 50 0
-	build/tls_stress 1 60 1
-	build/tls_stress 1 60 0
-	build/tls_stress 1 70 1
-	build/tls_stress 1 70 0
-	build/tls_stress 1 80 1
-	build/tls_stress 1 80 0
-	build/tls_stress 1 90 1
-	build/tls_stress 1 90 0
-	build/tls_stress 1 100 1
-	build/tls_stress 1 100 0
-	build/tls_stress 1 200 1
-	build/tls_stress 1 200 0
-	build/tls_stress 1 1000 1
-	build/tls_stress 1 1000 0
+	build/test_tcp_stress 100 1 1
+	build/test_tcp_stress 100 1 0
+	build/test_tcp_stress 100 10 1
+	build/test_tcp_stress 100 10 0
+	build/test_tcp_stress 100 100 1
+	build/test_tcp_stress 100 100 0
+	build/test_tcp_stress 100 1000 1
+	build/test_tcp_stress 100 1000 0
 	
-	build/tls_stress 100 1 1
-	build/tls_stress 100 1 0
-	build/tls_stress 100 2 1
-	build/tls_stress 100 2 0
-	build/tls_stress 100 3 1
-	build/tls_stress 100 3 0
-	build/tls_stress 100 4 1
-	build/tls_stress 100 4 0
-	build/tls_stress 100 5 1
-	build/tls_stress 100 5 0
-	build/tls_stress 100 6 1
-	build/tls_stress 100 6 0
-	build/tls_stress 100 7 1
-	build/tls_stress 100 7 0
-	build/tls_stress 100 8 1
-	build/tls_stress 100 8 0
-	build/tls_stress 100 9 1
-	build/tls_stress 100 9 0
-	build/tls_stress 100 10 1
-	build/tls_stress 100 10 0
-	build/tls_stress 100 15 1
-	build/tls_stress 100 15 0
-	build/tls_stress 100 20 1
-	build/tls_stress 100 20 0
-	build/tls_stress 100 25 1
-	build/tls_stress 100 25 0
-	build/tls_stress 100 30 1
-	build/tls_stress 100 30 0
-	build/tls_stress 100 35 1
-	build/tls_stress 100 35 0
-	build/tls_stress 100 40 1
-	build/tls_stress 100 40 0
-	build/tls_stress 100 45 1
-	build/tls_stress 100 45 0
-	build/tls_stress 100 50 1
-	build/tls_stress 100 50 0
-	build/tls_stress 100 60 1
-	build/tls_stress 100 60 0
-	build/tls_stress 100 70 1
-	build/tls_stress 100 70 0
-	build/tls_stress 100 80 1
-	build/tls_stress 100 80 0
-	build/tls_stress 100 90 1
-	build/tls_stress 100 90 0
-	build/tls_stress 100 100 1
-	build/tls_stress 100 100 0
-	build/tls_stress 100 200 1
-	build/tls_stress 100 200 0
-	build/tls_stress 100 1000 1
-	build/tls_stress 100 1000 0
+	build/test_tls 1 1 1
+	build/test_tls 1 1 0
+	build/test_tls 100 1 1
+	build/test_tls 100 1 0
+	build/test_tls 100 100 1
+	build/test_tls 100 100 0
+	build/test_tls 100 1000 1
+	build/test_tls 100 1000 0
+	
+	build/test_tls_stress 1 1 1
+	build/test_tls_stress 1 1 0
+	build/test_tls_stress 1 10 1
+	build/test_tls_stress 1 10 0
+	build/test_tls_stress 1 100 1
+	build/test_tls_stress 1 100 0
+	build/test_tls_stress 1 1000 1
+	build/test_tls_stress 1 1000 0
+	
+	build/test_tls_stress 100 1 1
+	build/test_tls_stress 100 1 0
+	build/test_tls_stress 100 10 1
+	build/test_tls_stress 100 10 0
+	build/test_tls_stress 100 100 1
+	build/test_tls_stress 100 100 0
+	build/test_tls_stress 100 1000 1
+	build/test_tls_stress 100 1000 0
+	
+	build/test_compression
+	build/test_http_p
+
+build/test_%: tests/%.c tests/tests.h src/debug.c src/debug.h
+	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
 
 clean:
 	rm -r -f build logs.txt
@@ -264,7 +102,7 @@ copy-headers:
 	cp src/*.h shnet/
 
 build-static: build
-	ar rcsv build/libshnet.a $(FILENAMES)
+	ar rcsv build/libshnet.a $(OBJECTS)
 
 static: build-static include
 	cp build/libshnet.a /usr/lib/
@@ -274,7 +112,7 @@ strip-static: build-static copy-headers
 	cp build/libshnet.a shnet/
 
 build-dynamic: build
-	$(COMP) $(FILENAMES) -shared -o build/libshnet.so -lssl -lcrypto
+	$(CC) $(CFLAGS) $(OBJECTS) -shared -o build/libshnet.so -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
 
 dynamic: build-dynamic include
 	cp build/libshnet.so /usr/lib/
@@ -288,41 +126,19 @@ uninstall:
 	rm -r -f /usr/include/shnet /usr/local/include/shnet shnet
 
 
-build/debug.o: src/debug.h src/debug.c
-	$(COMP) -fPIC -c src/debug.c -o build/debug.o
+build/refheap.o: build/heap.o
 
-build/heap.o: src/heap.h src/heap.c
-	$(COMP) -fPIC -c src/heap.c -o build/heap.o
+build/time.o: build/threads.o
 
-build/refheap.o: src/refheap.h src/refheap.c build/heap.o
-	$(COMP) -fPIC -c src/refheap.c -o build/refheap.o
+build/net.o: build/threads.o
 
-build/avl.o: src/avl.h src/avl.c
-	$(COMP) -fPIC -c src/avl.c -o build/avl.o
+build/udp.o: build/net.o
 
-build/threads.o: src/threads.h src/threads.c
-	$(COMP) -fPIC -c src/threads.c -o build/threads.o
+build/udplite.o: build/udp.o
 
-build/misc.o: src/misc.h src/misc.c
-	$(COMP) -fPIC -c src/misc.c -o build/misc.o
+build/tcp.o: build/net.o
 
-build/time.o: src/time.h src/time.c build/refheap.o build/threads.o
-	$(COMP) -fPIC -c src/time.c -o build/time.o
+build/tls.o: build/tcp.o
 
-build/net.o: src/net.h src/net.c build/threads.o
-	$(COMP) -fPIC -c src/net.c -o build/net.o
-
-build/udp.o: src/udp.h src/udp.c build/net.o
-	$(COMP) -fPIC -c src/udp.c -o build/udp.o
-
-build/udplite.o: src/udplite.h src/udplite.c build/udp.o
-	$(COMP) -fPIC -c src/udplite.c -o build/udplite.o
-
-build/aflags.o: src/aflags.h src/aflags.c
-	$(COMP) -fPIC -c src/aflags.c -o build/aflags.o
-
-build/tcp.o: src/tcp.h src/tcp.c build/misc.o build/net.o
-	$(COMP) -fPIC -c src/tcp.c -o build/tcp.o
-
-build/tls.o: src/tls.h src/tls.c build/tcp.o
-	$(COMP) -fPIC -c src/tls.c -o build/tls.o
+build/%.o: src/%.c src/%.h
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@

@@ -63,7 +63,7 @@ do { \
 } while(0)
 
 int main() {
-  printf_debug("Testing udp.c:", 1);
+  printf_debug("Testing udp:", 1);
   puts("Please keep the port 8099 empty for the test to succeed.");
   int err;
   
