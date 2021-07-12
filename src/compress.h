@@ -8,13 +8,13 @@
 
 extern void* brotli_compress(const void* const, const size_t, size_t* const, const int, const int, const int);
 
-extern void* brotli_decompress(void* const, size_t, size_t* const);
+extern void* brotli_decompress(void* const, size_t, size_t* const, const size_t);
 
 
 #include <zlib.h>
 
 extern void* deflate_compress(void* const, const size_t, size_t* const, const int);
 
-extern void* deflate_decompress(void* const, size_t, size_t* const);
+extern void* deflate_decompress(void* const, size_t, size_t* const, const size_t);
 
 #endif // EfOx_7R__HX1BItU5S_d__q_0uXr_KT_

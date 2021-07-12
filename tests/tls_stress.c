@@ -21,19 +21,16 @@ _Atomic int dont_reattempt = 0;
 
 #define time_to_wait_s 1UL
 
-struct tcp_socket_callbacks serversock_tcp_cb;
 struct tcp_socket_settings serversock_tcp_set;
 
 struct tls_socket_callbacks serversock_tls_cb;
 struct tls_socket_settings serversock_tls_set;
 
-struct tcp_socket_callbacks clientsock_tcp_cb;
 struct tcp_socket_settings clientsock_tcp_set;
 
 struct tls_socket_callbacks clientsock_tls_cb;
 struct tls_socket_settings clientsock_tls_set;
 
-struct tcp_server_callbacks server_tcp_cb;
 struct tls_server_callbacks server_tls_cb;
 struct tcp_server_settings server_set;
 
@@ -71,10 +68,9 @@ int sock_onnomem(struct tls_socket* socket) {
 
 
 int onconnection(struct tls_socket* socket) {
-  socket->callbacks = &serversock_tcp_cb;
-  socket->settings = &serversock_tcp_set;
-  socket->tls_callbacks = &serversock_tls_cb;
-  socket->tls_settings = &serversock_tls_set;
+  socket->tcp.settings = &serversock_tcp_set;
+  socket->callbacks = &serversock_tls_cb;
+  socket->settings = &serversock_tls_set;
   if(tls_socket_init(socket, net_server) != 0) {
     TEST_FAIL;
   }
@@ -95,9 +91,9 @@ void onshutdown(struct tls_server* server) {
 
 int server_pick_address(struct addrinfo* info, void* data) {
   char ip[ip_max_strlen];
-  net_sockbase_set_family(&server->base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&server->base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&server->base), ip);
+  net_sockbase_set_family(&server->tcp.base, net_addrinfo_get_family(info));
+  net_sockbase_set_whole_addr(&server->tcp.base, net_addrinfo_get_whole_addr(info));
+  (void) net_address_to_string(net_sockbase_get_whole_addr(&server->tcp.base), ip);
   if(tls_create_server(server) != 0) {
     printf("server_pick_address() err %s errno %d\n", net_strerror(errno), errno);
     return -1;
@@ -111,9 +107,9 @@ int server_pick_address(struct addrinfo* info, void* data) {
 
 int socket_pick_address(struct addrinfo* info, void* data) {
   char ip[ip_max_strlen];
-  net_sockbase_set_family(&socket->base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->base), ip);
+  net_sockbase_set_family(&socket->tcp.base, net_addrinfo_get_family(info));
+  net_sockbase_set_whole_addr(&socket->tcp.base, net_addrinfo_get_whole_addr(info));
+  (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->tcp.base), ip);
   if(tls_create_socket(socket) != 0) {
     printf("socket_pick_address() err %s errno %d\n", net_strerror(errno), errno);
     return -1;
@@ -136,19 +132,14 @@ int main(int argc, char **argv) {
   pthread_mutex_lock(&mutex);
   tls_ignore_sigpipe();
   
-  memset(&serversock_tcp_cb, 0, sizeof(serversock_tcp_cb));
   memset(&serversock_tcp_set, 0, sizeof(serversock_tcp_set));
   memset(&serversock_tls_cb, 0, sizeof(serversock_tls_cb));
   memset(&serversock_tls_set, 0, sizeof(serversock_tls_set));
-  memset(&clientsock_tcp_cb, 0, sizeof(clientsock_tcp_cb));
   memset(&clientsock_tcp_set, 0, sizeof(clientsock_tcp_set));
   memset(&clientsock_tls_cb, 0, sizeof(clientsock_tls_cb));
   memset(&clientsock_tls_set, 0, sizeof(clientsock_tls_set));
-  memset(&server_tcp_cb, 0, sizeof(server_tcp_cb));
   memset(&server_tls_cb, 0, sizeof(server_tls_cb));
   memset(&server_set, 0, sizeof(server_set));
-  
-  serversock_tcp_cb = tls_default_tcp_socket_callbacks;
   
   serversock_tcp_set = (struct tcp_socket_settings) {
     .send_buffer_cleanup_threshold = UINT_MAX,
@@ -176,8 +167,6 @@ int main(int argc, char **argv) {
     .onreadclose_auto_res = tls_onreadclose_tls_close
   };
   
-  clientsock_tcp_cb = tls_default_tcp_socket_callbacks;
-  
   clientsock_tcp_set = serversock_tcp_set;
   
   clientsock_tls_cb = (struct tls_socket_callbacks) {
@@ -192,8 +181,6 @@ int main(int argc, char **argv) {
   };
   
   clientsock_tls_set = serversock_tls_set;
-  
-  server_tcp_cb = tls_default_tcp_server_callbacks;
   
   server_tls_cb = (struct tls_server_callbacks) {
     .onconnection = onconnection,
@@ -273,13 +260,12 @@ int main(int argc, char **argv) {
   memset(servers, 0, sizeof(struct tls_server) * nservers);
   for(int i = 0; i < nservers; ++i) {
     if(shared_epoll == 1) {
-      servers[i].epoll = &socket_epoll;
+      servers[i].tcp.epoll = &socket_epoll;
     } else {
-      servers[i].epoll = &server_epoll;
+      servers[i].tcp.epoll = &server_epoll;
     }
-    servers[i].settings = &server_set;
-    servers[i].callbacks = &server_tcp_cb;
-    servers[i].tls_callbacks = &server_tls_cb;
+    servers[i].tcp.settings = &server_set;
+    servers[i].callbacks = &server_tls_cb;
     servers[i].ctx = server_ctx;
     
     if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) != 0) {
@@ -303,11 +289,10 @@ int main(int argc, char **argv) {
   }
   memset(sockets, 0, sizeof(struct tls_socket) * nclients);
   for(int i = 0; i < nclients; ++i) {
-    sockets[i].epoll = &socket_epoll;
-    sockets[i].callbacks = &clientsock_tcp_cb;
-    sockets[i].settings = &clientsock_tcp_set;
-    sockets[i].tls_callbacks = &clientsock_tls_cb;
-    sockets[i].tls_settings = &clientsock_tls_set;
+    sockets[i].tcp.epoll = &socket_epoll;
+    sockets[i].tcp.settings = &clientsock_tcp_set;
+    sockets[i].callbacks = &clientsock_tls_cb;
+    sockets[i].settings = &clientsock_tls_set;
     sockets[i].ctx = client_ctx;
     
     /* Pick an address for the socket */

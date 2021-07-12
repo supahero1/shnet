@@ -62,6 +62,11 @@ static inline void tcp_socket_no_linger(const int sfd) {
   (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
 }
 
+void tcp_socket_stop_receiving_data(struct tcp_socket* const socket) {
+  tcp_socket_set_flag(socket, tcp_data_ended);
+  (void) shutdown(socket->base.sfd, SHUT_RD);
+}
+
 
 
 /* This function MUST only be called from within the onclose() callback or after
@@ -141,31 +146,32 @@ int tcp_create_socket(struct tcp_socket* const sock) {
     const int ret = pthread_mutex_init(&sock->lock, NULL);
     if(ret != 0) {
       errno = ret;
-      goto sock;
+      goto err_sock;
     }
   }
   if(net_socket_base_options(sock->base.sfd) != 0) {
-    goto mutex;
+    goto err_mutex;
   }
   if(net_connect_socket(sock->base.sfd, &sock->base.addr) != 0 && errno != EINPROGRESS) {
-    goto mutex;
+    goto err_mutex;
   }
   /* Pretty late so that we don't have to call onfree() numerous times above */
   if(sock->callbacks->oncreation != NULL && sock->callbacks->oncreation(sock) != 0) {
-    goto mutex;
+    goto err_mutex;
   }
   if(net_epoll_add(sock->epoll, &sock->base) != 0) {
     /* Makes sense to use onfree() only if oncreation() is set too */
     if(sock->callbacks->onfree != NULL) {
       sock->callbacks->onfree(sock);
     }
-    goto mutex;
+    goto err_mutex;
   }
   return 0;
-  mutex:
+  
+  err_mutex:
   (void) pthread_mutex_destroy(&sock->lock);
   (void) memset(&sock->lock, 0, sizeof(pthread_mutex_t));
-  sock:
+  err_sock:
   (void) close(sock->base.sfd);
   /* Don't zero the address */
   sock->base.sfd = 0;
@@ -293,6 +299,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
 /* tcp_read() returns the amount of data read. It might set errno to an error code.
 
 If errno is EPIPE, there is no more data to be read (but data might have been read).
+The same goes for EAGAIN, but EAGAIN is retryable.
 
 The onreadclose() callback DOES NOT mean there is no more data to be read. It
 only means that the peer won't send more data - we can close our channel to
@@ -313,9 +320,7 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
   while(1) {
     const ssize_t bytes = recv(socket->base.sfd, data, size, 0);
     if(bytes == -1) {
-      if(errno == EAGAIN) {
-        errno = 0;
-      } else if(errno == EINTR) {
+      if(errno == EINTR) {
         continue;
       }
       /* Wait until the next epoll iteration. If the error was fatal, the connection

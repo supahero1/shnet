@@ -337,10 +337,12 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       case http_e_deflate: {
         size_t len;
         errno = 0;
-        message->body = deflate_decompress(buffer, message->body_len, &len);
+        message->body = deflate_decompress(buffer, message->body_len, &len, settings->max_body_len);
         if(message->body == NULL) {
           if(errno == ENOMEM) {
             return http_out_of_memory;
+          } else if(errno == EOVERFLOW) {
+            return http_body_too_long;
           } else {
             return http_corrupted_body_compression;
           }
@@ -354,10 +356,12 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       }
       case http_e_brotli: {
         size_t len;
-        message->body = brotli_decompress(buffer, message->body_len, &len);
+        message->body = brotli_decompress(buffer, message->body_len, &len, settings->max_body_len);
         if(message->body == NULL) {
           if(errno == ENOMEM) {
             return http_out_of_memory;
+          } else if(errno == EOVERFLOW) {
+            return http_body_too_long;
           } else {
             return http_corrupted_body_compression;
           }
@@ -637,3 +641,12 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
 }
 
 #undef ATLEAST
+
+struct http_header* http1_seek_header(const struct http_message* const message, const char* const name, const uint32_t len) {
+  for(uint32_t i = 0; i < message->headers_len; ++i) {
+    if(message->headers[i].name_len == len && strncasecmp(message->headers[i].name, name, len) == 0) {
+      return message->headers + i;
+    }
+  }
+  return NULL;
+}

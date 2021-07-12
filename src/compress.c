@@ -32,7 +32,7 @@ void* brotli_compress(const void* const input, const size_t input_len, size_t* c
   return NULL;
 }
 
-void* brotli_decompress(void* const input, size_t input_len, size_t* const output_len) {
+void* brotli_decompress(void* const input, size_t input_len, size_t* const output_len, const size_t limit) {
   BrotliDecoderState* state = BrotliDecoderCreateInstance(NULL, NULL, NULL);
   if(state == NULL) {
     return NULL;
@@ -70,6 +70,12 @@ void* brotli_decompress(void* const input, size_t input_len, size_t* const outpu
       case BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT: {
         available_out += input_len;
         input_len <<= 1;
+        if(input_len > limit) {
+          BrotliDecoderDestroyInstance(state);
+          free(output);
+          errno = EOVERFLOW;
+          return NULL;
+        }
         output = realloc(output, input_len);
         if(output == NULL) {
           BrotliDecoderDestroyInstance(state);
@@ -110,7 +116,7 @@ void* deflate_compress(void* const input, const size_t input_len, size_t* const 
   return output;
 }
 
-void* deflate_decompress(void* const input, size_t input_len, size_t* const output_len) {
+void* deflate_decompress(void* const input, size_t input_len, size_t* const output_len, const size_t limit) {
   void* output = malloc(input_len);
   if(output == NULL) {
     return NULL;
@@ -136,6 +142,12 @@ void* deflate_decompress(void* const input, size_t input_len, size_t* const outp
           avail = input_len;
           strm.avail_out += input_len;
           input_len <<= 1;
+          if(input_len > limit) {
+            free(output);
+            inflateEnd(&strm);
+            errno = EOVERFLOW;
+            return NULL;
+          }
           output = realloc(output, input_len);
           if(output == NULL) {
             inflateEnd(&strm);
