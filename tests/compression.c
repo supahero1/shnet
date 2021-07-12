@@ -16,7 +16,7 @@ void brotli_test(char* text) {
     TEST_FAIL;
   }
   size_t brotli_decompressed_length;
-  char* brotli_decompressed = brotli_decompress(brotli_compressed, brotli_compressed_length, &brotli_decompressed_length);
+  char* brotli_decompressed = brotli_decompress(brotli_compressed, brotli_compressed_length, &brotli_decompressed_length, 8192);
   if(brotli_decompressed == NULL) {
     TEST_FAIL;
   }
@@ -38,7 +38,7 @@ void deflate_test(char* text) {
     TEST_FAIL;
   }
   size_t deflate_decompressed_length;
-  char* deflate_decompressed = deflate_decompress(deflate_compressed, deflate_compressed_length, &deflate_decompressed_length);
+  char* deflate_decompressed = deflate_decompress(deflate_compressed, deflate_compressed_length, &deflate_decompressed_length, 8192);
   if(deflate_decompressed == NULL) {
     TEST_FAIL;
   }

@@ -21,7 +21,7 @@ It does support:
 5. Various parsing settings
 */
 
-enum http_consts {
+enum http_p_sconsts {
   /* ERROR CODES */
   http_success,
   http_failure,
@@ -250,5 +250,7 @@ const struct http_parser_settings* const, struct http_message* const);
 
 extern int http1_parse_response(char*, uint32_t, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);
+
+extern struct http_header* http1_seek_header(const struct http_message* const, const char* const, const uint32_t);
 
 #endif // sKfWRTuG___9H8Dcb_vfV_0___tcQl_u

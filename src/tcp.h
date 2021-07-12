@@ -128,6 +128,9 @@ extern int tcp_socket_keepalive(const struct tcp_socket* const);
 
 extern int tcp_socket_keepalive_explicit(const struct tcp_socket* const, const int, const int, const int);
 
+extern void tcp_socket_stop_receiving_data(struct tcp_socket* const);
+
+
 extern void tcp_socket_free(struct tcp_socket* const);
 
 extern void tcp_socket_close(struct tcp_socket* const);
