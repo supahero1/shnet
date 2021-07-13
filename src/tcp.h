@@ -99,9 +99,11 @@ struct tcp_socket_callbacks {
 };
 
 struct tcp_socket_settings {
-  unsigned send_buffer_cleanup_threshold;
-  unsigned onreadclose_auto_res:1;
-  unsigned remove_from_epoll_onclose:1;
+  uint32_t send_buffer_cleanup_threshold;
+  uint32_t onreadclose_auto_res:1;
+  uint32_t remove_from_epoll_onclose:1;
+  uint32_t dont_free_addrinfo:1;
+  uint32_t _unused:29;
 };
 
 /* A tcp_socket's address after the call to tcp_create_socket() MUST NOT BE CHANGED.
@@ -113,10 +115,14 @@ struct tcp_socket {
   struct tcp_socket_callbacks* callbacks;
   struct tcp_socket_settings* settings;
   struct net_epoll* epoll;
+  /* If the connection fails and info is not NULL, the connection will be silently
+  retried with tthe next available address */
+  struct addrinfo* info;
+  struct addrinfo* cur_info;
   pthread_mutex_t lock;
   char* send_buffer;
-  unsigned send_used;
-  unsigned send_size;
+  uint32_t send_used;
+  uint32_t send_size;
   _Atomic uint32_t flags;
 };
 
@@ -164,12 +170,12 @@ struct tcp_server_callbacks {
 };
 
 struct tcp_server_settings {
-  unsigned max_conn;
+  uint32_t max_conn;
   int backlog;
   /* The application must fill this in if it plans to embed a socket's struct
   inside its own struct. For servers, it will signal to allocate more memory.
   Otherwise, leave it at 0 for the underlying code to set to the default. */
-  unsigned socket_size;
+  uint32_t socket_size;
 };
 
 struct tcp_server {
@@ -180,22 +186,22 @@ struct tcp_server {
   pthread_rwlock_t lock; /* Not a mutex to let the application inspect sockets */
   /* If the application has some memory to spare, it can set the 2 members below.
   Memory for sockets must be settings->socket_size * settings->max_connections,
-  and for freeidx it must be sizeof(unsigned) * settings->max_connections. Sockets
+  and for freeidx it must be sizeof(uint32_t) * settings->max_connections. Sockets
   memory must be zeroed, freeidx doesn't need to be.
   If any error occurs during tcp_create_server(), the memory will be freed.
   The application does not need to initialise these. If it doesn't, they will be
   initialised automatically. */
   char* sockets;
-  unsigned* freeidx;
-  unsigned freeidx_used;
-  unsigned sockets_used;
-  unsigned disallow_connections:1;
-  unsigned is_closing:1;
+  uint32_t* freeidx;
+  uint32_t freeidx_used;
+  uint32_t sockets_used;
+  uint32_t disallow_connections:1;
+  uint32_t is_closing:1;
 };
 
 extern void tcp_server_free(struct tcp_server* const);
 
-extern int tcp_create_server(struct tcp_server* const);
+extern int tcp_create_server(struct tcp_server* const, struct addrinfo* const);
 
 extern void tcp_server_foreach_conn(struct tcp_server* const, void (*)(struct tcp_socket*, void*), void*, const int);
 
@@ -205,9 +211,9 @@ extern void tcp_server_accept_conn(struct tcp_server* const);
 
 extern int tcp_server_shutdown(struct tcp_server* const);
 
-extern unsigned tcp_server_get_conn_amount_raw(const struct tcp_server* const);
+extern uint32_t tcp_server_get_conn_amount_raw(const struct tcp_server* const);
 
-extern unsigned tcp_server_get_conn_amount(struct tcp_server* const);
+extern uint32_t tcp_server_get_conn_amount(struct tcp_server* const);
 
 
 

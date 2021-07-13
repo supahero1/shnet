@@ -32,6 +32,21 @@ struct addrinfo* net_get_address(const char* const hostname, const char* const s
   return addr;
 }
 
+#define addr ((struct net_async_address*) net_get_address_thread_data)
+
+static void* net_get_address_thread(void* net_get_address_thread_data) {
+  addr->callback(net_get_address(addr->hostname, addr->service, addr->hints));
+  (void) pthread_detach(pthread_self());
+  return NULL;
+}
+
+#undef addr
+
+int net_get_address_async(struct net_async_address* const addr) {
+  pthread_t id;
+  return pthread_create(&id, NULL, net_get_address_thread, addr);
+}
+
 const char* net_strerror(const int code) {
   return gai_strerror(code);
 }
@@ -173,7 +188,7 @@ void net_addrinfo_set_addr(struct addrinfo* const info, const void* const addr) 
 
 
 void net_set_whole_addr(void* const whole_addr, const void* const addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
+  if(((struct sockaddr*) addr)->sa_family == ipv4) {
     (void) memcpy(((struct sockaddr_in*) whole_addr), addr, sizeof(struct sockaddr_in));
   } else {
     (void) memcpy(((struct sockaddr_in6*) whole_addr), addr, sizeof(struct sockaddr_in6));
@@ -219,7 +234,7 @@ void* net_addrinfo_get_whole_addr(const struct addrinfo* const info) {
 
 
 
-void net_set_port(void* const whole_addr, const unsigned short port) {
+void net_set_port(void* const whole_addr, const uint16_t port) {
   if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
     ((struct sockaddr_in*) whole_addr)->sin_port = htons(port);
   } else {
@@ -227,17 +242,17 @@ void net_set_port(void* const whole_addr, const unsigned short port) {
   }
 }
 
-void net_sockbase_set_port(struct net_socket_base* const base, const unsigned short port) {
+void net_sockbase_set_port(struct net_socket_base* const base, const uint16_t port) {
   net_set_port(&base->addr, port);
 }
 
-void net_addrinfo_set_port(struct addrinfo* const info, const unsigned short port) {
+void net_addrinfo_set_port(struct addrinfo* const info, const uint16_t port) {
   net_set_port(info->ai_addr, port);
 }
 
 
 
-unsigned short net_get_port(const void* const whole_addr) {
+uint16_t net_get_port(const void* const whole_addr) {
   if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
     return ntohs(((struct sockaddr_in*) whole_addr)->sin_port);
   } else {
@@ -245,11 +260,11 @@ unsigned short net_get_port(const void* const whole_addr) {
   }
 }
 
-unsigned short net_sockbase_get_port(const struct net_socket_base* const base) {
+uint16_t net_sockbase_get_port(const struct net_socket_base* const base) {
   return net_get_port(&base->addr);
 }
 
-unsigned short net_addrinfo_get_port(const struct addrinfo* const info) {
+uint16_t net_addrinfo_get_port(const struct addrinfo* const info) {
   return net_get_port(info->ai_addr);
 }
 

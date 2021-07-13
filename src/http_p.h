@@ -205,8 +205,7 @@ struct http_parser_session {
   uint32_t parsed_body:1;
   uint32_t last_at:3;
   uint32_t last_header_idx:8;
-  uint32_t parsing_body:1;
-  uint32_t _unused:15;
+  uint32_t _unused:16;
   uint32_t last_idx;
 };
 

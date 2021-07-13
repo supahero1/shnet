@@ -136,7 +136,7 @@ struct tls_server {
 
 extern void tls_server_free(struct tls_server* const);
 
-extern int tls_create_server(struct tls_server* const);
+extern int tls_create_server(struct tls_server* const, struct addrinfo* const);
 
 extern void tls_server_foreach_conn(struct tls_server* const, void (*)(struct tls_socket*, void*), void*, const int);
 

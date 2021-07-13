@@ -53,23 +53,22 @@ enum net_consts {
   net_server
 };
 
-struct net_socket_base {
-  int sfd;
-  int events;
-  struct sockaddr_in6 addr;
-  int which;
-  void (*onclose)(struct net_socket_base*);
-};
-
 extern struct addrinfo net_get_addr_struct(const int, const int, const int, const int);
 
 extern struct addrinfo* net_get_address(const char* const, const char* const, const struct addrinfo* const);
 
+struct net_async_address {
+  char* hostname;
+  char* service;
+  struct addrinfo* hints;
+  void (*callback)(struct addrinfo*);
+};
+
+extern int net_get_address_async(struct net_async_address* const);
+
 extern const char* net_strerror(const int);
 
 extern void net_get_address_free(struct addrinfo* const);
-
-extern int net_foreach_addrinfo(struct addrinfo*, int (*)(struct addrinfo*, void*), void*);
 
 
 extern int net_get_name(const void* const, const socklen_t, char* const, const socklen_t, const int);
@@ -79,6 +78,13 @@ extern int net_string_to_address(void* const, const char* const);
 
 extern int net_address_to_string(void* const, char* const);
 
+struct net_socket_base {
+  int sfd;
+  int events;
+  struct sockaddr_in6 addr;
+  int which;
+  void (*onclose)(struct net_socket_base*);
+};
 
 extern void net_set_family(void* const, const int);
 
@@ -134,18 +140,18 @@ extern void* net_sockbase_get_whole_addr(struct net_socket_base* const);
 extern void* net_addrinfo_get_whole_addr(const struct addrinfo* const);
 
 
-extern void net_set_port(void* const, const unsigned short);
+extern void net_set_port(void* const, const uint16_t);
 
-extern void net_sockbase_set_port(struct net_socket_base* const, const unsigned short);
+extern void net_sockbase_set_port(struct net_socket_base* const, const uint16_t);
 
-extern void net_addrinfo_set_port(struct addrinfo* const, const unsigned short);
+extern void net_addrinfo_set_port(struct addrinfo* const, const uint16_t);
 
 
-extern unsigned short net_get_port(const void* const);
+extern uint16_t net_get_port(const void* const);
 
-extern unsigned short net_sockbase_get_port(const struct net_socket_base* const);
+extern uint16_t net_sockbase_get_port(const struct net_socket_base* const);
 
-extern unsigned short net_addrinfo_get_port(const struct addrinfo* const);
+extern uint16_t net_addrinfo_get_port(const struct addrinfo* const);
 
 
 extern int net_get_ipv4_addrlen(void);

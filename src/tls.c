@@ -603,12 +603,12 @@ void tls_server_free(struct tls_server* const server) {
   tcp_server_free(&server->tcp);
 }
 
-int tls_create_server(struct tls_server* const server) {
+int tls_create_server(struct tls_server* const server, struct addrinfo* const info) {
   if(server->tcp.settings->socket_size == 0) {
     server->tcp.settings->socket_size = sizeof(struct tls_socket);
   }
   server->tcp.callbacks = &tls_tcp_server_callbacks;
-  return tcp_create_server(&server->tcp);
+  return tcp_create_server(&server->tcp, info);
 }
 
 void tls_server_foreach_conn(struct tls_server* const server, void (*callback)(struct tls_socket*, void*), void* data, const int write) {

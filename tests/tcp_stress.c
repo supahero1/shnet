@@ -46,7 +46,9 @@ void onclose(struct tcp_socket* socket) {
   if(atomic_load(&dont_reattempt)) {
     return;
   }
-  if(net_foreach_addrinfo(res, socket_pick_address, socket) == -1) {
+  errno = 0;
+  if(tcp_create_socket(socket) != 0) {
+    printf("%d\n", errno);
     TEST_FAIL;
   }
 }
@@ -74,39 +76,6 @@ void onshutdown(struct tcp_server* server) {
   sem_post(&sem);
 }
 
-#define server ((struct tcp_server*) data)
-
-int server_pick_address(struct addrinfo* info, void* data) {
-  char ip[ip_max_strlen];
-  net_sockbase_set_family(&server->base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&server->base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&server->base), ip);
-  if(tcp_create_server(server) != 0) {
-    printf("server_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-#undef server
-#define socket ((struct tcp_socket*) data)
-
-int socket_pick_address(struct addrinfo* info, void* data) {
-  char ip[ip_max_strlen];
-  net_sockbase_set_family(&socket->base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->base), ip);
-  if(tcp_create_socket(socket) != 0) {
-    printf("socket_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-#undef socket
-
 void unlock_mutexo(void* da) {
   (void) da;
   pthread_mutex_unlock(&mutex);
@@ -126,6 +95,7 @@ int main(int argc, char **argv) {
   serversock_set.send_buffer_cleanup_threshold = UINT_MAX;
   serversock_set.onreadclose_auto_res = 1;
   serversock_set.remove_from_epoll_onclose = 0;
+  serversock_set.dont_free_addrinfo = 1;
   
   memset(&server_cb, 0, sizeof(server_cb));
   server_cb.onconnection = onconnection;
@@ -181,7 +151,7 @@ int main(int argc, char **argv) {
     }
     servers[i].settings = &server_set;
     servers[i].callbacks = &server_cb;
-    if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) == -1) {
+    if(tcp_create_server(&servers[i], res) != 0) {
       TEST_FAIL;
     }
   }
@@ -201,17 +171,16 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  struct tcp_socket* sockets = calloc(nclients, sizeof(struct tcp_server));
-  if(servers == NULL) {
+  struct tcp_socket* sockets = calloc(nclients, sizeof(struct tcp_socket));
+  if(sockets == NULL) {
     TEST_FAIL;
   }
   for(int i = 0; i < nclients; ++i) {
     sockets[i].epoll = &socket_epoll;
     sockets[i].callbacks = &sock_cb;
     sockets[i].settings = &serversock_set;
-    
-    /* Pick an address for the socket */
-    if(net_foreach_addrinfo(res, socket_pick_address, &sockets[i]) == -1) {
+    sockets[i].info = res;
+    if(tcp_create_socket(&sockets[i]) != 0) {
       TEST_FAIL;
     }
   }

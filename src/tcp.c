@@ -89,9 +89,11 @@ void tcp_socket_free(struct tcp_socket* const socket) {
     if(socket->send_buffer != NULL) {
       free(socket->send_buffer);
     }
-    (void) close(socket->base.sfd);
+    if(socket->base.sfd != -1) {
+      (void) close(socket->base.sfd);
+    }
     /* Return the socket's index for reuse */
-    const unsigned index = ((uintptr_t) socket - (uintptr_t) server->sockets) / server->settings->socket_size;
+    const uint32_t index = ((uintptr_t) socket - (uintptr_t) server->sockets) / server->settings->socket_size;
     server->freeidx[server->freeidx_used++] = index;
     (void) memset(socket, 0, server->settings->socket_size);
     (void) pthread_rwlock_unlock(&server->lock);
@@ -103,8 +105,10 @@ void tcp_socket_free(struct tcp_socket* const socket) {
     if(socket->send_buffer != NULL) {
       free(socket->send_buffer);
     }
-    (void) close(socket->base.sfd);
-    socket->base.sfd = 0;
+    if(socket->base.sfd != -1) {
+      (void) close(socket->base.sfd);
+      socket->base.sfd = -1;
+    }
     socket->base.which = net_unspecified;
     socket->base.events = 0;
     const int offset = offsetof(struct tcp_socket, lock);
@@ -129,18 +133,41 @@ void tcp_socket_force_close(struct tcp_socket* const socket) {
   (void) shutdown(socket->base.sfd, SHUT_RDWR);
 }
 
-
+#include <stdio.h>
 
 int tcp_create_socket(struct tcp_socket* const sock) {
-  {
-    const int sfd = socket(net_get_family(&sock->base.addr), stream_socktype, tcp_protocol);
-    if(sfd == -1) {
-      return -1;
+  sock->cur_info = sock->info;
+  while(1) {
+    net_sockbase_set_whole_addr(&sock->base, net_addrinfo_get_whole_addr(sock->cur_info));
+    sock->cur_info = sock->cur_info->ai_next;
+    {
+      const int sfd = socket(net_get_family(&sock->base.addr), stream_socktype, tcp_protocol);
+      if(sfd == -1) {
+        if(sock->cur_info != NULL) {
+          continue;
+        }
+        return -1;
+      }
+      sock->base.sfd = sfd;
+      sock->base.which = net_socket;
+      sock->base.events = EPOLLET | EPOLLRDHUP | EPOLLIN | EPOLLOUT;
+      sock->base.onclose = NULL; /* We don't close sockets using safe_remove */
     }
-    sock->base.sfd = sfd;
-    sock->base.which = net_socket;
-    sock->base.events = EPOLLET | EPOLLRDHUP | EPOLLIN | EPOLLOUT;
-    sock->base.onclose = NULL; /* We don't close sockets using safe_remove */
+    if(net_socket_base_options(sock->base.sfd) != 0) {
+      if(sock->cur_info != NULL) {
+        (void) close(sock->base.sfd);
+        continue;
+      }
+      goto err_sock;
+    }
+    if(net_connect_socket(sock->base.sfd, &sock->base.addr) != 0 && errno != EINPROGRESS) {
+      if(sock->cur_info != NULL) {
+        (void) close(sock->base.sfd);
+        continue;
+      }
+      goto err_sock;
+    }
+    break;
   }
   {
     const int ret = pthread_mutex_init(&sock->lock, NULL);
@@ -148,12 +175,6 @@ int tcp_create_socket(struct tcp_socket* const sock) {
       errno = ret;
       goto err_sock;
     }
-  }
-  if(net_socket_base_options(sock->base.sfd) != 0) {
-    goto err_mutex;
-  }
-  if(net_connect_socket(sock->base.sfd, &sock->base.addr) != 0 && errno != EINPROGRESS) {
-    goto err_mutex;
   }
   /* Pretty late so that we don't have to call onfree() numerous times above */
   if(sock->callbacks->oncreation != NULL && sock->callbacks->oncreation(sock) != 0) {
@@ -174,7 +195,7 @@ int tcp_create_socket(struct tcp_socket* const sock) {
   err_sock:
   (void) close(sock->base.sfd);
   /* Don't zero the address */
-  sock->base.sfd = 0;
+  sock->base.sfd = -1;
   sock->base.which = net_unspecified;
   sock->base.events = 0;
   return -1;
@@ -191,7 +212,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
     errno = EPIPE;
     return 0;
   }
-  const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
+  const uint32_t cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
   (void) pthread_mutex_lock(&socket->lock);
   if(socket->send_used > 0) {
     int addon = 0;
@@ -359,23 +380,90 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
 
 static void tcp_socket_onevent(int events, struct net_socket_base* base) {
   if(events & EPOLLERR) {
-    /* Check any errors we could have got from connect() or such */
-    if(socket->settings->remove_from_epoll_onclose == 1) {
-      (void) net_epoll_remove(socket->epoll, &socket->base);
+    if(tcp_socket_test_flag(socket, tcp_opened)) {
+      /* Weird, but maybe can happen, who knows */
+      goto epollhup;
     }
-    int code;
-    if(getsockopt(socket->base.sfd, tcp_protocol, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
-      errno = code;
+    beginning:
+    (void) close(socket->base.sfd);
+    socket->base.sfd = -1;
+    if(socket->cur_info == NULL) {
+      int code;
+      if(getsockopt(socket->base.sfd, tcp_protocol, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
+        errno = code;
+      } else {
+        errno = -1;
+      }
+    } else {
+      /* Maybe other addresses will work, let's try to reroute without
+      reinitializing the whole socket from scratch */
+      int reason;
+      net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(socket->cur_info));
+      socket->cur_info = socket->cur_info->ai_next;
+      while(1) {
+#undef socket
+        const int sfd = socket(net_get_family(&base->addr), stream_socktype, tcp_protocol);
+#define socket ((struct tcp_socket*) base)
+        if(sfd == -1) {
+          if(errno == ENOMEM && socket->callbacks->onnomem(socket) == 0) {
+            continue;
+          }
+          reason = errno;
+          goto err;
+        }
+        socket->base.sfd = sfd;
+        break;
+      }
+      while(net_socket_base_options(socket->base.sfd) != 0) {
+        if(errno != ENOMEM || socket->callbacks->onnomem(socket) != 0) {
+          reason = errno;
+          goto err;
+        }
+      }
+      while(net_connect_socket(socket->base.sfd, &socket->base.addr) != 0 && errno != EINPROGRESS) {
+        if(errno != ENOMEM || socket->callbacks->onnomem(socket) != 0) {
+          reason = errno;
+          goto err;
+        }
+      }
+      while(net_epoll_add(socket->epoll, &socket->base) != 0) {
+        if(errno != ENOMEM || socket->callbacks->onnomem(socket) != 0) {
+          reason = errno;
+          goto err;
+        }
+      }
+      /* Success rerouting the socket */
+      return;
+      
+      err:
+      if(reason == ENOMEM) {
+        /* Little chances that we will succeed next time even if we still
+        have addresses to connect to */
+        if(socket->base.sfd != -1) {
+          (void) close(socket->base.sfd);
+        }
+        errno = reason;
+      } else {
+        /* Maybe there is hope */
+        goto beginning;
+      }
+    }
+    if(!socket->settings->dont_free_addrinfo) {
+      net_get_address_free(socket->info);
     }
     socket->callbacks->onclose(socket);
     return;
   }
   if(events & EPOLLHUP) {
+    epollhup:
     /* The connection is closed. Epoll sometimes likes to report EPOLLHUP twice,
     which is obviously a terrible idea if the application doesn't remove the socket
     from the epoll. That's why we will do it ourselves now if required. */
-    if(socket->settings->remove_from_epoll_onclose == 1) {
+    if(socket->settings->remove_from_epoll_onclose) {
       (void) net_epoll_remove(socket->epoll, &socket->base);
+    }
+    if(!socket->settings->dont_free_addrinfo) {
+      net_get_address_free(socket->info);
     }
     errno = 0;
     socket->callbacks->onclose(socket);
@@ -399,7 +487,7 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
       tcp_send(), because upon failure it would buffer the already-buffered data
       we are trying to send. */
       int addon = 0;
-      const unsigned cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
+      const uint32_t cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
       while(1) {
         const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
         if(bytes == -1) {
@@ -478,11 +566,11 @@ void tcp_server_free(struct tcp_server* const server) {
   free(server->sockets);
   free(server->freeidx);
   (void) close(server->base.sfd);
-  server->base.sfd = 0;
+  server->base.sfd = -1;
   server->base.which = net_unspecified;
   server->base.events = 0;
   server->base.onclose = NULL;
-  const unsigned offset = offsetof(struct tcp_server, lock);
+  const uint32_t offset = offsetof(struct tcp_server, lock);
   (void) memset((char*) server + offset, 0, sizeof(struct tcp_server) - offset);
 }
 
@@ -508,7 +596,7 @@ static void tcp_server_shutdown_internal(struct net_socket_base* base) {
 
 #undef server
 
-int tcp_create_server(struct tcp_server* const server) {
+int tcp_create_server(struct tcp_server* const server, struct addrinfo* const info) {
   if(server->settings->socket_size == 0) {
     server->settings->socket_size = sizeof(struct tcp_socket);
   }
@@ -519,7 +607,7 @@ int tcp_create_server(struct tcp_server* const server) {
     }
   }
   if(server->freeidx == NULL) {
-    server->freeidx = malloc(sizeof(unsigned) * server->settings->max_conn);
+    server->freeidx = malloc(sizeof(uint32_t) * server->settings->max_conn);
     if(server->freeidx == NULL) {
       goto sockets;
     }
@@ -531,23 +619,36 @@ int tcp_create_server(struct tcp_server* const server) {
       goto freeidx;
     }
   }
-  {
-    const int sfd = socket(net_get_family(&server->base.addr), stream_socktype, tcp_protocol);
-    if(sfd == -1) {
-      goto rwlock;
+  struct addrinfo* cur_info = info;
+  while(1) {
+    net_sockbase_set_whole_addr(&server->base, net_addrinfo_get_whole_addr(cur_info));
+    cur_info = cur_info->ai_next;
+    {
+      const int sfd = socket(net_get_family(&server->base.addr), stream_socktype, tcp_protocol);
+      if(sfd == -1) {
+        if(cur_info == NULL) {
+          goto rwlock;
+        }
+        continue;
+      }
+      server->base.sfd = sfd;
+      server->base.which = net_server;
+      server->base.events = EPOLLET | EPOLLIN;
+      server->base.onclose = tcp_server_shutdown_internal;
     }
-    server->base.sfd = sfd;
-    server->base.which = net_server;
-    server->base.events = EPOLLET | EPOLLIN;
-    server->base.onclose = tcp_server_shutdown_internal;
-  }
-  if(net_socket_base_options(server->base.sfd) != 0) {
-    tcp_server_free(server);
-    return -1;
-  }
-  if(net_bind_socket(server->base.sfd, &server->base.addr) != 0 || listen(server->base.sfd, server->settings->backlog) != 0) {
-    tcp_server_free(server);
-    return -1;
+    if(net_socket_base_options(server->base.sfd) != 0) {
+      goto maybe_retry;
+    }
+    if(net_bind_socket(server->base.sfd, &server->base.addr) != 0 || listen(server->base.sfd, server->settings->backlog) != 0) {
+      goto maybe_retry;
+    }
+    break;
+    
+    maybe_retry:
+    if(cur_info == NULL) {
+      tcp_server_free(server);
+      return -1;
+    }
   }
   if(net_epoll_add(server->epoll, &server->base) != 0) {
     tcp_server_free(server);
@@ -710,9 +811,9 @@ void tcp_server_foreach_conn(struct tcp_server* const server, void (*callback)(s
   } else {
     (void) pthread_rwlock_rdlock(&server->lock);
   }
-  unsigned amount = tcp_server_get_conn_amount_raw(server);
+  uint32_t amount = tcp_server_get_conn_amount_raw(server);
   if(amount != 0) {
-    for(unsigned i = 0; i < server->settings->max_conn; ++i) {
+    for(uint32_t i = 0; i < server->settings->max_conn; ++i) {
       if(socket->base.sfd != 0) {
         callback(socket, data);
         if(--amount == 0) {
@@ -751,13 +852,13 @@ int tcp_server_shutdown(struct tcp_server* const server) {
   return net_epoll_safe_remove(server->epoll, &server->base);
 }
 
-unsigned tcp_server_get_conn_amount_raw(const struct tcp_server* const server) {
+uint32_t tcp_server_get_conn_amount_raw(const struct tcp_server* const server) {
   return server->sockets_used - server->freeidx_used;
 }
 
-unsigned tcp_server_get_conn_amount(struct tcp_server* const server) {
+uint32_t tcp_server_get_conn_amount(struct tcp_server* const server) {
   (void) pthread_rwlock_wrlock(&server->lock);
-  const unsigned connections = tcp_server_get_conn_amount_raw(server);
+  const uint32_t connections = tcp_server_get_conn_amount_raw(server);
   (void) pthread_rwlock_unlock(&server->lock);
   return connections;
 }

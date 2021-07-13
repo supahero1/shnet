@@ -103,39 +103,6 @@ void onshutdown(struct tls_server* server) {
   sem_post(&sem);
 }
 
-#define server ((struct tls_server*) data)
-
-int server_pick_address(struct addrinfo* info, void* data) {
-  char ip[ip_max_strlen];
-  net_sockbase_set_family(&server->tcp.base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&server->tcp.base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&server->tcp.base), ip);
-  if(tls_create_server(server) != 0) {
-    printf("server_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-#undef server
-#define socket ((struct tls_socket*) data)
-
-int socket_pick_address(struct addrinfo* info, void* data) {
-  char ip[ip_max_strlen];
-  net_sockbase_set_family(&socket->tcp.base, net_addrinfo_get_family(info));
-  net_sockbase_set_whole_addr(&socket->tcp.base, net_addrinfo_get_whole_addr(info));
-  (void) net_address_to_string(net_sockbase_get_whole_addr(&socket->tcp.base), ip);
-  if(tls_create_socket(socket) != 0) {
-    printf("socket_pick_address() err %s errno %d\n", net_strerror(errno), errno);
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
-#undef socket
-
 void unlock_mutexo(void* da) {
   (void) da;
   pthread_mutex_unlock(&mutex);
@@ -160,7 +127,8 @@ int main(int argc, char **argv) {
   serversock_tcp_set = (struct tcp_socket_settings) {
     .send_buffer_cleanup_threshold = 0,
     .onreadclose_auto_res = 1,
-    .remove_from_epoll_onclose = 0
+    .remove_from_epoll_onclose = 0,
+    .dont_free_addrinfo = 1
   };
   
   serversock_tls_cb = (struct tls_socket_callbacks) {
@@ -271,11 +239,10 @@ int main(int argc, char **argv) {
   }
   
   /* TLS server setup */
-  struct tls_server* servers = malloc(sizeof(struct tls_server) * nservers);
+  struct tls_server* servers = calloc(nservers, sizeof(struct tls_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  memset(servers, 0, sizeof(struct tls_server) * nservers);
   for(int i = 0; i < nservers; ++i) {
     if(shared_epoll == 1) {
       servers[i].tcp.epoll = &socket_epoll;
@@ -285,7 +252,7 @@ int main(int argc, char **argv) {
     servers[i].tcp.settings = &server_set;
     servers[i].callbacks = &server_tls_cb;
     servers[i].ctx = server_ctx;
-    if(net_foreach_addrinfo(res, server_pick_address, &servers[i]) != 0) {
+    if(tls_create_server(&servers[i], res) != 0) {
       TEST_FAIL;
     }
   }
@@ -302,20 +269,18 @@ int main(int argc, char **argv) {
   
   
   
-  struct tls_socket* sockets = malloc(sizeof(struct tls_socket) * nclients);
-  if(servers == NULL) {
+  struct tls_socket* sockets = calloc(nclients, sizeof(struct tls_socket));
+  if(sockets == NULL) {
     TEST_FAIL;
   }
-  memset(sockets, 0, sizeof(struct tls_socket) * nclients);
   for(int i = 0; i < nclients; ++i) {
     sockets[i].tcp.epoll = &socket_epoll;
     sockets[i].tcp.settings = &clientsock_tcp_set;
     sockets[i].callbacks = &clientsock_tls_cb;
     sockets[i].settings = &clientsock_tls_set;
     sockets[i].ctx = client_ctx;
-    
-    /* Pick an address for the socket */
-    if(net_foreach_addrinfo(res, socket_pick_address, &sockets[i]) != 0) {
+    sockets[i].tcp.info = res;
+    if(tls_create_socket(&sockets[i]) != 0) {
       TEST_FAIL;
     }
   }

@@ -32,7 +32,6 @@ The WebSocket protocol and WebSocket clients and servers are yet to come.
 
 * [Linux](https://www.kernel.org/)
 * [GCC](https://gcc.gnu.org/)
-* [uriparser](https://uriparser.github.io/)
 * [Zlib](https://www.zlib.net/)
 * [Brotli](https://brotli.org/)
 
@@ -40,7 +39,7 @@ To install the dependencies, one can do:
 
 ```bash
 sudo apt update
-sudo apt install libgcc-11-dev liburiparser-dev zlib1g-dev libbrotli-dev -y
+sudo apt install libgcc-11-dev zlib1g-dev libbrotli-dev -y
 ```
 
 # Building
