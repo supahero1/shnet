@@ -133,7 +133,7 @@ void tcp_socket_force_close(struct tcp_socket* const socket) {
   (void) shutdown(socket->base.sfd, SHUT_RDWR);
 }
 
-#include <stdio.h>
+
 
 int tcp_create_socket(struct tcp_socket* const sock) {
   sock->cur_info = sock->info;
