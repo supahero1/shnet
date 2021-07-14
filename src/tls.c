@@ -292,7 +292,7 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
   if(SSL_set_fd(socket->ssl, socket->tcp.base.sfd) == 0) {
     goto err_ssl;
   }
-  if(socket->tcp.info->ai_canonname != NULL && SSL_set_tlsext_host_name(socket->ssl, socket->tcp.info->ai_canonname) == 0) {
+  if(socket->tcp.info != NULL && socket->tcp.info->ai_canonname != NULL && SSL_set_tlsext_host_name(socket->ssl, socket->tcp.info->ai_canonname) == 0) {
     goto err_ssl;
   }
   if(which == net_socket) {

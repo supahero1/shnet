@@ -676,6 +676,7 @@ int tcp_create_server(struct tcp_server* const server, struct addrinfo* const in
     return -1;
   }
   return 0;
+  
   rwlock:
   (void) pthread_rwlock_destroy(&server->lock);
   (void) memset(&server->lock, 0, sizeof(pthread_rwlock_t));

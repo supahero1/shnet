@@ -114,7 +114,7 @@ int main() {
   cmp(message.headers[0].value, "Value");
   test("18",
   "GET / HTTP/1.1\r\n"
-  "Name:  Value\r\n"
+  "Name:  Va\nue\r\n"
   , http_invalid_character, 1);
   test("19",
   "GET / HTTP/1.1\r\n"
@@ -235,7 +235,7 @@ int main() {
   test("41",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -253,14 +253,14 @@ int main() {
   test("44",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
   test("45",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\r"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\rabc"
   , http_valid, 1);
   test("46",
   "GET / HTTP/1.1\r\n"
@@ -271,7 +271,7 @@ int main() {
   test("47",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -284,7 +284,7 @@ int main() {
   test("49",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -297,7 +297,7 @@ int main() {
   test("51",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -310,7 +310,7 @@ int main() {
   test("53",
   "GET / HTTP/1.1\r\n"
   "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n"
+  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
