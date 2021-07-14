@@ -55,9 +55,9 @@ void cbfunc4(void* data) {
     if(time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL) != 0) {
       TEST_FAIL;
     }
-    struct time_timeout* timeout;
-    struct time_timeout* timeout2;
-    struct time_interval* interval;
+    struct time_timeout_ref timeout = {0};
+    struct time_timeout_ref timeout2 = {0};
+    struct time_interval_ref interval = {0};
     if(time_manager_add_timeout(data, time_get_ms(750), cbfunc6, data, &timeout) != 0) {
       TEST_FAIL;
     }
@@ -67,9 +67,9 @@ void cbfunc4(void* data) {
     if(time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2) != 0) {
       TEST_FAIL;
     }
-    time_manager_cancel_timeout(data, timeout);
-    time_manager_cancel_timeout(data, timeout2);
-    time_manager_cancel_interval(data, interval);
+    time_manager_cancel_timeout(data, &timeout);
+    time_manager_cancel_timeout(data, &timeout2);
+    time_manager_cancel_interval(data, &interval);
   }
 }
 

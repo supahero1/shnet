@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
   if(tcp_epoll(&socket_epoll) != 0) {
     TEST_FAIL;
   }
-  if(net_epoll_start(&socket_epoll, 1) != 0) {
+  if(net_epoll_start(&socket_epoll) != 0) {
     TEST_FAIL;
   }
   
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
     if(tcp_epoll(&server_epoll) != 0) {
       TEST_FAIL;
     }
-    if(net_epoll_start(&server_epoll, 1) != 0) {
+    if(net_epoll_start(&server_epoll) != 0) {
       TEST_FAIL;
     }
   }

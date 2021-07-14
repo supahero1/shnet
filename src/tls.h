@@ -14,6 +14,7 @@ enum tls_consts {
   tls_opened = 536870912,           /* 1 << 29 */
   tls_onreadclose_once = 268435456, /* 1 << 28 */
   tls_shutdown_wr = 134217728,      /* 1 << 27 */
+  tls_shutdown_rd = 67108864,       /* 1 << 26 */
   
   /* SETTINGS */
   
@@ -53,12 +54,12 @@ struct tls_socket_callbacks {
 };
 
 struct tls_socket_settings {
-  unsigned read_buffer_cleanup_threshold;
-  unsigned read_buffer_growth;
-  unsigned force_close_on_fatal_error:1;
-  unsigned force_close_on_shutdown_error:1;
-  unsigned force_close_tcp:1;
-  unsigned onreadclose_auto_res:3;
+  uint32_t read_buffer_cleanup_threshold;
+  uint32_t read_buffer_growth;
+  uint32_t force_close_on_fatal_error:1;
+  uint32_t force_close_on_shutdown_error:1;
+  uint32_t force_close_tcp:1;
+  uint32_t onreadclose_auto_res:3;
 };
 
 struct tls_record {
@@ -77,8 +78,8 @@ struct tls_socket {
   pthread_mutex_t read_lock;
   pthread_mutex_t ssl_lock;
   char* read_buffer;
-  unsigned read_used;
-  unsigned read_size;
+  uint32_t read_used;
+  uint32_t read_size;
 };
 
 extern void tls_socket_free(struct tls_socket* const);
@@ -86,6 +87,8 @@ extern void tls_socket_free(struct tls_socket* const);
 extern void tls_socket_close(struct tls_socket* const);
 
 extern void tls_socket_force_close(struct tls_socket* const);
+
+extern void tls_socket_stop_receiving_data(struct tls_socket* const);
 
 
 extern int tls_socket_init(struct tls_socket* const, const int);
@@ -146,7 +149,7 @@ extern void tls_server_accept_conn(struct tls_server* const);
 
 extern int tls_server_shutdown(struct tls_server* const);
 
-extern unsigned tls_server_get_conn_amount(struct tls_server* const);
+extern uint32_t tls_server_get_conn_amount(struct tls_server* const);
 
 
 

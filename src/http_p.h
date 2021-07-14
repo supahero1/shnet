@@ -242,7 +242,7 @@ struct http_parser_settings {
 
 extern uint32_t http1_message_length(const struct http_message* const);
 
-extern void http1_create_message(char* buffer, const struct http_message* const);
+extern void http1_create_message(char*, const struct http_message* const);
 
 extern int http1_parse_request(char*, uint32_t, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);

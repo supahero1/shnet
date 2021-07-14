@@ -35,7 +35,7 @@ struct addrinfo* net_get_address(const char* const hostname, const char* const s
 #define addr ((struct net_async_address*) net_get_address_thread_data)
 
 static void* net_get_address_thread(void* net_get_address_thread_data) {
-  addr->callback(net_get_address(addr->hostname, addr->service, addr->hints));
+  addr->callback(addr, net_get_address(addr->hostname, addr->service, addr->hints));
   (void) pthread_detach(pthread_self());
   return NULL;
 }
@@ -44,7 +44,12 @@ static void* net_get_address_thread(void* net_get_address_thread_data) {
 
 int net_get_address_async(struct net_async_address* const addr) {
   pthread_t id;
-  return pthread_create(&id, NULL, net_get_address_thread, addr);
+  const int err = pthread_create(&id, NULL, net_get_address_thread, addr);
+  if(err != 0) {
+    errno = err;
+    return -1;
+  }
+  return 0;
 }
 
 const char* net_strerror(const int code) {
@@ -413,6 +418,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
         continue;
       }
       epoll->on_event(epoll, events[i].events, (struct net_socket_base*) events[i].data.ptr);
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
@@ -446,6 +452,7 @@ static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
         continue;
       }
       epoll->on_event(epoll, epoll->events[i].events, (struct net_socket_base*) epoll->events[i].data.ptr);
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
@@ -507,8 +514,8 @@ int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
   return -1;
 }
 
-int net_epoll_start(struct net_epoll* const epoll, const uint32_t amount) {
-  return threads_add(&epoll->threads, amount);
+int net_epoll_start(struct net_epoll* const epoll) {
+  return threads_add(&epoll->threads, 1);
 }
 
 void net_epoll_stop(struct net_epoll* const epoll) {

@@ -87,12 +87,10 @@ uint32_t http1_message_length(const struct http_message* const message) {
 /* Buffer must be at least http1_message_length(message) bytes long */
 
 void http1_create_message(char* buffer, const struct http_message* const message) {
-  if(message->method == NULL) {
+  if(message->method != NULL) {
     (void) memcpy(buffer, message->method, message->method_len);
     buffer += message->method_len;
     buffer[0] = ' ';
-    ++buffer;
-    buffer[0] = '/';
     ++buffer;
     (void) memcpy(buffer, message->path, message->path_len);
     buffer += message->path_len;
@@ -227,7 +225,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       if(!settings->no_character_validation) {
         uint32_t j = 0;
         for(; j < size; ++j) {
-          if(!IS_TOKEN(buffer[j])) {
+          if(buffer[j] < 32 || buffer[j] > 126) {
             if(buffer[j] == '\r') {
               break;
             } else {
@@ -308,6 +306,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
     if(i == settings->max_headers) {
       return http_too_many_headers;
     }
+    message->headers_len = i;
   }
   if(message->transfer == http_t_chunked) {
     message->body_len = 0;
@@ -405,15 +404,18 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       ATLEAST(1);
       buffer += i + 2;
       --size;
+      ATLEAST(chunk_len + 2);
       if(chunk_len == 0) {
-        session->last_idx += i + 2;
+        session->last_idx += i + 4;
         if(message->body_len > 0) {
           /* So that if we resume the session, we won't end up here */
           message->transfer = http_t_none;
           goto decode;
+        } else {
+          session->parsed_body = 1;
+          return http_valid;
         }
       }
-      ATLEAST(chunk_len + 2);
       char* const ptr = realloc(message->body, message->body_len + chunk_len);
       if(ptr == NULL) {
         return http_out_of_memory;

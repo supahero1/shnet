@@ -205,6 +205,10 @@ static void time_manager_thread(void* time_manager_thread_data) {
     } else {
       if((ltest & 1) == 0) {
         struct time_timeout* latest = refheap_peak(&manager->timeouts, 0);
+        struct time_timeout_ref* const ref = (struct time_timeout_ref*)((char*) latest - sizeof(void**));
+        if(ref != NULL) {
+          ref->executed = 1;
+        }
         struct time_timeout timeout = *latest;
         refheap_delete(&manager->timeouts, latest);
         (void) time_manager_set_latest(manager);
@@ -232,10 +236,10 @@ int time_manager_start(struct time_manager* const manager) {
   return threads_add(&manager->thread, 1);
 }
 
-int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_timeout** const timeout) {
+int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_timeout_ref* const timeout) {
   (void) pthread_mutex_lock(&manager->mutex);
   {
-    const int err = refheap_insert(&manager->timeouts, &(struct time_timeout){ .time = time, .func = func, .data = data }, (void**) timeout);
+    const int err = refheap_insert(&manager->timeouts, &(struct time_timeout){ .time = time, .func = func, .data = data }, timeout != NULL ? (void**)&timeout->timeout : NULL);
     if(err == -1) {
       (void) pthread_mutex_unlock(&manager->mutex);
       return -1;
@@ -249,10 +253,10 @@ int time_manager_add_timeout(struct time_manager* const manager, const uint64_t 
   return 0;
 }
 
-int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t intrvl, void (*func)(void*), void* const data, struct time_interval** const interval, const unsigned long instant) {
+int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t intrvl, void (*func)(void*), void* const data, struct time_interval_ref* const interval, const int instant) {
   (void) pthread_mutex_lock(&manager->mutex);
   {
-    const int err = refheap_insert(&manager->intervals, &(struct time_interval){ .base_time = base_time, .interval = intrvl, .count = instant, .func = func, .data = data }, (void**) interval);
+    const int err = refheap_insert(&manager->intervals, &(struct time_interval){ .base_time = base_time, .interval = intrvl, .count = instant, .func = func, .data = data }, interval != NULL ? (void**)&interval->interval : NULL);
     if(err == -1) {
       (void) pthread_mutex_unlock(&manager->mutex);
       return -1;
@@ -266,20 +270,32 @@ int time_manager_add_interval(struct time_manager* const manager, const uint64_t
   return 0;
 }
 
-void time_manager_cancel_timeout(struct time_manager* const manager, struct time_timeout* const timeout) {
+int time_manager_cancel_timeout(struct time_manager* const manager, struct time_timeout_ref* const timeout) {
   (void) pthread_mutex_lock(&manager->mutex);
-  refheap_delete(&manager->timeouts, timeout);
-  (void) time_manager_set_latest(manager);
-  (void) sem_post(&manager->work);
+  if(timeout->executed == 0) {
+    timeout->executed = 1;
+    refheap_delete(&manager->timeouts, timeout->timeout);
+    (void) time_manager_set_latest(manager);
+    (void) sem_post(&manager->work);
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return 1;
+  }
   (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
 }
 
-void time_manager_cancel_interval(struct time_manager* const manager, struct time_interval* const interval) {
+int time_manager_cancel_interval(struct time_manager* const manager, struct time_interval_ref* const interval) {
   (void) pthread_mutex_lock(&manager->mutex);
-  refheap_delete(&manager->intervals, interval);
-  (void) time_manager_set_latest(manager);
-  (void) sem_post(&manager->work);
+  if(interval->executed == 0) {
+    interval->executed = 1;
+    refheap_delete(&manager->intervals, interval->interval);
+    (void) time_manager_set_latest(manager);
+    (void) sem_post(&manager->work);
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return 1;
+  }
   (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
 }
 
 void time_manager_stop(struct time_manager* const manager) {

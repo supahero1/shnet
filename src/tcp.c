@@ -8,9 +8,18 @@
 #include <string.h>
 #include <netinet/tcp.h>
 
-/* Race conditions don't matter here. At most, send() or recv() might fail.
-Lock contention would add much more overhead than one or two system calls.
-All we care about is to not free the socket without application's consent. */
+static struct tcp_socket_settings tcp_socket_settings;
+
+static struct tcp_server_settings tcp_server_settings;
+
+static _Atomic int __tcp_initialised = 0;
+
+static void __tcp_init() {
+  if(atomic_compare_exchange_strong(&__tcp_initialised, &(int){0}, 1)) {
+    tcp_socket_settings = (struct tcp_socket_settings) { 0, 1, 1, 1, 0, 0 };
+    tcp_server_settings = (struct tcp_server_settings) { 100, 64 };
+  }
+}
 
 static inline void tcp_socket_set_flag(struct tcp_socket* const socket, const uint32_t flag) {
   aflag32_add(&socket->flags, flag);
@@ -111,8 +120,12 @@ void tcp_socket_free(struct tcp_socket* const socket) {
     }
     socket->base.which = net_unspecified;
     socket->base.events = 0;
-    const int offset = offsetof(struct tcp_socket, lock);
-    (void) memset((char*) socket + offset, 0, sizeof(struct tcp_socket) - offset);
+    if(socket->settings->free_on_free) {
+      free((char*) socket + socket->settings->free_offset);
+    } else {
+      const int offset = offsetof(struct tcp_socket, lock);
+      (void) memset((char*) socket + offset, 0, sizeof(struct tcp_socket) - offset);
+    }
   }
 }
 
@@ -136,6 +149,10 @@ void tcp_socket_force_close(struct tcp_socket* const socket) {
 
 
 int tcp_create_socket(struct tcp_socket* const sock) {
+  if(sock->settings == NULL) {
+    __tcp_init();
+    sock->settings = &tcp_socket_settings;
+  }
   sock->cur_info = sock->info;
   while(1) {
     net_sockbase_set_whole_addr(&sock->base, net_addrinfo_get_whole_addr(sock->cur_info));
@@ -597,6 +614,10 @@ static void tcp_server_shutdown_internal(struct net_socket_base* base) {
 #undef server
 
 int tcp_create_server(struct tcp_server* const server, struct addrinfo* const info) {
+  if(server->settings == NULL) {
+    __tcp_init();
+    server->settings = &tcp_server_settings;
+  }
   if(server->settings->socket_size == 0) {
     server->settings->socket_size = sizeof(struct tcp_socket);
   }

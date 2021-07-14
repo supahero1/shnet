@@ -61,7 +61,7 @@ struct net_async_address {
   char* hostname;
   char* service;
   struct addrinfo* hints;
-  void (*callback)(struct addrinfo*);
+  void (*callback)(struct net_async_address*, struct addrinfo*);
 };
 
 extern int net_get_address_async(struct net_async_address* const);
@@ -214,7 +214,7 @@ struct net_epoll {
 
 extern int net_epoll(struct net_epoll* const, const int);
 
-extern int net_epoll_start(struct net_epoll* const, const uint32_t);
+extern int net_epoll_start(struct net_epoll* const);
 
 extern void net_epoll_stop(struct net_epoll* const);
 

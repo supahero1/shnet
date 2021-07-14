@@ -36,15 +36,19 @@ static int tls_internal_send(struct tls_socket* const, const void*, int);
 static int tls_internal_read(struct tls_socket* const);
 
 
-static struct tcp_socket_callbacks tls_tcp_socket_callbacks;
+static struct tcp_socket_callbacks tls_socket_callbacks;
 
-static struct tcp_server_callbacks tls_tcp_server_callbacks;
+static struct tcp_server_callbacks tls_server_callbacks;
+
+static struct tls_socket_settings tls_socket_settings;
 
 static _Atomic int __tls_initialised = 0;
 
 static void __tls_init() {
   if(atomic_compare_exchange_strong(&__tls_initialised, &(int){0}, 1)) {
-    tls_tcp_socket_callbacks = (struct tcp_socket_callbacks) {
+    tls_ignore_sigpipe();
+    
+    tls_socket_callbacks = (struct tcp_socket_callbacks) {
       tls_oncreation,
       tls_onopen,
       tls_onmessage,
@@ -54,11 +58,13 @@ static void __tls_init() {
       tls_onclose,
       tls_onfree
     };
-    tls_tcp_server_callbacks = (struct tcp_server_callbacks) {
+    tls_server_callbacks = (struct tcp_server_callbacks) {
       tls_onconnection,
       tls_server_onnomem,
       tls_onshutdown
     };
+    
+    tls_socket_settings = (struct tls_socket_settings) { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
   }
 }
 
@@ -123,6 +129,10 @@ void tls_socket_force_close(struct tls_socket* const socket) {
   tcp_socket_force_close(&socket->tcp);
 }
 
+void tls_socket_stop_receiving_data(struct tls_socket* const socket) {
+  tls_socket_set_flag(socket, tls_shutdown_rd);
+}
+
 
 
 #define socket ((struct tls_socket*) soc)
@@ -168,7 +178,12 @@ static void tls_onmessage(struct tcp_socket* soc) {
         socket->callbacks->onopen(socket);
       }
     }
-    if(read > 0 && socket->callbacks->onmessage != NULL) {
+    if(tls_socket_test_flag(socket, tls_shutdown_rd)) {
+      free(socket->read_buffer);
+      socket->read_buffer = NULL;
+      socket->read_used = 0;
+      socket->read_size = 0;
+    } else if(read > 0 && socket->callbacks->onmessage != NULL) {
       socket->callbacks->onmessage(socket);
     }
   }
@@ -268,14 +283,17 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
   err = pthread_mutex_init(&socket->ssl_lock, NULL);
   if(err != 0) {
     errno = err;
-    goto err_rl;
+    goto err_read_lock;
   }
   socket->ssl = SSL_new(socket->ctx);
   if(socket->ssl == NULL) {
-    goto err_sl;
+    goto err_ssl_lock;
   }
   if(SSL_set_fd(socket->ssl, socket->tcp.base.sfd) == 0) {
-    goto err_s;
+    goto err_ssl;
+  }
+  if(socket->tcp.info->ai_canonname != NULL && SSL_set_tlsext_host_name(socket->ssl, socket->tcp.info->ai_canonname) == 0) {
+    goto err_ssl;
   }
   if(which == net_socket) {
     SSL_set_connect_state(socket->ssl);
@@ -286,18 +304,21 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
   SSL_set_mode(socket->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
   return 0;
   
-  err_s:
+  err_ssl:
   SSL_free(socket->ssl);
-  err_sl:
+  err_ssl_lock:
   (void) pthread_mutex_destroy(&socket->ssl_lock);
-  err_rl:
+  err_read_lock:
   (void) pthread_mutex_destroy(&socket->read_lock);
   return -1;
 }
 
 int tls_create_socket(struct tls_socket* const socket) {
   __tls_init();
-  socket->tcp.callbacks = &tls_tcp_socket_callbacks;
+  socket->tcp.callbacks = &tls_socket_callbacks;
+  if(socket->settings == NULL) {
+    socket->settings = &tls_socket_settings;
+  }
   return tcp_create_socket(&socket->tcp);
 }
 
@@ -366,7 +387,7 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
   woken up to notice it can send the buffered records. */
   int addon = sizeof(struct tls_record);
 #define record ((struct tls_record*) socket->tcp.send_buffer)
-  for(unsigned i = 0; i < socket->tcp.send_used; ++i) {
+  for(uint32_t i = 0; i < socket->tcp.send_used; ++i) {
     switch(tls_internal_send(socket, socket->tcp.send_buffer + addon, record->size)) {
       case 1: {
         addon += record->total_size;
@@ -409,7 +430,7 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
     case 0: {
       /* Buffer the data */
       (void) pthread_mutex_lock(&socket->tcp.lock);
-      const unsigned total_size = (size + sizeof(struct tls_record) - 1) & -sizeof(struct tls_record);
+      const uint32_t total_size = (size + sizeof(struct tls_record) - 1) & -sizeof(struct tls_record);
       if(socket->tcp.send_size - socket->tcp.send_used < total_size) {
         while(1) {
           char* const ptr = realloc(socket->tcp.send_buffer, socket->tcp.send_used + total_size);
@@ -485,7 +506,7 @@ static int tls_internal_read(struct tls_socket* const socket) {
     errno = 0;
     size_t read = 0;
     (void) pthread_mutex_lock(&socket->ssl_lock);
-    const int err = SSL_get_error(socket->ssl, SSL_read_ex(socket->ssl, socket->read_buffer + addon, socket->read_size - socket->read_used - addon, &read));
+    const int err = SSL_get_error(socket->ssl, SSL_read_ex(socket->ssl, socket->read_buffer + socket->read_used + addon, socket->read_size - socket->read_used - addon, &read));
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     switch(err) {
       case SSL_ERROR_NONE: {
@@ -578,7 +599,7 @@ unsigned char tls_peek_once(struct tls_socket* const socket, const int offset) {
 static int tls_onconnection(struct tcp_socket* sock) {
   socket->ctx = server->ctx;
   __tls_init();
-  socket->tcp.callbacks = &tls_tcp_socket_callbacks;
+  socket->tcp.callbacks = &tls_socket_callbacks;
   return server->callbacks->onconnection(socket);
 }
 
@@ -607,7 +628,7 @@ int tls_create_server(struct tls_server* const server, struct addrinfo* const in
   if(server->tcp.settings->socket_size == 0) {
     server->tcp.settings->socket_size = sizeof(struct tls_socket);
   }
-  server->tcp.callbacks = &tls_tcp_server_callbacks;
+  server->tcp.callbacks = &tls_server_callbacks;
   return tcp_create_server(&server->tcp, info);
 }
 
@@ -627,11 +648,11 @@ int tls_server_shutdown(struct tls_server* const server) {
   return tcp_server_shutdown(&server->tcp);
 }
 
-unsigned tls_server_get_conn_amount_raw(const struct tls_server* const server) {
+uint32_t tls_server_get_conn_amount_raw(const struct tls_server* const server) {
   return tcp_server_get_conn_amount_raw(&server->tcp);
 }
 
-unsigned tls_server_get_conn_amount(struct tls_server* const server) {
+uint32_t tls_server_get_conn_amount(struct tls_server* const server) {
   return tcp_server_get_conn_amount(&server->tcp);
 }
 

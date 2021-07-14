@@ -103,7 +103,8 @@ struct tcp_socket_settings {
   uint32_t onreadclose_auto_res:1;
   uint32_t remove_from_epoll_onclose:1;
   uint32_t dont_free_addrinfo:1;
-  uint32_t _unused:29;
+  uint32_t free_on_free:1;
+  int32_t free_offset:28;
 };
 
 /* A tcp_socket's address after the call to tcp_create_socket() MUST NOT BE CHANGED.

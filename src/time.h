@@ -54,12 +54,22 @@ struct time_timeout {
   void* data;
 };
 
+struct time_timeout_ref {
+  struct time_timeout* timeout;
+  uintptr_t executed;
+};
+
 struct time_interval {
   uint64_t base_time;
   uint64_t interval;
   uint64_t count;
   void (*func)(void*);
   void* data;
+};
+
+struct time_interval_ref {
+  struct time_interval* interval;
+  uintptr_t executed;
 };
 
 struct time_manager {
@@ -76,13 +86,13 @@ extern int time_manager(struct time_manager* const);
 
 extern int time_manager_start(struct time_manager* const);
 
-extern int time_manager_add_timeout(struct time_manager* const, const uint64_t, void (*)(void*), void* const, struct time_timeout** const);
+extern int time_manager_add_timeout(struct time_manager* const, const uint64_t, void (*)(void*), void* const, struct time_timeout_ref* const);
 
-extern int time_manager_add_interval(struct time_manager* const, const uint64_t, const uint64_t, void (*)(void*), void* const, struct time_interval** const, const unsigned long);
+extern int time_manager_add_interval(struct time_manager* const, const uint64_t, const uint64_t, void (*)(void*), void* const, struct time_interval_ref* const, const int);
 
-extern void time_manager_cancel_timeout(struct time_manager* const, struct time_timeout* const);
+extern int time_manager_cancel_timeout(struct time_manager* const, struct time_timeout_ref* const);
 
-extern void time_manager_cancel_interval(struct time_manager* const, struct time_interval* const);
+extern int time_manager_cancel_interval(struct time_manager* const, struct time_interval_ref* const);
 
 extern void time_manager_stop(struct time_manager* const);
 
