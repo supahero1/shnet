@@ -6,6 +6,80 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+const char* http1_default_reason_phrase(const int status) {
+  switch(status) {
+    case http_s_continue: return "Continue";
+    case http_s_switching_protocols: return "Switching Protocols";
+    case http_s_processing: return "Processing";
+    
+    case http_s_ok: return "OK";
+    case http_s_created: return "Created";
+    case http_s_accepted: return "Accepted";
+    case http_s_non_authoritative_information: return "Non-authoritative Information";
+    case http_s_no_content: return "No Content";
+    case http_s_reset_content: return "Reset Content";
+    case http_s_partial_content: return "Partial Content";
+    case http_s_multi_status: return "Multi-Status";
+    case http_s_already_reported: return "Already Reported";
+    case http_s_im_used: return "IM Used";
+    
+    case http_s_multiple_choices: return "Multiple Choices";
+    case http_s_moved_permanently: return "Moved Permanently";
+    case http_s_found: return "Found";
+    case http_s_see_other: return "See Other";
+    case http_s_not_modified: return "Not Modified";
+    case http_s_use_proxy: return "Use Proxy";
+    case http_s_temporary_redirect: return "Temporary Redirect";
+    case http_s_permanent_redirect: return "Permanent Redirect";
+    
+    case http_s_bad_request: return "Bad Request";
+    case http_s_unauthorized: return "Unauthorized";
+    case http_s_payment_required: return "Payment Required";
+    case http_s_forbidden: return "Forbidden";
+    case http_s_not_found: return "Not Found";
+    case http_s_method_not_allowed: return "Method Not Allowed";
+    case http_s_not_acceptable: return "Not Acceptable";
+    case http_s_proxy_authentication_required: return "Proxy Authentication Required";
+    case http_s_request_timeout: return "Request Timeout";
+    case http_s_conflict: return "Conflict";
+    case http_s_gone: return "Gone";
+    case http_s_length_required: return "Lengh Required";
+    case http_s_precondition_failed: return "Precondition Failed";
+    case http_s_payload_too_large: return "Payload Too Large";
+    case http_s_request_uri_too_long: return "Request-URI Too Long";
+    case http_s_unsupported_media_type: return "Unsupported Media Type";
+    case http_s_requested_range_not_satisfiable: return "Requested Range Not Satisfiable";
+    case http_s_expectation_failed: return "Expectation Failed";
+    case http_s_i_am_a_teapot: return "I'm a teapot";
+    case http_s_misdirected_request: return "Misdirected Request";
+    case http_s_unprocessable_entity: return "Unprocessable Entity";
+    case http_s_locked: return "Locked";
+    case http_s_failed_dependency: return "Failed Dependency";
+    case http_s_upgrade_required: return "Upgrade Required";
+    case http_s_precondition_required: return "Precondition Required";
+    case http_s_too_many_requests: return "Too Many Requests";
+    case http_s_request_header_fields_too_large: return "Request Header Fields Too Large";
+    case http_s_connection_closed_without_response: return "Connection Closed Without Response";
+    case http_s_unavailable_for_legal_reasons: return "Unavailable For Legal Reasons";
+    case http_s_client_closed_request: return "Client Closed Request";
+    
+    case http_s_internal_server_error: return "Internal Server Error";
+    case http_s_not_implemented: return "Not Implemented";
+    case http_s_bad_gateway: return "Bad Gateway";
+    case http_s_service_unavailable: return "Service Unavailable";
+    case http_s_gateway_timeout: return "Gateway Timeout";
+    case http_s_http_version_not_supported: return "HTTP Version Not Supported";
+    case http_s_variant_also_negotiates: return "Variant Also Negotiates";
+    case http_s_insufficient_storage: return "Insufficient Storage";
+    case http_s_loop_detected: return "Loop Detected";
+    case http_s_not_extended: return "Not Extended";
+    case http_s_network_authentication_required: return "Network Authentication Required";
+    case http_s_network_connect_timeout_error: return "Network Connect Timeout Error";
+    
+    default: return "";
+  }
+}
+
 static const char http_tokens[] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -67,7 +141,7 @@ const char* http1_parser_strerror(const int err) {
 }
 
 uint32_t http1_message_length(const struct http_message* const message) {
-  if(message->method != NULL) { /* Request */
+  if(message->method_len != 0) { /* Request */
     /* 2 spaces, 2 CRLF, sizeof HTTP/1.1  = 14 */
     uint32_t length = message->method_len + 14 + message->path_len + message->body_len + message->headers_len * 4;
     for(uint32_t i = 0; i < message->headers_len; ++i) {
@@ -87,7 +161,7 @@ uint32_t http1_message_length(const struct http_message* const message) {
 /* Buffer must be at least http1_message_length(message) bytes long */
 
 void http1_create_message(char* buffer, const struct http_message* const message) {
-  if(message->method != NULL) {
+  if(message->method_len != 0) {
     (void) memcpy(buffer, message->method, message->method_len);
     buffer += message->method_len;
     buffer[0] = ' ';
@@ -157,6 +231,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       session->last_idx += 2;
       buffer += 2;
       size -= 2;
+      message->headers_len = 0;
     } else {
       return http_has_headers_but_max_is_0;
     }
@@ -282,10 +357,24 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
             return http_transfer_not_supported;
           }
         } else if(message->headers[i].name_len == 16 && strncasecmp(message->headers[i].name, "content-encoding", 16) == 0) {
-          if(message->headers[i].value_len == 7 && strncasecmp(message->headers[i].value, "deflate", 7) == 0) {
-            message->encoding = http_e_deflate;
+          if(message->headers[i].value_len == 4 && strncasecmp(message->headers[i].value, "gzip", 4) == 0) {
+            if((settings->dont_accept_encoding & http_ae_gzip) == 0) {
+              message->encoding = http_e_gzip;
+            } else {
+              return http_encoding_not_supported;
+            }
+          } else if(message->headers[i].value_len == 7 && strncasecmp(message->headers[i].value, "deflate", 7) == 0) {
+            if((settings->dont_accept_encoding & http_ae_deflate) == 0) {
+              message->encoding = http_e_deflate;
+            } else {
+              return http_encoding_not_supported;
+            }
           } else if(message->headers[i].value_len == 2 && strncasecmp(message->headers[i].value, "br", 2) == 0) {
-            message->encoding = http_e_brotli;
+            if((settings->dont_accept_encoding & http_ae_brotli) == 0) {
+              message->encoding = http_e_brotli;
+            } else {
+              return http_encoding_not_supported;
+            }
           } else if(message->headers[i].value_len != 0 && (message->headers[i].value_len != 4 || strncasecmp(message->headers[i].value, "none", 4) != 0)) {
             return http_encoding_not_supported;
           } /* else it's empty and let's just ignore it */
@@ -328,53 +417,43 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
     if(message->allocated_body) {
       buffer = message->body;
     }
-    switch(message->encoding) {
-      case http_e_none: {
-        message->body = buffer;
-        break;
+    if(message->encoding == http_e_none) {
+      message->body = buffer;
+    } else {
+      size_t len;
+      errno = 0;
+      switch(message->encoding) {
+        case http_e_gzip: {
+          message->body = gzip_decompress(buffer, message->body_len, &len, settings->max_body_len);
+          break;
+        }
+        case http_e_deflate: {
+          message->body = deflate_decompress(buffer, message->body_len, &len, settings->max_body_len);
+          break;
+        }
+        case http_e_brotli: {
+          message->body = brotli_decompress(buffer, message->body_len, &len, settings->max_body_len);
+          break;
+        }
+        default: __builtin_unreachable();
       }
-      case http_e_deflate: {
-        size_t len;
-        errno = 0;
-        message->body = deflate_decompress(buffer, message->body_len, &len, settings->max_body_len);
-        if(message->body == NULL) {
-          if(errno == ENOMEM) {
-            return http_out_of_memory;
-          } else if(errno == EOVERFLOW) {
-            return http_body_too_long;
-          } else {
-            return http_corrupted_body_compression;
-          }
+      if(message->body == NULL) {
+        if(errno == ENOMEM) {
+          return http_out_of_memory;
+        } else if(errno == EOVERFLOW) {
+          return http_body_too_long;
+        } else {
+          return http_corrupted_body_compression;
         }
-        message->body_len = len;
-        if(message->allocated_body) {
-          free(buffer);
-        }
-        message->allocated_body = 1;
-        break;
       }
-      case http_e_brotli: {
-        size_t len;
-        message->body = brotli_decompress(buffer, message->body_len, &len, settings->max_body_len);
-        if(message->body == NULL) {
-          if(errno == ENOMEM) {
-            return http_out_of_memory;
-          } else if(errno == EOVERFLOW) {
-            return http_body_too_long;
-          } else {
-            return http_corrupted_body_compression;
-          }
-        }
-        message->body_len = len;
-        if(message->allocated_body) {
-          free(buffer);
-        }
-        message->allocated_body = 1;
-        break;
+      message->body_len = len;
+      if(message->allocated_body) {
+        free(buffer);
       }
+      message->allocated_body = 1;
+      /* No encoding now */
+      message->encoding = http_e_none;
     }
-    /* No encoding now */
-    message->encoding = http_e_none;
   } else {
     while(1) {
       uint32_t chunk_len = 0;
@@ -446,6 +525,7 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
     case http_pla_version: goto pla_version;
     case http_pla_body:
     case http_pla_headers: goto pla_headers;
+    default: __builtin_unreachable();
   }
   ATLEAST(2);
   if(!settings->no_character_validation) {
@@ -529,7 +609,6 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
   }
   buffer += idx;
   size -= idx;
-  idx = 0;
   pla_version:
   ATLEAST(10);
   /* Don't make a new "http_malformed_version" error if "HTTP/" isn't there */
@@ -560,6 +639,7 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
     case http_pla_reason_phrase: goto pla_reason_phrase;
     case http_pla_body:
     case http_pla_headers: goto pla_headers;
+    default: __builtin_unreachable();
   }
   ATLEAST(9);
   if(memcmp(buffer, "HTTP/1.1", 8) != 0) {
@@ -574,7 +654,7 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
   buffer += 9;
   size -= 9;
   pla_status_code:
-  ATLEAST(4);
+  ATLEAST(3);
   if(!IS_DIGIT(buffer[0]) || !IS_DIGIT(buffer[1]) || !IS_DIGIT(buffer[2])) {
     return http_invalid_character;
   }
@@ -584,13 +664,19 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
   }
   session->last_at = http_pla_reason_phrase;
   session->parsed_status_code = 1;
-  session->last_idx += 4;
+  session->last_idx += 3;
   if(settings->stop_at_status_code) {
     return http_valid;
   }
-  buffer += 4;
-  size -= 4;
+  buffer += 3;
+  size -= 3;
   pla_reason_phrase:
+  ATLEAST(2);
+  /* Skip the ambiguous space, should it be here or not? */
+  if(buffer[0] == ' ') {
+    ++buffer;
+    --size;
+  }
   ATLEAST(2);
   if(!settings->no_character_validation) {
     uint32_t i = 0;

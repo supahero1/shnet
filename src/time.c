@@ -178,11 +178,6 @@ static int time_manager_set_latest(struct time_manager* const manager) {
 
 static void time_manager_thread(void* time_manager_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-  {
-    sigset_t mask;
-    (void) sigfillset(&mask);
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-  }
   while(1) {
     check_for_timers:
     (void) sem_wait(&manager->amount);
@@ -226,7 +221,6 @@ static void time_manager_thread(void* time_manager_thread_data) {
       }
     }
     (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    pthread_testcancel();
   }
 }
 
@@ -272,7 +266,7 @@ int time_manager_add_interval(struct time_manager* const manager, const uint64_t
 
 int time_manager_cancel_timeout(struct time_manager* const manager, struct time_timeout_ref* const timeout) {
   (void) pthread_mutex_lock(&manager->mutex);
-  if(timeout->executed == 0) {
+  if(timeout->executed == 0 && timeout->timeout != NULL) {
     timeout->executed = 1;
     refheap_delete(&manager->timeouts, timeout->timeout);
     (void) time_manager_set_latest(manager);
@@ -286,7 +280,7 @@ int time_manager_cancel_timeout(struct time_manager* const manager, struct time_
 
 int time_manager_cancel_interval(struct time_manager* const manager, struct time_interval_ref* const interval) {
   (void) pthread_mutex_lock(&manager->mutex);
-  if(interval->executed == 0) {
+  if(interval->executed == 0 && interval->interval != NULL) {
     interval->executed = 1;
     refheap_delete(&manager->intervals, interval->interval);
     (void) time_manager_set_latest(manager);

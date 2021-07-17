@@ -472,8 +472,10 @@ prettier. */
 on, a pointer must be passed that the
 underlying code will update to reflect
 current position of the timer. Canceling
-a timer is thread-safe. */
-struct time_timeout* timeout_ref;
+a timer is thread-safe. It can be done
+after the timer has been already executed
+or cancelled. */
+struct time_timeout_ref timeout_ref;
 
 /* The application can resize the available
 space for timeouts and intervals once it
@@ -488,8 +490,12 @@ if(err == -1) {
 }
 
 /* The timeout can be canceled at any time
-with the use of the reference: */
-time_manager_cancel_timeout(&manager, timeout_ref);
+with the use of the reference. 1 is returned
+if the timer was successfully cancelled before
+execution, 0 otherwise. Note that 0 will be
+returned if the timer was already cancelled.
+Currently, there is no method of distinguishing. */
+int cancelled = time_manager_cancel_timeout(&manager, &timeout_ref);
 
 /* Intervals are the same, except one more
 value to supply to the insertion call: */

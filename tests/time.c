@@ -119,7 +119,7 @@ void cbbenchfunc(void* data) {
     }
     sd /= 1000;
     sd = sqrt(sd);
-    printf_debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
+    _debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
     time_manager_stop(data);
     pthread_mutex_unlock(&mutexo);
@@ -130,8 +130,8 @@ void cbbenchfunc(void* data) {
 int counter = 0;
 
 int main() {
-  printf_debug("Testing time:", 1);
-  printf_debug("1. Stress test", 1);
+  _debug("Testing time:", 1);
+  _debug("1. Stress test", 1);
   puts("If a round takes longer than 5 seconds, consider the test failed and feel free to break out using an interrupt (^C).");
   srand(time_get_time());
   (void) pthread_mutex_lock(&mutexo);
@@ -165,7 +165,7 @@ int main() {
   }
   goto start;
   benchmark:
-  printf_debug("2. Benchmark", 1);
+  _debug("2. Benchmark", 1);
   puts("A \"frame loop\" will be created to see various statistics. An interval will be fired at 60FPS rate and the benchmark will end when 1000 samples have been collected.");
   memset(&manager, 0, sizeof(manager));
   if(time_manager(&manager) != 0) {

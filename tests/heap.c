@@ -25,13 +25,13 @@ static int cmp(const void* i1, const void* i2) {
 }
 
 int main() {
-  printf_debug("Testing heap:", 1);
+  _debug("Testing heap:", 1);
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
-  printf_debug("1. Initialisation", 1);
+  _debug("1. Initialization", 1);
   struct heap h;
   memset(&h, 0, sizeof(h));
   h.sign = heap_min;
@@ -41,12 +41,12 @@ int main() {
   h.size = h.used;
   int err = heap_resize(&h, (count + 1) * sizeof(struct heap_node));
   if(err != 0) {
-    printf_debug("can't allocate mem", 1);
+    _debug("can't allocate mem", 1);
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2. Security measures", 1);
-  printf_debug("2.1.", 1);
+  _debug("2. Security measures", 1);
+  _debug("2.1.", 1);
   h.used = h.item_size;
   h.sign = heap_min;
   (void) heap_insert(&h, &((struct heap_node) {
@@ -57,7 +57,7 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2.2.", 1);
+  _debug("2.2.", 1);
   (void) heap_insert(&h, &((struct heap_node) {
     .value = 2
   }));
@@ -69,7 +69,7 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2.3.", 1);
+  _debug("2.3.", 1);
   ((unsigned long*) h.array)[2] = 0;
   heap_down(&h, h.item_size);
   if(((unsigned long*) h.array)[1] == 1) {
@@ -79,7 +79,7 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2.4.", 1);
+  _debug("2.4.", 1);
   h.used = h.item_size;
   h.sign = heap_max;
   (void) heap_insert(&h, &((struct heap_node) {
@@ -90,7 +90,7 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2.5.", 1);
+  _debug("2.5.", 1);
   (void) heap_insert(&h, &((struct heap_node) {
     .value = 0
   }));
@@ -102,7 +102,7 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("2.6.", 1);
+  _debug("2.6.", 1);
   ((unsigned long*) h.array)[2] = 2;
   heap_down(&h, h.item_size);
   if(((unsigned long*) h.array)[1] == 1) {
@@ -112,8 +112,8 @@ int main() {
     TEST_FAIL;
   }
   TEST_PASS;
-  printf_debug("3. Insertion and deletion stress tests", 1);
-  printf_debug("3.1.", 1);
+  _debug("3. Insertion and deletion stress tests", 1);
+  _debug("3.1.", 1);
   h.used = h.item_size;
   h.sign = heap_min;
   unsigned long i1[] = { 1, 3, 2, 4 };
@@ -131,7 +131,7 @@ int main() {
   TEST_PASS;
   h.used = h.item_size;
   h.sign = heap_max;
-  printf_debug("3.2.", 1);
+  _debug("3.2.", 1);
   for(unsigned long i = 0; i < 4; ++i) {
     (void) heap_insert(&h, &((struct heap_node) {
       .value = i1[i]
@@ -147,7 +147,7 @@ int main() {
   h.sign = heap_min;
   unsigned long i2[count];
   unsigned long r[count];
-  printf_debug("3.3.", 1);
+  _debug("3.3.", 1);
   for(unsigned long q = 0; q < repeat; ++q) {
     h.used = h.item_size;
     for(unsigned long i = 0; i < count; ++i) {
@@ -189,7 +189,7 @@ int main() {
   printf("\r");
   TEST_PASS;
   h.sign = heap_max;
-  printf_debug("3.4.", 1);
+  _debug("3.4.", 1);
   for(unsigned long q = 0; q < repeat; ++q) {
     h.used = h.item_size;
     for(unsigned long i = 0; i < count; ++i) {
@@ -230,7 +230,7 @@ int main() {
   }
   printf("\r");
   TEST_PASS;
-  printf_debug("Testing heap.c succeeded", 1);
+  _debug("Testing heap.c succeeded", 1);
   heap_free(&h);
   return 0;
 }

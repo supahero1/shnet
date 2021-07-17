@@ -1,4 +1,5 @@
 #include "tls.h"
+#include "debug.h"
 #include "aflags.h"
 
 #include <errno.h>
@@ -40,32 +41,32 @@ static struct tcp_socket_callbacks tls_socket_callbacks;
 
 static struct tcp_server_callbacks tls_server_callbacks;
 
-static struct tls_socket_settings tls_socket_settings;
+static struct tls_socket_settings tls_socket_settings = { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
 
-static _Atomic int __tls_initialised = 0;
+static pthread_once_t __tls_once = PTHREAD_ONCE_INIT;
 
-static void __tls_init() {
-  if(atomic_compare_exchange_strong(&__tls_initialised, &(int){0}, 1)) {
-    tls_ignore_sigpipe();
-    
-    tls_socket_callbacks = (struct tcp_socket_callbacks) {
-      tls_oncreation,
-      tls_onopen,
-      tls_onmessage,
-      tls_onreadclose,
-      tls_onsend,
-      tls_socket_onnomem,
-      tls_onclose,
-      tls_onfree
-    };
-    tls_server_callbacks = (struct tcp_server_callbacks) {
-      tls_onconnection,
-      tls_server_onnomem,
-      tls_onshutdown
-    };
-    
-    tls_socket_settings = (struct tls_socket_settings) { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
-  }
+static void __tls_init(void) {
+  tls_ignore_sigpipe();
+  
+  tls_socket_callbacks = (struct tcp_socket_callbacks) {
+    tls_oncreation,
+    tls_onopen,
+    tls_onmessage,
+    tls_onreadclose,
+    tls_onsend,
+    tls_socket_onnomem,
+    tls_onclose,
+    tls_onfree
+  };
+  tls_server_callbacks = (struct tcp_server_callbacks) {
+    tls_onconnection,
+    tls_server_onnomem,
+    tls_onshutdown
+  };
+}
+
+static void tls_init(void) {
+  (void) pthread_once(&__tls_once, __tls_init);
 }
 
 
@@ -314,7 +315,7 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
 }
 
 int tls_create_socket(struct tls_socket* const socket) {
-  __tls_init();
+  tls_init();
   socket->tcp.callbacks = &tls_socket_callbacks;
   if(socket->settings == NULL) {
     socket->settings = &tls_socket_settings;
@@ -598,9 +599,15 @@ unsigned char tls_peek_once(struct tls_socket* const socket, const int offset) {
 
 static int tls_onconnection(struct tcp_socket* sock) {
   socket->ctx = server->ctx;
-  __tls_init();
   socket->tcp.callbacks = &tls_socket_callbacks;
-  return server->callbacks->onconnection(socket);
+  if(tls_socket_init(socket, net_server) != 0) {
+    return -1;
+  }
+  const int err = server->callbacks->onconnection(socket);
+  if(err == 0 && socket->settings == NULL) {
+    socket->settings = &tls_socket_settings;
+  }
+  return err;
 }
 
 #undef server
@@ -625,8 +632,9 @@ void tls_server_free(struct tls_server* const server) {
 }
 
 int tls_create_server(struct tls_server* const server, struct addrinfo* const info) {
-  if(server->tcp.settings->socket_size == 0) {
-    server->tcp.settings->socket_size = sizeof(struct tls_socket);
+  tls_init();
+  if(server->tcp.socket_size == 0) {
+    server->tcp.socket_size = sizeof(struct tls_socket);
   }
   server->tcp.callbacks = &tls_server_callbacks;
   return tcp_create_server(&server->tcp, info);

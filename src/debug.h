@@ -3,10 +3,10 @@
 
 #include <stdarg.h>
 
-void printf_debug(const char*, const int, ...);
+void _debug(const char* const, const int, ...);
 
-void print_debug(const char*, const int, ...);
+void debug(const char* const, const int, ...);
 
-#define die(msg, err) printf_debug("%s failed at line %d file %s with code %d errno %d", 0, msg, __LINE__, __FILE__, err, errno);
+#define die(reason) _debug("failed at line %d file %s errno %d with reason: %s", 1, __LINE__, __FILE__, errno, (reason));abort();
 
 #endif // Qj_qc3fWVV_fzcg__TsDi_R2hW_lW__t

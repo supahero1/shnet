@@ -39,18 +39,18 @@ struct tcp_socket_callbacks {
   A failure has an additional meaning with server sockets - the application can
   inspect them before it decides to let them in. If such a socket is deemed invalid
   by the application, it shall return -1 and not initialise anything.
-  When a new server socket is created and the oncreation() callback is called, it
-  is also the responsibility of the application to fill in required members of the 
+  When a new server socket is created and the onconnection() callback is called, it
+  is also the responsibility of the application to fill in required members of the
   socket, that is:
   - socket->callbacks
-  - socket->settings
+  - socket->settings (can be left empty, will then use the default)
   Only then can it return successfully. Otherwise it is undefined behavior and will
   likely lead to an instant crash.
   The new socket's epoll will automatically be set to its server's epoll. It is
   undefined behavior if the application changes it to a different epoll or if it
   will tamper with the socket's server pointer.
   Returning -1 will result in the socket being destroyed.
-  onfree() can be called after oncreation() if the socket failed at any further
+  onfree() can be called after onconnection() if the socket failed at any further
   stage of a server socket's creation. It will also be called as part of tcp_socket_free().
   onclose() may be called without onopen() if connection fails to be established.
   Setting this callback to anything other than NULL is meaningless if done as part
@@ -103,8 +103,15 @@ struct tcp_socket_settings {
   uint32_t onreadclose_auto_res:1;
   uint32_t remove_from_epoll_onclose:1;
   uint32_t dont_free_addrinfo:1;
+  /* Only available for non-server sockets. Applications which allocate their
+  sockets dynamically will need to use this function so that they don't need to
+  override the TCP's tcp_socket_free() function to free the socket. That's because
+  callbacks are always called from the top-most layer to the bottom-most, at the
+  bottom being TCP. Freeing the socket at the top-most layer would create a bunch
+  of invalid reads and writes, causing segmentation fault. */
   uint32_t free_on_free:1;
-  int32_t free_offset:28;
+  /* Look tcp_server's "offset" member of settings for an explanation. */
+  uint32_t free_offset:28;
 };
 
 /* A tcp_socket's address after the call to tcp_create_socket() MUST NOT BE CHANGED.
@@ -173,10 +180,13 @@ struct tcp_server_callbacks {
 struct tcp_server_settings {
   uint32_t max_conn;
   int backlog;
-  /* The application must fill this in if it plans to embed a socket's struct
-  inside its own struct. For servers, it will signal to allocate more memory.
-  Otherwise, leave it at 0 for the underlying code to set to the default. */
-  uint32_t socket_size;
+  /* Offset of the created socket. Only to be used by applications which embed
+  tcp_socket inside their own structure somewhere else than the beginning. Note
+  that after doing this, one needs to also change the socket's pointer when
+  in callback to be able to access the original struct the socket is embedded in.
+  The offset is a positive integer in bytes saying how far from the beginning the
+  tcp_socket lies. */
+  uint32_t offset;
 };
 
 struct tcp_server {
@@ -196,6 +206,10 @@ struct tcp_server {
   uint32_t* freeidx;
   uint32_t freeidx_used;
   uint32_t sockets_used;
+  /* The application must fill this in if it plans to embed a socket's struct
+  inside its own struct. For servers, it will signal to allocate more memory.
+  Otherwise, leave it at 0 for the underlying code to set to the default. */
+  uint32_t socket_size;
   uint32_t disallow_connections:1;
   uint32_t is_closing:1;
 };

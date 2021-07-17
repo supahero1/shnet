@@ -138,8 +138,7 @@ int main(int argc, char **argv) {
   const int shared_epoll = atoi(argv[3]);
   
   /* Epoll setup */
-  struct net_epoll socket_epoll;
-  memset(&socket_epoll, 0, sizeof(socket_epoll));
+  struct net_epoll socket_epoll = {0};
   if(tcp_epoll(&socket_epoll) != 0) {
     TEST_FAIL;
   }
@@ -147,9 +146,8 @@ int main(int argc, char **argv) {
     TEST_FAIL;
   }
   
-  struct net_epoll server_epoll;
+  struct net_epoll server_epoll = {0};
   if(shared_epoll == 0) {
-    memset(&server_epoll, 0, sizeof(server_epoll));
     if(tcp_epoll(&server_epoll) != 0) {
       TEST_FAIL;
     }

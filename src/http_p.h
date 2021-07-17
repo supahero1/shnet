@@ -36,8 +36,14 @@ enum http_p_sconsts {
   
   /* ENCODING */
   http_e_none = 0,
-  http_e_brotli,
+  http_e_gzip,
   http_e_deflate,
+  http_e_brotli,
+  
+  /* ACCEPT ENCODING */
+  http_ae_gzip = 1,
+  http_ae_deflate = 2,
+  http_ae_brotli = 4,
   
   /* PARSER FLAGS */
   http_pf_method = 1,
@@ -118,6 +124,8 @@ enum http_p_sconsts {
   http_s_network_connect_timeout_error = 599
 };
 
+extern const char* http1_default_reason_phrase(const int);
+
 #define IS_DIGIT(a) ((a) >= '0' && (a) <= '9')
 #define IS_HEX(a) (IS_DIGIT(a) || ((a) >= 'A' && (a) <= 'F') || ((a) >= 'a' && (a) <= 'f'))
 
@@ -168,7 +176,7 @@ extern const char* http1_parser_strerror(const int);
 struct http_message {
   union {
     char* method;
-    char* reason_phrase;
+    const char* reason_phrase;
   };
   char* path;
   struct http_header* headers;
@@ -235,7 +243,8 @@ struct http_parser_settings {
   
   uint32_t max_header_value_len:16;
   uint32_t max_header_name_len:8;
-  uint32_t _unused2:8;
+  uint32_t dont_accept_encoding:3;
+  uint32_t _unused2:5;
   
   uint32_t max_body_len;
 };

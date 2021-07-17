@@ -63,7 +63,7 @@ do { \
 } while(0)
 
 int main() {
-  printf_debug("Testing udp:", 1);
+  _debug("Testing udp:", 1);
   puts("Please keep the port 8099 empty for the test to succeed.");
   int err;
   
@@ -80,7 +80,7 @@ int main() {
   epoll.on_event = on_event;
   err = net_epoll(&epoll, net_epoll_no_wakeup_method);
   check_err;
-  err = net_epoll_start(&epoll, 1);
+  err = net_epoll_start(&epoll);
   check_err;
   
   

@@ -398,76 +398,70 @@ int net_socket_base_options(const int sfd) {
 
 
 #define epoll ((struct net_epoll*) net_epoll_thread_data)
+#define event_base ((struct net_socket_base*) events[i].data.ptr)
 
 static void net_epoll_thread(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-  pthread_testcancel();
-  {
-    sigset_t mask;
-    (void) sigfillset(&mask);
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-  }
   struct epoll_event events[NET_EPOLL_DEFAULT_MAX_EVENTS];
   while(1) {
     int count = epoll_wait(epoll->fd, events, NET_EPOLL_DEFAULT_MAX_EVENTS, -1);
     for(int i = 0; i < count; ++i) {
-      if(((struct net_socket_base*) events[i].data.ptr)->which == net_wakeup_method) {
+      if(event_base->which == net_wakeup_method) {
         uint64_t r;
         const int ret = eventfd_read(epoll->base.sfd, &r);
         (void) ret;
         continue;
       }
-      epoll->on_event(epoll, events[i].events, (struct net_socket_base*) events[i].data.ptr);
+      epoll->on_event(epoll, events[i].events, event_base);
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
       epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
-    if(epoll->bases_tbc_allow_freeing == 1) {
-      free(epoll->bases_tbc);
-      epoll->bases_tbc = NULL;
-      epoll->bases_tbc_size = 0;
-    }
+    free(epoll->bases_tbc);
+    epoll->bases_tbc = NULL;
+    epoll->bases_tbc_size = 0;
     epoll->bases_tbc_used = 0;
     (void) pthread_mutex_unlock(&epoll->lock);
   }
 }
+
+#undef event_base
+
+#define event_base ((struct net_socket_base*) epoll->events[i].data.ptr)
 
 static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-  pthread_testcancel();
-  {
-    sigset_t mask;
-    (void) sigfillset(&mask);
-    (void) pthread_sigmask(SIG_BLOCK, &mask, NULL);
-  }
   while(1) {
     int count = epoll_wait(epoll->fd, epoll->events, epoll->events_size, -1);
     for(int i = 0; i < count; ++i) {
-      if(((struct net_socket_base*) epoll->events[i].data.ptr)->which == net_wakeup_method) {
+      if(event_base->which == net_wakeup_method) {
         uint64_t r;
         const int ret = eventfd_read(epoll->base.sfd, &r);
         (void) ret;
         continue;
       }
-      epoll->on_event(epoll, epoll->events[i].events, (struct net_socket_base*) epoll->events[i].data.ptr);
+      epoll->on_event(epoll, epoll->events[i].events, event_base);
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
     (void) pthread_mutex_lock(&epoll->lock);
     for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
       epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
-    if(epoll->bases_tbc_allow_freeing == 1) {
-      free(epoll->bases_tbc);
-      epoll->bases_tbc = NULL;
-      epoll->bases_tbc_size = 0;
-    }
+    free(epoll->bases_tbc);
+    epoll->bases_tbc = NULL;
+    epoll->bases_tbc_size = 0;
     epoll->bases_tbc_used = 0;
     (void) pthread_mutex_unlock(&epoll->lock);
   }
 }
 
+#undef event_base
 #undef epoll
 
 int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
@@ -496,6 +490,8 @@ int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
       (void) close(epoll->base.sfd);
       goto err_mutex;
     }
+  } else {
+    epoll->base.sfd = -1;
   }
   if(epoll->events == NULL) {
     epoll->threads.func = net_epoll_thread;
@@ -525,7 +521,9 @@ void net_epoll_stop(struct net_epoll* const epoll) {
 void net_epoll_free(struct net_epoll* const epoll) {
   threads_free(&epoll->threads);
   (void) close(epoll->fd);
-  (void) close(epoll->base.sfd);
+  if(epoll->base.sfd != -1) {
+    (void) close(epoll->base.sfd);
+  }
   free(epoll->bases_tbc);
 }
 

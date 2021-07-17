@@ -207,8 +207,7 @@ struct net_epoll {
   struct epoll_event* events;
   int events_size;
   int fd;
-  uint32_t bases_tbc_used:31;
-  uint32_t bases_tbc_allow_freeing:1;
+  uint32_t bases_tbc_used;
   uint32_t bases_tbc_size;
 };
 

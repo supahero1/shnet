@@ -111,10 +111,9 @@ struct tls_server_callbacks {
   /*
   This callback is called when a TCP connection arrives, not a TLS one. The
   application must then fill the following information of the socket:
-  - socket->tcp.settings
+  - socket->tcp.settings (can be left empty, will then use the default)
   - socket->callbacks
-  - socket->settings
-  - socket->ssl and other SSL members by simply using tls_socket_init()
+  - socket->settings (can be left empty, will then use the default)
   Note that socket->ctx will by default be set to its server's ctx. It may be
   changed by the application though.
   The new socket's epoll will be set to its server's epoll by default, as it is
@@ -148,6 +147,8 @@ extern void tls_server_dont_accept_conn(struct tls_server* const);
 extern void tls_server_accept_conn(struct tls_server* const);
 
 extern int tls_server_shutdown(struct tls_server* const);
+
+extern uint32_t tls_server_get_conn_amount_raw(const struct tls_server* const);
 
 extern uint32_t tls_server_get_conn_amount(struct tls_server* const);
 

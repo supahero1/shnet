@@ -48,28 +48,28 @@ long avl_get_balance(struct avl_tree* const tree, struct avl_node* const node) {
 void avl_integrity_check(struct avl_tree* const tree, struct avl_node* const node, const int child) {
   if(node->parent != NULL) {
     if(node == node->parent) {
-      printf_debug("\r(0) broken link", 1);
+      _debug("\r(0) broken link", 1);
       TEST_FAIL;
     }
     if(child == 0 && node->parent->left != node) {
-      printf_debug("\r(1) broken link", 1);
+      _debug("\r(1) broken link", 1);
       TEST_FAIL;
     }
     if(child == 1 && node->parent->right != node) {
-      printf_debug("\r(2) broken link", 1);
+      _debug("\r(2) broken link", 1);
       TEST_FAIL;
     }
   }
   if(node->left != NULL) {
     if(node->left->parent != node) {
-      printf_debug("\r(3) broken link", 1);
+      _debug("\r(3) broken link", 1);
       TEST_FAIL;
     }
     avl_integrity_check(tree, node->left, 0);
   }
   if(node->right != NULL) {
     if(node->right->parent != node) {
-      printf_debug("\r(4) broken link", 1);
+      _debug("\r(4) broken link", 1);
       TEST_FAIL;
     }
     avl_integrity_check(tree, node->right, 1);
@@ -79,7 +79,7 @@ void avl_integrity_check(struct avl_tree* const tree, struct avl_node* const nod
 void avl_balance_check(struct avl_tree* const tree, struct avl_node* node) {
   long balance = avl_get_balance(tree, node);
   if(balance != node->balance) {
-    printf_debug("\rinvalid balance, has %ld, should have %ld", 1, node->balance, balance);
+    _debug("\rinvalid balance, has %ld, should have %ld", 1, node->balance, balance);
     TEST_FAIL;
   }
   if(node->left != NULL) {
@@ -142,13 +142,13 @@ void delnode(struct avl_node* node) {
 }
 
 int main() {
-  printf_debug("Testing avl:", 1);
+  _debug("Testing avl:", 1);
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);
     srand(tp.tv_nsec + tp.tv_sec * 1000000000);
   }
-  printf_debug("1. Stress test", 1);
+  _debug("1. Stress test", 1);
   memset(&tree, 0, sizeof(tree));
   tree.item_size = sizeof(unsigned long);
   tree.new_node = newnode;
@@ -188,7 +188,7 @@ int main() {
   }
   printf("\r");
   TEST_PASS;
-  printf_debug("2. Single deletion", 1);
+  _debug("2. Single deletion", 1);
   used = 0;
   for(unsigned long i = 0; i < 33000; ++i) {
     (void) avl_insert(&tree, &(unsigned long){ 1 }, avl_allow_copies);

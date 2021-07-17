@@ -15,6 +15,8 @@ struct http_header headers[8];
 
 int cleaned = 0;
 
+int which = 0;
+
 void cleanup(void) {
   cleaned = 1;
   
@@ -44,12 +46,17 @@ void test_explicit(char* const name, char* const buf, const int expected, const 
     cleaned = 1;
     cleanup();
   }
-  const int res = http1_parse_request(buf, length, &session, &settings, &message);
+  int res;
+  if(which == 0) {
+    res = http1_parse_request(buf, length, &session, &settings, &message);
+  } else {
+    res = http1_parse_response(buf, length, &session, &settings, &message);
+  }
   if(res != expected) {
-    printf_debug("Test suite %s yielded unexpected value: %s", 1, name, http1_parser_strerror(res));
+    _debug("Test suite %s yielded unexpected value: %s", 1, name, http1_parser_strerror(res));
     TEST_FAIL;
   } else {
-    printf_debug("Test suite %s passed", 1, name);
+    _debug("Test suite %s passed", 1, name);
     cleaned = 0;
     if(clean == 1) {
       cleanup();
@@ -70,7 +77,7 @@ void test_addon(char* const name, char* const buf, const int expected, const int
 #define cmp(a,b) check(strncmp((a), (b), strlen((b))), 0)
 
 int main() {
-  printf_debug("Testing http_p:", 1);
+  _debug("Testing http_p:", 1);
   
   /* Method */
   test("1", "", http_incomplete, 1);
@@ -318,7 +325,7 @@ int main() {
   char buff[512];
   memset(buff, 0, sizeof(buff));
   size_t size;
-  void* compressed = deflate_compress("Some text I wrote.", 18, &size, Z_BEST_COMPRESSION);
+  void* compressed = deflate_compress("Some text I wrote.", 18, &size);
   not_check(compressed, NULL);
   int len = sprintf(buff, "GET / HTTP/1.1\r\n"
   "Content-Length: %lu\r\n"
@@ -331,7 +338,7 @@ int main() {
   cmp(message.body, "Some text I wrote.");
   
   memset(buff, 0, sizeof(buff));
-  compressed = brotli_compress("Some text I wrote.", 18, &size, BROTLI_MAX_QUALITY, BROTLI_DEFAULT_WINDOW, BROTLI_MODE_TEXT);
+  compressed = brotli_compress("Some text I wrote.", 18, &size);
   not_check(compressed, NULL);
   len = sprintf(buff, "GET / HTTP/1.1\r\n"
   "Content-Length: %lu\r\n"
@@ -342,6 +349,19 @@ int main() {
   test_explicit("55", buff, http_valid, 0, len + size);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
+  
+  which = 1;
+  
+  test("56",
+  "HTTP/1.1 200 \r\n"
+  "\r\n"
+  , http_valid, 1);
+  test("57",
+  "HTTP/1.1 200\r\n"
+  "Connection: close\r\n"
+  "\r\n"
+  , http_valid, 0);
+  check(message.headers_len, 1);
   
   TEST_PASS;
   return 0;

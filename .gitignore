@@ -1,5 +1,6 @@
-build/
+bin/
 shnet/
 dev/
 logs.txt
 valgrind*
+vgcore*

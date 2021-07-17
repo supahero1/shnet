@@ -1,4 +1,5 @@
 #include "tcp.h"
+#include "debug.h"
 #include "aflags.h"
 
 #include <errno.h>
@@ -8,18 +9,11 @@
 #include <string.h>
 #include <netinet/tcp.h>
 
-static struct tcp_socket_settings tcp_socket_settings;
+static struct tcp_socket_settings tcp_socket_settings = { 0, 1, 1, 1, 0, 0 };
 
-static struct tcp_server_settings tcp_server_settings;
+static struct tcp_socket_settings tcp_serversock_settings = { 0, 1, 0, 1, 0, 0 };
 
-static _Atomic int __tcp_initialised = 0;
-
-static void __tcp_init() {
-  if(atomic_compare_exchange_strong(&__tcp_initialised, &(int){0}, 1)) {
-    tcp_socket_settings = (struct tcp_socket_settings) { 0, 1, 1, 1, 0, 0 };
-    tcp_server_settings = (struct tcp_server_settings) { 100, 64 };
-  }
-}
+static struct tcp_server_settings tcp_server_settings = { 100, 64 };
 
 static inline void tcp_socket_set_flag(struct tcp_socket* const socket, const uint32_t flag) {
   aflag32_add(&socket->flags, flag);
@@ -102,12 +96,14 @@ void tcp_socket_free(struct tcp_socket* const socket) {
       (void) close(socket->base.sfd);
     }
     /* Return the socket's index for reuse */
-    const uint32_t index = ((uintptr_t) socket - (uintptr_t) server->sockets) / server->settings->socket_size;
+    const uint32_t index = ((uintptr_t) socket - server->settings->offset - (uintptr_t) server->sockets) / server->socket_size;
     server->freeidx[server->freeidx_used++] = index;
-    (void) memset(socket, 0, server->settings->socket_size);
+    (void) memset(socket, 0, server->socket_size);
     (void) pthread_rwlock_unlock(&server->lock);
   } else {
     if(socket->callbacks->onfree != NULL) {
+      /* In case the socket will try to destroy epoll we are in right now */
+      (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
       socket->callbacks->onfree(socket);
     }
     (void) pthread_mutex_destroy(&socket->lock);
@@ -121,7 +117,7 @@ void tcp_socket_free(struct tcp_socket* const socket) {
     socket->base.which = net_unspecified;
     socket->base.events = 0;
     if(socket->settings->free_on_free) {
-      free((char*) socket + socket->settings->free_offset);
+      free((char*) socket - socket->settings->free_offset);
     } else {
       const int offset = offsetof(struct tcp_socket, lock);
       (void) memset((char*) socket + offset, 0, sizeof(struct tcp_socket) - offset);
@@ -150,7 +146,6 @@ void tcp_socket_force_close(struct tcp_socket* const socket) {
 
 int tcp_create_socket(struct tcp_socket* const sock) {
   if(sock->settings == NULL) {
-    __tcp_init();
     sock->settings = &tcp_socket_settings;
   }
   sock->cur_info = sock->info;
@@ -234,7 +229,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
   if(socket->send_used > 0) {
     int addon = 0;
     while(1) {
-      const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
+      const size_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
       if(bytes == -1) {
         if(errno == EAGAIN) {
           tcp_socket_clear_flag(socket, tcp_can_send);
@@ -278,7 +273,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
   if(tcp_socket_test_flag(socket, tcp_can_send)) {
     /* We are allowed to send data. Do it instead of waiting for epoll to preserve memory. */
     while(1) {
-      const ssize_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL | cork);
+      const size_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL | cork);
       if(bytes == -1) {
         if(errno == EAGAIN) {
           tcp_socket_clear_flag(socket, tcp_can_send);
@@ -356,7 +351,7 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
   }
   const int all = size;
   while(1) {
-    const ssize_t bytes = recv(socket->base.sfd, data, size, 0);
+    const size_t bytes = recv(socket->base.sfd, data, size, 0);
     if(bytes == -1) {
       if(errno == EINTR) {
         continue;
@@ -401,21 +396,24 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
       /* Weird, but maybe can happen, who knows */
       goto epollhup;
     }
-    beginning:
-    (void) close(socket->base.sfd);
-    socket->base.sfd = -1;
     if(socket->cur_info == NULL) {
       int code;
-      if(getsockopt(socket->base.sfd, tcp_protocol, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
+      if(getsockopt(socket->base.sfd, SOL_SOCKET, SO_ERROR, &code, &(socklen_t){sizeof(int)}) == 0) {
         errno = code;
       } else {
         errno = -1;
       }
+      (void) close(socket->base.sfd);
+      socket->base.sfd = -1;
     } else {
+      beginning:
+      (void) close(socket->base.sfd);
+      socket->base.sfd = -1;
       /* Maybe other addresses will work, let's try to reroute without
       reinitializing the whole socket from scratch */
       int reason;
       net_sockbase_set_whole_addr(&socket->base, net_addrinfo_get_whole_addr(socket->cur_info));
+      struct addrinfo* save = socket->cur_info;
       socket->cur_info = socket->cur_info->ai_next;
       while(1) {
 #undef socket
@@ -462,6 +460,7 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
         errno = reason;
       } else {
         /* Maybe there is hope */
+        socket->cur_info = save;
         goto beginning;
       }
     }
@@ -608,6 +607,8 @@ static void tcp_server_shutdown_socket_close(struct tcp_socket* socket, void* da
 
 static void tcp_server_shutdown_internal(struct net_socket_base* base) {
   tcp_server_foreach_conn(server, tcp_server_shutdown_socket_close, NULL, 1);
+  /* In case the server will try to destroy epoll we are in right now */
+  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
   server->callbacks->onshutdown(server);
 }
 
@@ -615,14 +616,13 @@ static void tcp_server_shutdown_internal(struct net_socket_base* base) {
 
 int tcp_create_server(struct tcp_server* const server, struct addrinfo* const info) {
   if(server->settings == NULL) {
-    __tcp_init();
     server->settings = &tcp_server_settings;
   }
-  if(server->settings->socket_size == 0) {
-    server->settings->socket_size = sizeof(struct tcp_socket);
+  if(server->socket_size == 0) {
+    server->socket_size = sizeof(struct tcp_socket);
   }
   if(server->sockets == NULL) {
-    server->sockets = calloc(server->settings->max_conn, server->settings->socket_size);
+    server->sockets = calloc(server->settings->max_conn, server->socket_size);
     if(server->sockets == NULL) {
       return -1;
     }
@@ -699,7 +699,6 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
   /* If we got an event, it will for sure be a new connection. We employ a while loop
   to accept until we hit EAGAIN. That way, we won't cause accidental starvation. */
   while(1) {
-    tryagain:;
     /* Instead of getting an index for the socket, first make sure the connection
     isn't aborted */
     struct sockaddr_in6 addr;
@@ -713,6 +712,8 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
         /* Case where the application has a mechanism for decreasing memory usage.
         Regardless of if it succeeds, we need to go to the next iteration anyway. */
         (void) _server->callbacks->onnomem(_server);
+      } else if(errno == EINVAL) {
+        die("tcp server's file descriptor is corrupted or a socket was mistakenly given a server flag");
       }
       /* Else, an error we can't fix (either connection error or limit on something) */
       continue;
@@ -723,10 +724,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     resources. */
     (void) pthread_rwlock_wrlock(&_server->lock);
     if(_server->settings->max_conn == tcp_server_get_conn_amount_raw(_server) || _server->disallow_connections == 1) {
-      (void) pthread_rwlock_unlock(&_server->lock);
-      tcp_socket_no_linger(sfd);
-      (void) close(sfd);
-      continue;
+      goto err_sock;
     }
     /* Otherwise, get memory for the socket */
     struct tcp_socket* socket;
@@ -736,9 +734,9 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     for ourselves for the whole duration of the socket's creation, so might as
     well use it. */
     if(_server->freeidx_used == 0) {
-      socket = (struct tcp_socket*)(_server->sockets + _server->sockets_used * _server->settings->socket_size);
+      socket = (struct tcp_socket*)(_server->sockets + _server->sockets_used * _server->socket_size + _server->settings->offset);
     } else {
-      socket = (struct tcp_socket*)(_server->sockets + _server->freeidx[_server->freeidx_used - 1] * _server->settings->socket_size);
+      socket = (struct tcp_socket*)(_server->sockets + _server->freeidx[_server->freeidx_used - 1] * _server->socket_size + _server->settings->offset);
     }
     /* Now we proceed to initialise required members of the socket. We don't
     have to zero it - it should already be zeroed. */
@@ -749,11 +747,10 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
     socket->epoll = _server->epoll;
     net_sockbase_set_whole_addr(&socket->base, &addr);
     if(_server->callbacks->onconnection(socket) != 0) {
-      (void) memset(socket, 0, sizeof(struct tcp_socket));
-      (void) pthread_rwlock_unlock(&_server->lock);
-      tcp_socket_no_linger(sfd);
-      (void) close(sfd);
-      continue;
+      goto err_mem;
+    }
+    if(socket->settings == NULL) {
+      socket->settings = &tcp_serversock_settings;
     }
     while(1) {
       const int err = pthread_mutex_init(&socket->lock, NULL);
@@ -764,11 +761,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
           if(socket->callbacks->onfree != NULL) {
             socket->callbacks->onfree(socket);
           }
-          (void) memset(socket, 0, sizeof(struct tcp_socket));
-          (void) pthread_rwlock_unlock(&_server->lock);
-          tcp_socket_no_linger(sfd);
-          (void) close(sfd);
-          goto tryagain;
+          goto err_mem;
         }
       }
       break;
@@ -778,11 +771,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
         socket->callbacks->onfree(socket);
       }
       (void) pthread_mutex_destroy(&socket->lock);
-      (void) memset(socket, 0, sizeof(struct tcp_socket));
-      (void) pthread_rwlock_unlock(&_server->lock);
-      tcp_socket_no_linger(sfd);
-      (void) close(sfd);
-      continue;
+      goto err_mem;
     }
     while(1) {
       if(net_epoll_add(socket->epoll, &socket->base) != 0) {
@@ -793,11 +782,7 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
             socket->callbacks->onfree(socket);
           }
           (void) pthread_mutex_destroy(&socket->lock);
-          (void) memset(socket, 0, sizeof(struct tcp_socket));
-          (void) pthread_rwlock_unlock(&_server->lock);
-          tcp_socket_no_linger(sfd);
-          (void) close(sfd);
-          goto tryagain;
+          goto err_mem;
         }
       }
       break;
@@ -809,12 +794,20 @@ void tcp_server_onevent(int events, struct net_socket_base* base) {
       --_server->freeidx_used;
     }
     (void) pthread_rwlock_unlock(&_server->lock);
+    continue;
+    
+    err_mem:
+    (void) memset(socket, 0, sizeof(struct tcp_socket));
+    err_sock:
+    (void) pthread_rwlock_unlock(&_server->lock);
+    tcp_socket_no_linger(sfd);
+    (void) close(sfd);
   }
 }
 
 #undef _server
 
-#define socket ((struct tcp_socket*)(server->sockets + i * server->settings->socket_size))
+#define socket ((struct tcp_socket*)(server->sockets + i * server->socket_size))
 
 /* We allow the application to access the connections, but we will do it by ourselves
 so that the application doesn't mess up somewhere. Note that order in which the

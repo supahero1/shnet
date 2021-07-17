@@ -1,144 +1,153 @@
-empty: ;
 .PHONY: empty build test build-tests clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
+empty: ;
 
 CC = gcc
 CFLAGS += -pthread -Wall -pedantic -O3
 LDLIBS += -lshnet
-TESTLIBS = -lm -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
+LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
+TESTLIBS += $(LIBS) -lm
+DIR_IN  := src
+DIR_OUT := bin
+DIR_TEST := tests
+DIR_INCLUDE := /usr/local/include
+DIR_LIB := /usr/local/lib
 
 ifneq ($(debug),)
 CFLAGS += -D SHNET_DEBUG
 endif
 
-SOURCES = $(wildcard src/*.c)
-OBJECTS = $(SOURCES:src/%.c=build/%.o)
+SOURCES = $(wildcard $(DIR_IN)/*.c)
+OBJECTS = $(SOURCES:$(DIR_IN)/%.c=$(DIR_OUT)/%.o)
 
-TEST_SUITES = $(wildcard tests/*.c)
-TEST_EXECS = $(TEST_SUITES:tests/%.c=build/test_%)
+TEST_SUITES = $(wildcard $(DIR_TEST)/*.c)
+TEST_EXECS = $(TEST_SUITES:$(DIR_TEST)/%.c=$(DIR_OUT)/test_%)
 
-build: prepare $(OBJECTS)
+${DIR_OUT}:
+	mkdir -p $@
 
-test: prepare $(TEST_EXECS)
-	build/test_heap
-	build/test_avl
-	build/test_threads
-	build/test_time
-	build/test_udp
-	
-	build/test_tcp 1 1 1
-	build/test_tcp 1 1 0
-	build/test_tcp 100 1 1
-	build/test_tcp 100 1 0
-	build/test_tcp 100 100 1
-	build/test_tcp 100 100 0
-	build/test_tcp 100 1000 1
-	build/test_tcp 100 1000 0
-	
-	build/test_tcp_stress 1 1 1
-	build/test_tcp_stress 1 1 0
-	build/test_tcp_stress 1 10 1
-	build/test_tcp_stress 1 10 0
-	build/test_tcp_stress 1 100 1
-	build/test_tcp_stress 1 100 0
-	build/test_tcp_stress 1 1000 1
-	build/test_tcp_stress 1 1000 0
-	
-	build/test_tcp_stress 100 1 1
-	build/test_tcp_stress 100 1 0
-	build/test_tcp_stress 100 10 1
-	build/test_tcp_stress 100 10 0
-	build/test_tcp_stress 100 100 1
-	build/test_tcp_stress 100 100 0
-	build/test_tcp_stress 100 1000 1
-	build/test_tcp_stress 100 1000 0
-	
-	build/test_tls 1 1 1
-	build/test_tls 1 1 0
-	build/test_tls 100 1 1
-	build/test_tls 100 1 0
-	build/test_tls 100 100 1
-	build/test_tls 100 100 0
-	build/test_tls 100 1000 1
-	build/test_tls 100 1000 0
-	
-	build/test_tls_stress 1 1 1
-	build/test_tls_stress 1 1 0
-	build/test_tls_stress 1 10 1
-	build/test_tls_stress 1 10 0
-	build/test_tls_stress 1 100 1
-	build/test_tls_stress 1 100 0
-	build/test_tls_stress 1 1000 1
-	build/test_tls_stress 1 1000 0
-	
-	build/test_tls_stress 100 1 1
-	build/test_tls_stress 100 1 0
-	build/test_tls_stress 100 10 1
-	build/test_tls_stress 100 10 0
-	build/test_tls_stress 100 100 1
-	build/test_tls_stress 100 100 0
-	build/test_tls_stress 100 1000 1
-	build/test_tls_stress 100 1000 0
-	
-	build/test_compression
-	build/test_http_p
+shnet:
+	mkdir -p shnet
 
-build/test_%: tests/%.c tests/tests.h src/debug.c src/debug.h
+${DIR_INCLUDE}/shnet:
+	mkdir -p $(DIR_INCLUDE)/shnet
+
+build: $(OBJECTS)
+
+test: $(TEST_EXECS) | $(DIR_TEST)
+	$(DIR_OUT)/test_heap
+	$(DIR_OUT)/test_avl
+	$(DIR_OUT)/test_threads
+	$(DIR_OUT)/test_time
+	$(DIR_OUT)/test_udp
+	
+	$(DIR_OUT)/test_tcp 1 1 1
+	$(DIR_OUT)/test_tcp 1 1 0
+	$(DIR_OUT)/test_tcp 100 1 1
+	$(DIR_OUT)/test_tcp 100 1 0
+	$(DIR_OUT)/test_tcp 100 100 1
+	$(DIR_OUT)/test_tcp 100 100 0
+	$(DIR_OUT)/test_tcp 100 1000 1
+	$(DIR_OUT)/test_tcp 100 1000 0
+	
+	$(DIR_OUT)/test_tcp_stress 1 1 1
+	$(DIR_OUT)/test_tcp_stress 1 1 0
+	$(DIR_OUT)/test_tcp_stress 1 10 1
+	$(DIR_OUT)/test_tcp_stress 1 10 0
+	$(DIR_OUT)/test_tcp_stress 1 100 1
+	$(DIR_OUT)/test_tcp_stress 1 100 0
+	$(DIR_OUT)/test_tcp_stress 1 1000 1
+	$(DIR_OUT)/test_tcp_stress 1 1000 0
+	
+	$(DIR_OUT)/test_tcp_stress 100 1 1
+	$(DIR_OUT)/test_tcp_stress 100 1 0
+	$(DIR_OUT)/test_tcp_stress 100 10 1
+	$(DIR_OUT)/test_tcp_stress 100 10 0
+	$(DIR_OUT)/test_tcp_stress 100 100 1
+	$(DIR_OUT)/test_tcp_stress 100 100 0
+	$(DIR_OUT)/test_tcp_stress 100 1000 1
+	$(DIR_OUT)/test_tcp_stress 100 1000 0
+	
+	$(DIR_OUT)/test_tls 1 1 1
+	$(DIR_OUT)/test_tls 1 1 0
+	$(DIR_OUT)/test_tls 100 1 1
+	$(DIR_OUT)/test_tls 100 1 0
+	$(DIR_OUT)/test_tls 100 100 1
+	$(DIR_OUT)/test_tls 100 100 0
+	$(DIR_OUT)/test_tls 100 1000 1
+	$(DIR_OUT)/test_tls 100 1000 0
+	
+	$(DIR_OUT)/test_tls_stress 1 1 1
+	$(DIR_OUT)/test_tls_stress 1 1 0
+	$(DIR_OUT)/test_tls_stress 1 10 1
+	$(DIR_OUT)/test_tls_stress 1 10 0
+	$(DIR_OUT)/test_tls_stress 1 100 1
+	$(DIR_OUT)/test_tls_stress 1 100 0
+	$(DIR_OUT)/test_tls_stress 1 1000 1
+	$(DIR_OUT)/test_tls_stress 1 1000 0
+	
+	$(DIR_OUT)/test_tls_stress 100 1 1
+	$(DIR_OUT)/test_tls_stress 100 1 0
+	$(DIR_OUT)/test_tls_stress 100 10 1
+	$(DIR_OUT)/test_tls_stress 100 10 0
+	$(DIR_OUT)/test_tls_stress 100 100 1
+	$(DIR_OUT)/test_tls_stress 100 100 0
+	$(DIR_OUT)/test_tls_stress 100 1000 1
+	$(DIR_OUT)/test_tls_stress 100 1000 0
+	
+	$(DIR_OUT)/test_compression
+	$(DIR_OUT)/test_http_p
+
+${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
 
-clean:
-	rm -r -f build logs.txt
+clean: | $(DIR_OUT)
+	rm -r -f $(DIR_OUT) logs.txt
+	mkdir -p $(DIR_OUT)
 
-prepare:
-	mkdir -p build
-
-include:
-	mkdir -p /usr/include/shnet
-	cp src/*.h /usr/include/shnet/
-	mkdir -p /usr/local/include/shnet
-	cp src/*.h /usr/local/include/shnet/
+include: | $(DIR_INCLUDE)/shnet
+	cp $(DIR_IN)/*.h $(DIR_INCLUDE)/shnet
 
 copy-headers:
-	mkdir -p shnet
-	cp src/*.h shnet/
+	cp $(DIR_IN)/*.h shnet
 
 build-static: build
-	ar rcsv build/libshnet.a $(OBJECTS)
+	ar rcsv $(DIR_OUT)/libshnet.a $(OBJECTS)
 
 static: build-static include
-	cp build/libshnet.a /usr/lib/
-	cp build/libshnet.a /usr/local/lib/
+	cp $(DIR_OUT)/libshnet.a $(DIR_LIB)
 
 strip-static: build-static copy-headers
-	cp build/libshnet.a shnet/
+	cp $(DIR_OUT)/libshnet.a shnet
 
 build-dynamic: build
-	$(CC) $(CFLAGS) $(OBJECTS) -shared -o build/libshnet.so -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
+	$(CC) $(CFLAGS) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so $(LIBS)
 
 dynamic: build-dynamic include
-	cp build/libshnet.so /usr/lib/
-	cp build/libshnet.so /usr/local/lib/
+	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
 
 strip-dynamic: build-dynamic copy-headers
-	cp build/libshnet.so shnet/
+	cp $(DIR_OUT)/libshnet.so shnet
 
 uninstall:
-	rm -f /usr/lib/libshnet.* /usr/local/lib/libshnet.*
-	rm -r -f /usr/include/shnet /usr/local/include/shnet shnet
+	rm -f $(DIR_LIB)/libshnet.*
+	rm -r -f $(DIR_INCLUDE)/shnet shnet
 
 
-build/refheap.o: build/heap.o
+${DIR_OUT}/refheap.o: $(DIR_OUT)/heap.o
 
-build/time.o: build/threads.o
+${DIR_OUT}/time.o: $(DIR_OUT)/threads.o
 
-build/net.o: build/threads.o
+${DIR_OUT}/net.o: $(DIR_OUT)/threads.o
 
-build/udp.o: build/net.o
+${DIR_OUT}/udp.o: $(DIR_OUT)/net.o
 
-build/udplite.o: build/udp.o
+${DIR_OUT}/udplite.o: $(DIR_OUT)/udp.o
 
-build/tcp.o: build/net.o
+${DIR_OUT}/tcp.o: $(DIR_OUT)/net.o
 
-build/tls.o: build/tcp.o
+${DIR_OUT}/tls.o: $(DIR_OUT)/tcp.o
 
-build/%.o: src/%.c src/%.h
+${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o
+
+${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_IN)/%.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@

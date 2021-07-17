@@ -17,7 +17,7 @@ void cb(void* data) {
 }
 
 int main() {
-  printf_debug("Testing threads:", 1);
+  _debug("Testing threads:", 1);
   {
     struct timespec tp;
     (void) clock_gettime(CLOCK_REALTIME, &tp);
