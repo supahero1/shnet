@@ -1,4 +1,4 @@
-**Shnet** is an asynchronous networking library created in "modules" which can be used by the application independently.
+**Shnet** is an asynchronous networking library created in "modules", each of which can be used by the application independently.
 
 The `avl` module implements a high-performance AVL tree that can be used to store any data of any size in a node.
 
@@ -14,7 +14,7 @@ The `contmem` module implements continuous memory for the `avl` module (because 
 
 The `net` module implements very basic operations on sockets - without managing them in any way. Such operations include for instance setting an address, port, family, etc., or getting the aforementioned things. There are mostly 3 functions for each of these operations that operate on 3 different structures. The module also implements an event loop. This event loop and the other networking modules have limitations that the application must be aware of in order to not fall victim to undefined behavior.
 
-The `udp` and `udplite` modules implement very basic functions to operate on `udp` and `udplite`. It is not comparable in any way to the `tcp` module, since I don't need `udp` yet. Maybe the module will be grown in the future.
+The `udp` and `udplite` modules implement very basic functions to operate on `udp` and `udplite`. It is not comparable in any way to the `tcp` module, since I don't need to use the UDP protocol. Maybe the module will be expanded in the future.
 
 The `tcp` module implements non-blocking `tcp` clients and servers using the event loop and other various functions from the `net` module. The clients only have a lock for managing the buffered data to be sent - other than that, the limitations that the library has allow for high-performance sockets with minimal lock contention. Performance of the sockets does not drop by much when their amount is increased by thousands - it only drops slightly, because of the event loop needing to handle many more sockets.
 
@@ -24,38 +24,52 @@ The `compress` module implements DEFLATE and Brotli compression & decompression.
 
 The `http_p` module implements high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers is not be RFC compliant. The application is able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application can be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers is not start from the beginning again, but rather resume right where they stopped.
 
-The upcoming `http` module will implement highly customizable HTTP 1.1 TCP and TLS clients and servers.
+The `http` module implements http and https 1.1 client and server. The application can simply use `http(url, NULL)` and `http_server(url, NULL)` calls to make a client and a server respectively, without setting up epoll, time manager, or other necessary ingredients. The application is able to specify a lot of options though, using the second argument to these functions. The server is using a hash table to store and lookup requested resources in a matter of nanoseconds. Support for keep-alive connections, compression, chunked transfer, custom application headers, custom reason phrases and status codes, custom request methods, and more.
 
-The WebSocket protocol and WebSocket clients and servers are yet to come.
+In the nearest future, the `http` module will also feature the availability of switching to the websocket protocol. Making websockets a standalone module would make it very difficult to code.
 
 # Requirements
 
 * [Linux](https://www.kernel.org/)
-* [GCC](https://gcc.gnu.org/)
+* [GCC](https://gcc.gnu.org/) or [Clang](https://clang.llvm.org/)
 * [Zlib](https://www.zlib.net/)
 * [Brotli](https://brotli.org/)
 
-To install the dependencies, one can do:
+My personal preference is on GCC, added clang because it tries to be compatible with GCC, and so the code can still be compiled with it if anyone wants.
 
+To install the dependencies, one can do (debian):
 ```bash
 sudo apt update
 sudo apt install libgcc-11-dev zlib1g-dev libbrotli-dev -y
 ```
 
+..., or (fedora):
+```bash
+yum groupinstall "Development Tools"
+yum install openssl-devel zlib-devel brotli-devel -y
+```
+
 # Building
 
 ```bash
-git clone https://github.com/supahero1/shnet
+git clone -b master --single-branch https://github.com/supahero1/shnet
 cd shnet
 ```
 
 The library is available in static and dynamic releases. Additionally, if the user lacks sudo perms, a stripped install that doesn't copy the header files into `include` can be chosen, but then the files must be included manually in one's project.
 
 ```bash
-sudo make build dynamic
-sudo make build strip-dynamic
-sudo make build static
-sudo make build strip-static
+sudo make dynamic
+sudo make strip-dynamic
+sudo make static
+sudo make strip-static
+```
+
+If the dynamic installation yields linking errors when compiling tests or application code, try the static one.
+
+To build without installing:
+```bash
+sudo make build
 ```
 
 If full build was chosen, the user can then test the library:
@@ -74,6 +88,11 @@ sudo make uninstall
 ```
 
 To link it with your project, simply add the `-lshnet` flag.
+
+Multiple make commands can be chained very simply. The following command performs a full dynamic reinstall and tests at the end:
+```bash
+sudo make clean uninstall dynamic test
+```
 
 # Code of conduct
 
@@ -97,8 +116,7 @@ Table of contents
 Initialising an AVL tree:
 
 ```c
-struct avl_tree avl_tree;
-memset(&avl_tree, 0, sizeof(avl_tree));
+struct avl_tree avl_tree = {0};
 
 /* Size of user data a node will carry. For
 the examples, assume item_size is 4. */
@@ -247,8 +265,7 @@ void* maximum_item = avl_max(&avl_tree);
 Initialising a heap:
 
 ```c
-struct heap heap;
-memset(&heap, 0, sizeof(heap));
+struct heap heap = {0};
 
 /* Sign of the heap. If min is chosen, at the
 top of the heap will be the smallest value in
@@ -374,8 +391,7 @@ refheap_delete(&heap, reference);
 Initialisation:
 
 ```c
-struct threads tp;
-memset(&tp, 0, sizeof(tp));
+struct threads tp = {0};
 
 int err = threads(&tp);
 if(err == -1) {
@@ -427,8 +443,7 @@ threads_free(&tp);
 Initialisation:
 
 ```c
-struct time_manager manager;
-memset(&manager, 0, sizeof(manager));
+struct time_manager manager = {0};
 
 int err = time_manager(&manager);
 if(err == -1) {
@@ -475,7 +490,7 @@ current position of the timer. Canceling
 a timer is thread-safe. It can be done
 after the timer has been already executed
 or cancelled. */
-struct time_timeout_ref timeout_ref;
+struct time_timeout_ref timeout_ref = {0};
 
 /* The application can resize the available
 space for timeouts and intervals once it
@@ -568,8 +583,7 @@ time_get_time();
 Initialisation:
 
 ```c
-struct contmem mem;
-memset(&mem, 0, sizeof(mem));
+struct contmem mem = {0};
 
 const uint64_t items_in_a_block = 64;
 const uint64_t item_size = 8;

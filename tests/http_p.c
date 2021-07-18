@@ -101,6 +101,7 @@ int main() {
   test("9", "GET / ", http_path_too_long, 1);
   settings.stop_at_path = 1;
   test("10", "GET /t%20o/./../index.html ", http_valid, 0);
+  check(message.path_len, 22);
   cmp(message.path, "/t%20o/./../index.html");
   
   /* HTTP Version */
@@ -350,13 +351,23 @@ int main() {
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
   
+  cleanup();
+  settings.stop_at_version = 1;
+  test("56",
+  "GET /favicon.ico HTTP/1.1\r\n"
+  , http_valid, 0);
+  check(message.method_len, 3);
+  cmp(message.method, "GET");
+  check(message.path_len, 12);
+  cmp(message.path, "/favicon.ico");
+  
   which = 1;
   
-  test("56",
+  test("57",
   "HTTP/1.1 200 \r\n"
   "\r\n"
   , http_valid, 1);
-  test("57",
+  test("58",
   "HTTP/1.1 200\r\n"
   "Connection: close\r\n"
   "\r\n"

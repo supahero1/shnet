@@ -124,7 +124,9 @@ enum http_p_sconsts {
   http_s_network_connect_timeout_error = 599
 };
 
-extern const char* http1_default_reason_phrase(const int);
+extern char* http1_default_reason_phrase(const int);
+
+extern uint32_t http1_default_reason_phrase_len(const int);
 
 #define IS_DIGIT(a) ((a) >= '0' && (a) <= '9')
 #define IS_HEX(a) (IS_DIGIT(a) || ((a) >= 'A' && (a) <= 'F') || ((a) >= 'a' && (a) <= 'f'))
@@ -174,11 +176,11 @@ enum http_parser_consts {
 extern const char* http1_parser_strerror(const int);
 
 struct http_message {
+  char* method;
   union {
-    char* method;
-    const char* reason_phrase;
+    char* reason_phrase;
+    char* path;
   };
-  char* path;
   struct http_header* headers;
   char* body;
   

@@ -9,7 +9,10 @@
 void onrequest(struct http_server* server, struct http_serversock* socket, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
-  response->reason_phrase = http1_default_reason_phrase(200);
+  response->reason_phrase = http1_default_reason_phrase(response->status_code);
+  response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
+  response->body = "hi!!!";
+  response->body_len = 5;
 }
 
 int onnomem(struct http_server* server) {
@@ -25,7 +28,10 @@ void onshutdown(struct http_server* server) {
 void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
-  response->reason_phrase = http1_default_reason_phrase(200);
+  response->reason_phrase = http1_default_reason_phrase(response->status_code);
+  response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
+  response->body = "hi!!!";
+  response->body_len = 5;
 }
 
 int sonnomem(struct https_server* server) {
@@ -68,16 +74,14 @@ int main() {
   
   server_options.timeout_after = 5;
   
-  int err = http_server("http://localhost:25566", &server_options);
+  int err = http_server("http://127.0.0.1:25566", &server_options);
   if(err != 0) {
     puts("http_server() err");  
     return 1;
   }
   puts("http_server() done");
   
-  usleep(100000);
-  http_server_shutdown(server_options.http_server);
-  usleep(100000);
+  sleep(9999);
   TEST_PASS;
   return 0;
 }

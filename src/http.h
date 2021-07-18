@@ -28,6 +28,7 @@ struct http_uri {
   uint32_t secure:1;
   uint32_t _unused:15;
   uint16_t port;
+  uint16_t port_len;
 };
 
 struct http_request {

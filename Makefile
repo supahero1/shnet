@@ -1,15 +1,15 @@
 .PHONY: empty build test build-tests clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 empty: ;
 
-CC = gcc
-CFLAGS += -pthread -Wall -pedantic -O3
+CC := gcc
+CFLAGS += -pthread -Wall -pedantic -O3 -g -ggdb -fno-omit-frame-pointer
 LDLIBS += -lshnet
 LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
 TESTLIBS += $(LIBS) -lm
 DIR_IN  := src
 DIR_OUT := bin
 DIR_TEST := tests
-DIR_INCLUDE := /usr/local/include
+DIR_INCLUDE := /usr/local/include/shnet
 DIR_LIB := /usr/local/lib
 
 ifneq ($(debug),)
@@ -28,74 +28,13 @@ ${DIR_OUT}:
 shnet:
 	mkdir -p shnet
 
-${DIR_INCLUDE}/shnet:
-	mkdir -p $(DIR_INCLUDE)/shnet
+${DIR_INCLUDE}:
+	mkdir -p $(DIR_INCLUDE)
 
 build: $(OBJECTS)
 
 test: $(TEST_EXECS) | $(DIR_TEST)
-	$(DIR_OUT)/test_heap
-	$(DIR_OUT)/test_avl
-	$(DIR_OUT)/test_threads
-	$(DIR_OUT)/test_time
-	$(DIR_OUT)/test_udp
 	
-	$(DIR_OUT)/test_tcp 1 1 1
-	$(DIR_OUT)/test_tcp 1 1 0
-	$(DIR_OUT)/test_tcp 100 1 1
-	$(DIR_OUT)/test_tcp 100 1 0
-	$(DIR_OUT)/test_tcp 100 100 1
-	$(DIR_OUT)/test_tcp 100 100 0
-	$(DIR_OUT)/test_tcp 100 1000 1
-	$(DIR_OUT)/test_tcp 100 1000 0
-	
-	$(DIR_OUT)/test_tcp_stress 1 1 1
-	$(DIR_OUT)/test_tcp_stress 1 1 0
-	$(DIR_OUT)/test_tcp_stress 1 10 1
-	$(DIR_OUT)/test_tcp_stress 1 10 0
-	$(DIR_OUT)/test_tcp_stress 1 100 1
-	$(DIR_OUT)/test_tcp_stress 1 100 0
-	$(DIR_OUT)/test_tcp_stress 1 1000 1
-	$(DIR_OUT)/test_tcp_stress 1 1000 0
-	
-	$(DIR_OUT)/test_tcp_stress 100 1 1
-	$(DIR_OUT)/test_tcp_stress 100 1 0
-	$(DIR_OUT)/test_tcp_stress 100 10 1
-	$(DIR_OUT)/test_tcp_stress 100 10 0
-	$(DIR_OUT)/test_tcp_stress 100 100 1
-	$(DIR_OUT)/test_tcp_stress 100 100 0
-	$(DIR_OUT)/test_tcp_stress 100 1000 1
-	$(DIR_OUT)/test_tcp_stress 100 1000 0
-	
-	$(DIR_OUT)/test_tls 1 1 1
-	$(DIR_OUT)/test_tls 1 1 0
-	$(DIR_OUT)/test_tls 100 1 1
-	$(DIR_OUT)/test_tls 100 1 0
-	$(DIR_OUT)/test_tls 100 100 1
-	$(DIR_OUT)/test_tls 100 100 0
-	$(DIR_OUT)/test_tls 100 1000 1
-	$(DIR_OUT)/test_tls 100 1000 0
-	
-	$(DIR_OUT)/test_tls_stress 1 1 1
-	$(DIR_OUT)/test_tls_stress 1 1 0
-	$(DIR_OUT)/test_tls_stress 1 10 1
-	$(DIR_OUT)/test_tls_stress 1 10 0
-	$(DIR_OUT)/test_tls_stress 1 100 1
-	$(DIR_OUT)/test_tls_stress 1 100 0
-	$(DIR_OUT)/test_tls_stress 1 1000 1
-	$(DIR_OUT)/test_tls_stress 1 1000 0
-	
-	$(DIR_OUT)/test_tls_stress 100 1 1
-	$(DIR_OUT)/test_tls_stress 100 1 0
-	$(DIR_OUT)/test_tls_stress 100 10 1
-	$(DIR_OUT)/test_tls_stress 100 10 0
-	$(DIR_OUT)/test_tls_stress 100 100 1
-	$(DIR_OUT)/test_tls_stress 100 100 0
-	$(DIR_OUT)/test_tls_stress 100 1000 1
-	$(DIR_OUT)/test_tls_stress 100 1000 0
-	
-	$(DIR_OUT)/test_compression
-	$(DIR_OUT)/test_http_p
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
@@ -104,8 +43,8 @@ clean: | $(DIR_OUT)
 	rm -r -f $(DIR_OUT) logs.txt
 	mkdir -p $(DIR_OUT)
 
-include: | $(DIR_INCLUDE)/shnet
-	cp $(DIR_IN)/*.h $(DIR_INCLUDE)/shnet
+include: | $(DIR_INCLUDE)
+	cp $(DIR_IN)/*.h $(DIR_INCLUDE)
 
 copy-headers:
 	cp $(DIR_IN)/*.h shnet
@@ -130,7 +69,7 @@ strip-dynamic: build-dynamic copy-headers
 
 uninstall:
 	rm -f $(DIR_LIB)/libshnet.*
-	rm -r -f $(DIR_INCLUDE)/shnet shnet
+	rm -r -f $(DIR_INCLUDE) shnet
 
 
 ${DIR_OUT}/refheap.o: $(DIR_OUT)/heap.o
