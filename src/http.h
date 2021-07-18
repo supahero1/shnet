@@ -196,14 +196,13 @@ struct http_server_options {
     struct http_server_callbacks* http_callbacks;
     struct https_server_callbacks* https_callbacks;
   };
-  //union {
+  union {
     struct http_server* http_server;
     struct https_server* https_server;
-  //};
+  };
   struct http_hash_table* table;
   SSL_CTX* ctx;
   char* cert_path;
-  X509* cert;
   char* key_path;
   EVP_PKEY* key;
   
@@ -212,7 +211,6 @@ struct http_server_options {
   uint32_t read_buffer_growth;
   int family;
   int flags;
-  int cert_type;
   int key_type;
   uint32_t force_close:1;
   uint32_t _unused:31;

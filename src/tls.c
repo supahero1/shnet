@@ -41,7 +41,7 @@ static struct tcp_socket_callbacks tls_socket_callbacks;
 
 static struct tcp_server_callbacks tls_server_callbacks;
 
-static struct tls_socket_settings tls_socket_settings = { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
+static struct tls_socket_settings tls_socket_settings = { 0, 65536, tls_onreadclose_tls_close };
 
 static pthread_once_t __tls_once = PTHREAD_ONCE_INIT;
 
@@ -72,15 +72,23 @@ static void tls_init(void) {
 
 
 static inline void tls_socket_set_flag(struct tls_socket* const socket, const uint32_t flag) {
-  aflag32_add(&socket->tcp.flags, flag);
+  aflag32_add2(&socket->tcp.flags, flag);
 }
 
 static inline uint32_t tls_socket_test_flag(const struct tls_socket* const socket, const uint32_t flag) {
-  return aflag32_test(&socket->tcp.flags, flag);
+  return aflag32_test2(&socket->tcp.flags, flag);
 }
 
 static inline void tls_socket_clear_flag(struct tls_socket* const socket, const uint32_t flag) {
-  aflag32_del(&socket->tcp.flags, flag);
+  aflag32_del2(&socket->tcp.flags, flag);
+}
+
+static void tls_checksend(struct tls_socket* socket) {
+  tls_socket_set_flag(socket, tls_wants_send);
+  if(tls_socket_test_flag(socket, tcp_can_send)) {
+    tls_socket_clear_flag(socket, tls_wants_send);
+    (void) tls_internal_send(socket, NULL, 0);
+  }
 }
 
 
@@ -100,28 +108,19 @@ void tls_socket_close(struct tls_socket* const socket) {
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     switch(err) {
       case SSL_ERROR_WANT_WRITE: {
-        tls_socket_set_flag(socket, tls_wants_send);
+        tls_checksend(socket);
       }
       default: break;
       case SSL_ERROR_SYSCALL:
       case SSL_ERROR_SSL: {
-        /* If we can't shutdown TLS, we need to do it on TCP level */
-        if(socket->settings->force_close_on_shutdown_error) {
-          tls_socket_force_close(socket);
-        } else {
-          tcp_socket_close(&socket->tcp);
-        }
+        tls_socket_force_close(socket);
         break;
       }
     }
   } else {
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(status == 1) {
-      if(socket->settings->force_close_tcp) {
-        tls_socket_force_close(socket);
-      } else {
-        tcp_socket_close(&socket->tcp);
-      }
+      tls_socket_force_close(socket);
     }
   }
 }
@@ -155,38 +154,38 @@ static void tls_onopen(struct tcp_socket* soc) {
   ERR_clear_error();
   switch(SSL_get_error(socket->ssl, SSL_do_handshake(socket->ssl))) {
     case SSL_ERROR_WANT_WRITE: {
+      /* Do we really have so much to send that the TCP buffer gets full */
       tls_socket_set_flag(socket, tls_wants_send);
       break;
     }
     case SSL_ERROR_SYSCALL:
     case SSL_ERROR_SSL: {
-      if(socket->settings->force_close_on_fatal_error == 1) {
-        tls_socket_force_close(socket);
-      } else {
-        tcp_socket_close(&socket->tcp);
-      }
+      tls_socket_force_close(socket);
     }
     default: break;
   }
 }
 
 static void tls_onmessage(struct tcp_socket* soc) {
-  {
-    const int read = tls_internal_read(socket);
-    if(SSL_is_init_finished(socket->ssl) && !tls_socket_test_flag(socket, tls_opened)) {
+  const int read = tls_internal_read(socket);
+  if(!tls_socket_test_flag(socket, tls_opened)) {
+    (void) pthread_mutex_lock(&socket->ssl_lock);
+    const int is_init_fin = SSL_is_init_finished(socket->ssl);
+    (void) pthread_mutex_unlock(&socket->ssl_lock);
+    if(is_init_fin) {
       tls_socket_set_flag(socket, tls_opened);
       if(socket->callbacks->onopen != NULL) {
         socket->callbacks->onopen(socket);
       }
     }
-    if(tls_socket_test_flag(socket, tls_shutdown_rd)) {
-      free(socket->read_buffer);
-      socket->read_buffer = NULL;
-      socket->read_used = 0;
-      socket->read_size = 0;
-    } else if(read > 0 && socket->callbacks->onmessage != NULL) {
-      socket->callbacks->onmessage(socket);
-    }
+  }
+  if(tls_socket_test_flag(socket, tls_shutdown_rd)) {
+    free(socket->read_buffer);
+    socket->read_buffer = NULL;
+    socket->read_used = 0;
+    socket->read_size = 0;
+  } else if(socket->callbacks->onmessage != NULL && read > 0) {
+    socket->callbacks->onmessage(socket);
   }
   if(!tls_socket_test_flag(socket, tls_onreadclose_once)) {
     (void) pthread_mutex_lock(&socket->ssl_lock);
@@ -194,11 +193,8 @@ static void tls_onmessage(struct tcp_socket* soc) {
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(shutdown == (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN)) {
       tls_socket_set_flag(socket, tls_onreadclose_once);
-      if(socket->settings->force_close_tcp) {
-        tls_socket_force_close(socket);
-      } else {
-        tcp_socket_close(&socket->tcp);
-      }
+      /* Gracefully close and not force close to let the shutdown be sent */
+      tcp_socket_close(&socket->tcp);
     } else if(shutdown == SSL_RECEIVED_SHUTDOWN) {
       tls_socket_set_flag(socket, tls_onreadclose_once);
       switch(socket->settings->onreadclose_auto_res) {
@@ -233,14 +229,16 @@ static void tls_onreadclose(struct tcp_socket* soc) {
 static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_internal_send(socket, NULL, 0);
-  }
-  (void) pthread_mutex_lock(&socket->ssl_lock);
-  const int is_finished = SSL_is_init_finished(socket->ssl);
-  (void) pthread_mutex_unlock(&socket->ssl_lock);
-  if(is_finished && !tls_socket_test_flag(socket, tls_opened)) {
-    tls_socket_set_flag(socket, tls_opened);
-    if(socket->callbacks->onopen != NULL) {
-      socket->callbacks->onopen(socket);
+    if(!tls_socket_test_flag(socket, tls_opened)) {
+      (void) pthread_mutex_lock(&socket->ssl_lock);
+      const int is_finished = SSL_is_init_finished(socket->ssl);
+      (void) pthread_mutex_unlock(&socket->ssl_lock);
+      if(is_finished) {
+        tls_socket_set_flag(socket, tls_opened);
+        if(socket->callbacks->onopen != NULL) {
+          socket->callbacks->onopen(socket);
+        }
+      }
     }
   }
 }
@@ -358,12 +356,7 @@ static int tls_internal_send(struct tls_socket* const socket, const void* data, 
       }
       default:
       case SSL_ERROR_SSL: {
-        if(socket->settings->force_close_on_fatal_error == 1) {
-          tls_socket_force_close(socket);
-        } else {
-          /* We MUST NOT use tls_socket_close(), according to the OpenSSL documentation */
-          tcp_socket_close(&socket->tcp);
-        }
+        tls_socket_force_close(socket);
         errno = -1;
         return -1;
       }
@@ -465,7 +458,6 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
     case -1: {
       /* A fatal error, tell the application we couldn't send anything and wait
       for the next epoll iteration to close the socket */
-      errno = 0;
       return 0;
     }
   }
@@ -525,7 +517,7 @@ static int tls_internal_read(struct tls_socket* const socket) {
         break;
       }
       case SSL_ERROR_WANT_WRITE: {
-        tls_socket_set_flag(socket, tls_wants_send);
+        tls_checksend(socket);
         errno = 0;
         break;
       }
@@ -536,12 +528,7 @@ static int tls_internal_read(struct tls_socket* const socket) {
       }
       default:
       case SSL_ERROR_SSL: {
-        if(socket->settings->force_close_on_fatal_error == 1) {
-          tls_socket_force_close(socket);
-        } else {
-          /* We MUST NOT use tls_socket_close(), according to the OpenSSL documentation */
-          tcp_socket_close(&socket->tcp);
-        }
+        tls_socket_force_close(socket);
         break;
       }
     }

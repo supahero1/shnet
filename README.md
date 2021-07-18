@@ -52,7 +52,7 @@ yum install openssl-devel zlib-devel brotli-devel -y
 # Building
 
 ```bash
-git clone -b master --single-branch https://github.com/supahero1/shnet
+git clone -b main --single-branch https://github.com/supahero1/shnet
 cd shnet
 ```
 

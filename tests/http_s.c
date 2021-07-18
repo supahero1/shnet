@@ -11,8 +11,17 @@ void onrequest(struct http_server* server, struct http_serversock* socket, struc
   response->status_code = 200;
   response->reason_phrase = http1_default_reason_phrase(response->status_code);
   response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
-  response->body = "hi!!!";
-  response->body_len = 5;
+  response->body =
+  "<html>"
+  "<head>"
+  "<title>ezezezezezez</title>"
+  "<script src=\"lmaoo.js\"></script>"
+  "</head>"
+  "<body>"
+  "<canvas id=\"canvas\"></canvas>"
+  "</body>"
+  "</html>";
+  response->body_len = strlen(response->body);
 }
 
 int onnomem(struct http_server* server) {
@@ -30,8 +39,17 @@ void sonrequest(struct https_server* server, struct https_serversock* socket, st
   response->status_code = 200;
   response->reason_phrase = http1_default_reason_phrase(response->status_code);
   response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
-  response->body = "hi!!!";
-  response->body_len = 5;
+  response->body =
+  "<html>"
+  "<head>"
+  "<title>ezezezezezez</title>"
+  "<script src=\"lmaoo.js\"></script>"
+  "</head>"
+  "<body>"
+  "<canvas id=\"canvas\"></canvas>"
+  "</body>"
+  "</html>";
+  response->body_len = strlen(response->body);
 }
 
 int sonnomem(struct https_server* server) {
@@ -61,20 +79,19 @@ int main() {
   
   struct http_resource resources[1];
   resources[0].path = "/";
-  resources[0].http_callback = onrequest;
-  //resources[0].https_callback = sonrequest;
+  //resources[0].http_callback = onrequest;
+  resources[0].https_callback = sonrequest;
   
   server_options.resources = resources;
   server_options.resources_len = 1;
   
-  /*server_options.cert_path = "/path/to/tests/cert.pem";
-  server_options.cert_type = SSL_FILETYPE_PEM;
+  server_options.cert_path = "/path/to/tests/cert.pem";
   server_options.key_path = "/path/to/tests/key.pem";
-  server_options.key_type = SSL_FILETYPE_PEM;*/
+  server_options.key_type = SSL_FILETYPE_PEM;
   
   server_options.timeout_after = 5;
   
-  int err = http_server("http://127.0.0.1:25566", &server_options);
+  int err = http_server("http://0.0.0.0:25566", &server_options);
   if(err != 0) {
     puts("http_server() err");  
     return 1;

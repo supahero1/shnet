@@ -74,7 +74,7 @@ static struct tcp_socket_settings  http_serversock_settings = { 0, 1, 0, 1, 0, 0
 
 static struct tls_socket_callbacks https_client_callbacks = {0};
 
-static struct tls_socket_settings  https_client_settings = { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
+static struct tls_socket_settings  https_client_settings = { 0, 65536, tls_onreadclose_tls_close };
 
 static struct tls_socket_callbacks https_serversock_callbacks = {0};
 
@@ -704,6 +704,9 @@ static int https_setup_socket(struct http_uri* const uri, struct http_options* c
       goto err_epoll;
     }
     socket->context.allocated_ctx = 1;
+    if(SSL_CTX_set_min_proto_version(socket->tls.ctx, TLS1_2_VERSION) == 0) {
+      goto err_ctx;
+    }
   }
   if(opt->info != NULL) {
     uint32_t allocated_canonname = 0;
@@ -1354,11 +1357,7 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
       goto err_epoll;
     }
     server->context.allocated_ctx = 1;
-    if(opt->cert == NULL) {
-      if(SSL_CTX_use_certificate_file(server->tls.ctx, opt->cert_path, opt->cert_type) != 1) {
-        goto err_ctx;
-      }
-    } else if(SSL_CTX_use_certificate(server->tls.ctx, opt->cert) != 1) {
+    if(SSL_CTX_use_certificate_chain_file(server->tls.ctx, opt->cert_path) != 1) {
       goto err_ctx;
     }
     if(opt->key == NULL) {
@@ -1366,6 +1365,9 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
         goto err_ctx;
       }
     } else if(SSL_CTX_use_PrivateKey(server->tls.ctx, opt->key) != 1) {
+      goto err_ctx;
+    }
+    if(SSL_CTX_set_min_proto_version(server->tls.ctx, TLS1_2_VERSION) == 0) {
       goto err_ctx;
     }
   }
@@ -1468,6 +1470,9 @@ static int http_serversock_timeout(struct http_serversock* const socket, char** 
   struct http_header headers[3];
   struct http_message response = {0};
   response.headers = headers;
+  response.status_code = http_s_request_timeout;
+  response.reason_phrase = http1_default_reason_phrase(response.status_code);
+  response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
   
   char date_header[30];
   date_header[0] = 0;
@@ -1886,14 +1891,11 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       server->context.mode = 0;
       
       char content_length[11];
-      int len;
-      if(response.body_len != 0) {
-        len = sprintf(content_length, "%u", response.body_len);
-        if(len < 0) {
-          goto err_res;
-        }
-        add_header("Content-Length", 14, content_length, len);
+      const int len = sprintf(content_length, "%u", response.body_len);
+      if(len < 0) {
+        goto err_res;
       }
+      add_header("Content-Length", 14, content_length, len);
       
       char date_header[30];
       date_header[0] = 0;
@@ -1904,11 +1906,11 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       add_header("Server", 6, "shnet", 5);
 #undef add_header
       http_serversock_send(socket, &response);
-      free(socket->context.read_buffer);
-      socket->context.read_buffer = NULL;
-      socket->context.read_used = 0;
-      socket->context.read_size = 0;
     }
+    free(socket->context.read_buffer);
+    socket->context.read_buffer = NULL;
+    socket->context.read_used = 0;
+    socket->context.read_size = 0;
     if(close_connection == 0) {
       return;
     }
@@ -1924,8 +1926,12 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  free(socket->context.read_buffer);
-  socket->context.read_buffer = NULL;
+  if(socket->context.read_buffer != NULL) {
+    free(socket->context.read_buffer);
+    socket->context.read_buffer = NULL;
+    socket->context.read_used = 0;
+    socket->context.read_size = 0;
+  }
   if(server->context.force_close) {
     tcp_socket_force_close(&socket->tcp);
   } else {
@@ -2078,8 +2084,8 @@ static void https_serversock_onopen(struct tls_socket* soc) {
   }
 }
 
-static void https_serversock_onmessage(struct tls_socket* soc) {
-  struct http_header req_headers[255];
+static void https_serversock_onmessage(struct tls_socket* soc) { // TODO add version limitations for server and client, only use tls 1.2 or 1.3
+  struct http_header req_headers[255]; // TODO: when tls readclose happens, think about what to do for client and server
   struct http_message request = {0};
   request.headers = req_headers;
   request.headers_len = 255;
@@ -2287,14 +2293,11 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       server->context.mode = 0;
       
       char content_length[11];
-      int len;
-      if(response.body_len != 0) {
-        len = sprintf(content_length, "%u", response.body_len);
-        if(len < 0) {
-          goto err_res;
-        }
-        add_header("Content-Length", 14, content_length, len);
+      const int len = sprintf(content_length, "%u", response.body_len);
+      if(len < 0) {
+        goto err_res;
       }
+      add_header("Content-Length", 14, content_length, len);
       
       char date_header[30];
       date_header[0] = 0;
@@ -2305,11 +2308,11 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       add_header("Server", 6, "shnet", 5);
 #undef add_header
       https_serversock_send(socket, &response);
-      free(socket->tls.read_buffer);
-      socket->tls.read_buffer = NULL;
-      socket->tls.read_used = 0;
-      socket->tls.read_size = 0;
     }
+    free(socket->tls.read_buffer);
+    socket->tls.read_buffer = NULL;
+    socket->tls.read_used = 0;
+    socket->tls.read_size = 0;
     if(close_connection == 0) {
       return;
     }
@@ -2325,8 +2328,12 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  free(socket->tls.read_buffer);
-  socket->tls.read_buffer = NULL;
+  if(socket->tls.read_buffer != NULL) {
+    free(socket->tls.read_buffer);
+    socket->tls.read_buffer = NULL;
+    socket->tls.read_used = 0;
+    socket->tls.read_size = 0;
+  }
   if(server->context.force_close) {
     tcp_socket_force_close(&socket->tls.tcp);
   } else {

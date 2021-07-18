@@ -145,9 +145,6 @@ int main(int argc, char **argv) {
   serversock_tls_set = (struct tls_socket_settings) {
     .read_buffer_cleanup_threshold = 0,
     .read_buffer_growth = 4096,
-    .force_close_on_fatal_error = 1,
-    .force_close_on_shutdown_error = 1,
-    .force_close_tcp = 1,
     .onreadclose_auto_res = tls_onreadclose_tls_close
   };
   
