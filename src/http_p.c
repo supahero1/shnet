@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-const char* http1_default_reason_phrase(const int status) {
+char* http1_default_reason_phrase(const int status) {
   switch(status) {
     case http_s_continue: return "Continue";
     case http_s_switching_protocols: return "Switching Protocols";
@@ -80,6 +80,80 @@ const char* http1_default_reason_phrase(const int status) {
   }
 }
 
+uint32_t http1_default_reason_phrase_len(const int status) {
+  switch(status) {
+    case http_s_continue: return 8;
+    case http_s_switching_protocols: return 19;
+    case http_s_processing: return 10;
+    
+    case http_s_ok: return 2;
+    case http_s_created: return 7;
+    case http_s_accepted: return 8;
+    case http_s_non_authoritative_information: return 29;
+    case http_s_no_content: return 10;
+    case http_s_reset_content: return 13;
+    case http_s_partial_content: return 15;
+    case http_s_multi_status: return 12;
+    case http_s_already_reported: return 16;
+    case http_s_im_used: return 7;
+    
+    case http_s_multiple_choices: return 16;
+    case http_s_moved_permanently: return 17;
+    case http_s_found: return 5;
+    case http_s_see_other: return 9;
+    case http_s_not_modified: return 12;
+    case http_s_use_proxy: return 9;
+    case http_s_temporary_redirect: return 18;
+    case http_s_permanent_redirect: return 18;
+    
+    case http_s_bad_request: return 11;
+    case http_s_unauthorized: return 12;
+    case http_s_payment_required: return 16;
+    case http_s_forbidden: return 9;
+    case http_s_not_found: return 9;
+    case http_s_method_not_allowed: return 18;
+    case http_s_not_acceptable: return 14;
+    case http_s_proxy_authentication_required: return 29;
+    case http_s_request_timeout: return 15;
+    case http_s_conflict: return 8;
+    case http_s_gone: return 4;
+    case http_s_length_required: return 14;
+    case http_s_precondition_failed: return 19;
+    case http_s_payload_too_large: return 17;
+    case http_s_request_uri_too_long: return 20;
+    case http_s_unsupported_media_type: return 22;
+    case http_s_requested_range_not_satisfiable: return 31;
+    case http_s_expectation_failed: return 18;
+    case http_s_i_am_a_teapot: return 12;
+    case http_s_misdirected_request: return 19;
+    case http_s_unprocessable_entity: return 20;
+    case http_s_locked: return 6;
+    case http_s_failed_dependency: return 17;
+    case http_s_upgrade_required: return 16;
+    case http_s_precondition_required: return 21;
+    case http_s_too_many_requests: return 17;
+    case http_s_request_header_fields_too_large: return 31;
+    case http_s_connection_closed_without_response: return 34;
+    case http_s_unavailable_for_legal_reasons: return 29;
+    case http_s_client_closed_request: return 21;
+    
+    case http_s_internal_server_error: return 21;
+    case http_s_not_implemented: return 15;
+    case http_s_bad_gateway: return 11;
+    case http_s_service_unavailable: return 19;
+    case http_s_gateway_timeout: return 15;
+    case http_s_http_version_not_supported: return 26;
+    case http_s_variant_also_negotiates: return 23;
+    case http_s_insufficient_storage: return 20;
+    case http_s_loop_detected: return 13;
+    case http_s_not_extended: return 12;
+    case http_s_network_authentication_required: return 31;
+    case http_s_network_connect_timeout_error: return 29;
+    
+    default: return 0;
+  }
+}
+
 static const char http_tokens[] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -141,7 +215,7 @@ const char* http1_parser_strerror(const int err) {
 }
 
 uint32_t http1_message_length(const struct http_message* const message) {
-  if(message->method_len != 0) { /* Request */
+  if(message->method != NULL) { /* Request */
     /* 2 spaces, 2 CRLF, sizeof HTTP/1.1  = 14 */
     uint32_t length = message->method_len + 14 + message->path_len + message->body_len + message->headers_len * 4;
     for(uint32_t i = 0; i < message->headers_len; ++i) {
@@ -161,7 +235,7 @@ uint32_t http1_message_length(const struct http_message* const message) {
 /* Buffer must be at least http1_message_length(message) bytes long */
 
 void http1_create_message(char* buffer, const struct http_message* const message) {
-  if(message->method_len != 0) {
+  if(message->method != NULL) {
     (void) memcpy(buffer, message->method, message->method_len);
     buffer += message->method_len;
     buffer[0] = ' ';
@@ -226,7 +300,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
     goto pla_body;
   }
   ATLEAST(2);
-  if(settings->max_headers == 0) {
+  if(settings->max_headers == 0 || message->headers_len == 0) {
     if(buffer[0] == '\r') {
       session->last_idx += 2;
       buffer += 2;
@@ -237,7 +311,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
     }
   } else {
     uint32_t i = session->last_header_idx;
-    for(; i < settings->max_headers; ++i) {
+    for(; i < message->headers_len; ++i) {
       if(buffer[0] == '\r') {
         session->last_idx += 2;
         buffer += 2;
@@ -598,7 +672,7 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
       return http_no_path;
     }
     message->path = buffer;
-    message->path_len = path_len;
+    message->path_len = path_len; // path is 0?????????
     idx += path_len + 1;
   }
   session->last_at = http_pla_version;

@@ -56,9 +56,6 @@ struct tls_socket_callbacks {
 struct tls_socket_settings {
   uint32_t read_buffer_cleanup_threshold;
   uint32_t read_buffer_growth;
-  uint32_t force_close_on_fatal_error:1;
-  uint32_t force_close_on_shutdown_error:1;
-  uint32_t force_close_tcp:1;
   uint32_t onreadclose_auto_res:3;
 };
 

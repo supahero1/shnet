@@ -200,7 +200,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
     } else {
       if((ltest & 1) == 0) {
         struct time_timeout* latest = refheap_peak(&manager->timeouts, 0);
-        struct time_timeout_ref* const ref = (struct time_timeout_ref*)((char*) latest - sizeof(void**));
+        struct time_timeout_ref* const ref = *(struct time_timeout_ref**)((char*) latest - sizeof(void**));
         if(ref != NULL) {
           ref->executed = 1;
         }

@@ -16,15 +16,15 @@ static struct tcp_socket_settings tcp_serversock_settings = { 0, 1, 0, 1, 0, 0 }
 static struct tcp_server_settings tcp_server_settings = { 100, 64 };
 
 static inline void tcp_socket_set_flag(struct tcp_socket* const socket, const uint32_t flag) {
-  aflag32_add(&socket->flags, flag);
+  aflag32_add2(&socket->flags, flag);
 }
 
 static inline uint32_t tcp_socket_test_flag(const struct tcp_socket* const socket, const uint32_t flag) {
-  return aflag32_test(&socket->flags, flag);
+  return aflag32_test2(&socket->flags, flag);
 }
 
 static inline void tcp_socket_clear_flag(struct tcp_socket* const socket, const uint32_t flag) {
-  aflag32_del(&socket->flags, flag);
+  aflag32_del2(&socket->flags, flag);
 }
 
 

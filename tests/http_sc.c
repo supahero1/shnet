@@ -9,7 +9,10 @@
 void onrequest(struct http_server* server, struct http_serversock* socket, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
-  response->reason_phrase = http1_default_reason_phrase(200);
+  response->reason_phrase = http1_default_reason_phrase(response->status_code);
+  response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
+  response->body = "hi!!!";
+  response->body_len = 5;
 }
 
 int onnomem(struct http_server* server) {
@@ -25,7 +28,10 @@ void onshutdown(struct http_server* server) {
 void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
-  response->reason_phrase = http1_default_reason_phrase(200);
+  response->reason_phrase = http1_default_reason_phrase(response->status_code);
+  response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
+  response->body = "hi!!!";
+  response->body_len = 5;
 }
 
 int sonnomem(struct https_server* server) {
@@ -92,20 +98,19 @@ int main() {
   
   struct http_resource resources[1];
   resources[0].path = "/";
-  resources[0].http_callback = onrequest;
-  //resources[0].https_callback = sonrequest;
+  //resources[0].http_callback = onrequest;
+  resources[0].https_callback = sonrequest;
   
   server_options.resources = resources;
   server_options.resources_len = 1;
   
-  server_options.cert_path = "/home/franek/c/git/shnet/tests/cert.pem";
-  server_options.cert_type = SSL_FILETYPE_PEM;
-  server_options.key_path = "/home/franek/c/git/shnet/tests/key.pem";
+  server_options.cert_path = "/path/to/tests/cert.pem";
+  server_options.key_path = "/path/to/tests/key.pem";
   server_options.key_type = SSL_FILETYPE_PEM;
   
   server_options.timeout_after = 5;
   
-  int err = http_server("http://localhost:2531", &server_options);
+  int err = http_server("https://localhost:2531", &server_options);
   if(err != 0) {
     puts("http_server() err");  
     return 1;
@@ -140,7 +145,7 @@ int main() {
   sock_options.requests = requests;
   sock_options.requests_len = 1;
   
-  err = http("http://localhost:2531/", &sock_options);
+  err = http("https://localhost:2531/", &sock_options);
   if(err != 0) {
     puts("http() err");
     return 1;
@@ -149,7 +154,8 @@ int main() {
   
   
   sleep(1);
-  http_server_shutdown(server_options.http_server);
+  https_server_shutdown(server_options.https_server);
+  sleep(1);
   TEST_PASS;
   return 0;
 }

@@ -74,7 +74,7 @@ static struct tcp_socket_settings  http_serversock_settings = { 0, 1, 0, 1, 0, 0
 
 static struct tls_socket_callbacks https_client_callbacks = {0};
 
-static struct tls_socket_settings  https_client_settings = { 0, 65536, 0, 0, 0, tls_onreadclose_tls_close };
+static struct tls_socket_settings  https_client_settings = { 0, 65536, tls_onreadclose_tls_close };
 
 static struct tls_socket_callbacks https_serversock_callbacks = {0};
 
@@ -198,8 +198,10 @@ static struct http_uri http_parse_uri(char* const str) {
     if(uri.path == NULL) {
       uri.path = "/";
       uri.path_len = 1;
+      uri.port_len = (uint16_t)(len - 1 - ((uintptr_t) port - (uintptr_t) str));
     } else {
       uri.path_len = (uint32_t)(len - ((uintptr_t) uri.path - (uintptr_t) str));
+      uri.port_len = (uint32_t)((uintptr_t) uri.path - (uintptr_t) port - 1);
     }
   } else {
     uri.path = memchr(uri.hostname, '/', len - 7 - uri.secure);
@@ -234,8 +236,8 @@ do { \
   int done = 0; \
   if(opt->requests[k].request != NULL && opt->requests[k].request->headers != NULL) { \
     for(uint32_t i = done_idx; i < opt->requests[k].request->headers_len; ++i) { \
-      if(opt->requests[k].request->headers[i].name_len == b) { \
-        const int cmp = strncasecmp(opt->requests[k].request->headers[i].name, a, b); \
+      if(opt->requests[k].request->headers[i].name_len == (b)) { \
+        const int cmp = strncasecmp(opt->requests[k].request->headers[i].name, (a), (b)); \
         if(cmp <= 0) { \
           headers[idx++] = opt->requests[k].request->headers[i]; \
           ++done_idx; \
@@ -249,21 +251,21 @@ do { \
       } else { \
         if(!done) { \
           done = 1; \
-          headers[idx++] = (struct http_header){.name=a,.name_len=b,.value=c,.value_len=d}; \
+          headers[idx++] = (struct http_header){.name=(a),.name_len=(b),.value=(c),.value_len=(d)}; \
         } \
         break; \
       } \
     } \
   } \
   if(!done) { \
-    headers[idx++] = (struct http_header){.name=a,.name_len=b,.value=c,.value_len=d}; \
+    headers[idx++] = (struct http_header){.name=(a),.name_len=(b),.value=(c),.value_len=(d)}; \
   } \
 } while(0)
     set_header("Accept", 6, "*/*", 3);
     set_header("Accept-Encoding", 15, "gzip, deflate, br", 17);
     set_header("Accept-Language", 15, "en-US,en;q=0.9", 14);
     if(opt->requests[k].no_cache) {
-      set_header("Cache-Control", 13, "max-age=0", 9);
+      set_header("Cache-Control", 13, "no-cache", 8);
     }
     if(opt->requests_len == 1) {
       set_header("Connection", 10, "close", 5);
@@ -300,6 +302,7 @@ do { \
               pick(opt->requests[k].mode, BROTLI_MODE_GENERIC));
             break;
           }
+          default: __builtin_unreachable();
         }
 #undef pick
         if(body == NULL) {
@@ -330,6 +333,7 @@ do { \
             set_header("Content-Encoding", 16, "br", 2);
             break;
           }
+          default: __builtin_unreachable();
         }
       }
       out:;
@@ -351,7 +355,10 @@ do { \
         .headers = headers
       };
     }
-    set_header("Host", 4, uri->hostname, uri->hostname_len);
+    set_header("Host", 4, uri->hostname, uri->hostname_len + (uri->port_len ? uri->port_len + 1 : 0));
+    if(opt->requests[k].no_cache) {
+      set_header("Pragma", 6, "no-cache", 8);
+    }
     set_header("User-Agent", 10, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 91);
 #undef set_header
     request.headers_len = idx;
@@ -697,6 +704,9 @@ static int https_setup_socket(struct http_uri* const uri, struct http_options* c
       goto err_epoll;
     }
     socket->context.allocated_ctx = 1;
+    if(SSL_CTX_set_min_proto_version(socket->tls.ctx, TLS1_2_VERSION) == 0) {
+      goto err_ctx;
+    }
   }
   if(opt->info != NULL) {
     uint32_t allocated_canonname = 0;
@@ -851,6 +861,7 @@ static void http_client_onmessage(struct tcp_socket* soc) {
   }
   if(state != http_incomplete) {
     (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
+    socket->context.session = (struct http_parser_session){0};
     if(state == http_valid) {
       socket->callbacks->onresponse(socket, &response);
     } else {
@@ -876,8 +887,6 @@ static void http_client_onmessage(struct tcp_socket* soc) {
       } else {
         socket->context.read_used = 0;
         socket->context.read_size = 0;
-        socket->context.session = (struct http_parser_session){0};
-        response = (struct http_message){0};
         http_client_onopen(&socket->tcp);
       }
     }
@@ -975,6 +984,7 @@ static void https_client_onmessage(struct tls_socket* soc) {
   }
   if(state != http_incomplete) {
     (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
+    socket->context.session = (struct http_parser_session){0};
     if(state == http_valid) {
       socket->callbacks->onresponse(socket, &response);
     } else {
@@ -1000,8 +1010,6 @@ static void https_client_onmessage(struct tls_socket* soc) {
         socket->context.expected = 1;
         goto err;
       } else {
-        socket->context.session = (struct http_parser_session){0};
-        response = (struct http_message){0};
         https_client_onopen(&socket->tls);
       }
     }
@@ -1072,95 +1080,6 @@ int http(char* const str, struct http_options* options) {
 }
 
 
-
-
-#define http_server ((struct http_server*) socket->tcp.server)
-#define https_server ((struct https_server*) socket->tcp.server)
-
-static int http_serversock_timeout(struct http_serversock* const socket, char** const ret_msg, uint32_t* const ret_len) {
-  struct http_header headers[3];
-  struct http_message response = {0};
-  response.headers = headers;
-  
-  char date_header[30];
-  date_header[0] = 0;
-  struct tm tms;
-  if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL && strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms) != 0) {
-    headers[0] = (struct http_header) { "Connection", "close", 10, 5 };
-    headers[1] = (struct http_header) { "Date", date_header, 4, 29 };
-    headers[2] = (struct http_header) { "Server", "shnet", 6, 5 };
-    response.headers_len = 3;
-  } else {
-    headers[0] = (struct http_header) { "Connection", "close", 10, 5 };
-    headers[1] = (struct http_header) { "Server", "shnet", 6, 5 };
-    response.headers_len = 2;
-  }
-  char* msg;
-  const uint32_t len = http1_message_length(&response);
-  while(1) {
-    msg = malloc(len);
-    if(msg == NULL) {
-      if(http_server->context.secure) {
-        if(https_server->callbacks->onnomem(https_server) == 0) {
-          continue;
-        }
-      } else {
-        if(http_server->callbacks->onnomem(http_server) == 0) {
-          continue;
-        }
-      }
-      return -1;
-    }
-    break;
-  }
-  http1_create_message(msg, &response);
-  *ret_msg = msg;
-  *ret_len = len;
-  return 0;
-}
-
-#undef https_server
-#undef http_server
-
-#define socket ((struct http_serversock*) data)
-#define server ((struct http_server*) socket->tcp.server)
-
-static void http_serversock_stop_socket(void* data) {
-  if(server->context.force_close) {
-    tcp_socket_force_close(&socket->tcp);
-  } else {
-    tcp_socket_stop_receiving_data(&socket->tcp);
-    char* msg;
-    uint32_t len;
-    if(http_serversock_timeout(socket, &msg, &len) == 0) {
-      (void) tcp_send(&socket->tcp, msg, len);
-    }
-    tcp_socket_close(&socket->tcp);
-  }
-}
-
-#undef server
-#undef socket
-
-#define socket ((struct https_serversock*) data)
-#define server ((struct http_server*) socket->tls.tcp.server)
-
-static void https_serversock_stop_socket(void* data) {
-  if(server->context.force_close) {
-    tcp_socket_force_close(&socket->tls.tcp);
-  } else {
-    tls_socket_stop_receiving_data(&socket->tls);
-    char* msg;
-    uint32_t len;
-    if(http_serversock_timeout((struct http_serversock*) socket, &msg, &len) == 0) {
-      (void) tls_send(&socket->tls, msg, len);
-    }
-    tls_socket_close(&socket->tls);
-  }
-}
-
-#undef server
-#undef socket
 
 static int http_setup_server(struct http_uri* const uri, struct http_server_options* const opt) {
   struct http_server* const server = calloc(1, sizeof(struct http_server));
@@ -1438,11 +1357,7 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
       goto err_epoll;
     }
     server->context.allocated_ctx = 1;
-    if(opt->cert == NULL) {
-      if(SSL_CTX_use_certificate_file(server->tls.ctx, opt->cert_path, opt->cert_type) != 1) {
-        goto err_ctx;
-      }
-    } else if(SSL_CTX_use_certificate(server->tls.ctx, opt->cert) != 1) {
+    if(SSL_CTX_use_certificate_chain_file(server->tls.ctx, opt->cert_path) != 1) {
       goto err_ctx;
     }
     if(opt->key == NULL) {
@@ -1450,6 +1365,9 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
         goto err_ctx;
       }
     } else if(SSL_CTX_use_PrivateKey(server->tls.ctx, opt->key) != 1) {
+      goto err_ctx;
+    }
+    if(SSL_CTX_set_min_proto_version(server->tls.ctx, TLS1_2_VERSION) == 0) {
       goto err_ctx;
     }
   }
@@ -1545,6 +1463,79 @@ uint32_t https_server_get_conn_amount(struct https_server* const server) {
 
 
 
+#define http_server ((struct http_server*) socket->tcp.server)
+#define https_server ((struct https_server*) socket->tcp.server)
+
+static int http_serversock_timeout(struct http_serversock* const socket, char** const ret_msg, uint32_t* const ret_len) {
+  struct http_header headers[3];
+  struct http_message response = {0};
+  response.headers = headers;
+  response.status_code = http_s_request_timeout;
+  response.reason_phrase = http1_default_reason_phrase(response.status_code);
+  response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
+  
+  char date_header[30];
+  date_header[0] = 0;
+  struct tm tms;
+  if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL && strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms) != 0) {
+    headers[0] = (struct http_header) { "Connection", "close", 10, 5 };
+    headers[1] = (struct http_header) { "Date", date_header, 4, 29 };
+    headers[2] = (struct http_header) { "Server", "shnet", 6, 5 };
+    response.headers_len = 3;
+  } else {
+    headers[0] = (struct http_header) { "Connection", "close", 10, 5 };
+    headers[1] = (struct http_header) { "Server", "shnet", 6, 5 };
+    response.headers_len = 2;
+  }
+  char* msg;
+  const uint32_t len = http1_message_length(&response);
+  while(1) {
+    msg = malloc(len);
+    if(msg == NULL) {
+      if(http_server->context.secure) {
+        if(https_server->callbacks->onnomem(https_server) == 0) {
+          continue;
+        }
+      } else {
+        if(http_server->callbacks->onnomem(http_server) == 0) {
+          continue;
+        }
+      }
+      return -1;
+    }
+    break;
+  }
+  http1_create_message(msg, &response);
+  *ret_msg = msg;
+  *ret_len = len;
+  return 0;
+}
+
+#undef https_server
+#undef http_server
+
+#define socket ((struct http_serversock*) data)
+#define server ((struct http_server*) socket->tcp.server)
+
+static void http_serversock_stop_socket(void* data) {
+  socket->context.expected = 1;
+  if(server->context.force_close) {
+    tcp_socket_force_close(&socket->tcp);
+  } else {
+    tcp_socket_stop_receiving_data(&socket->tcp);
+    char* msg;
+    uint32_t len;
+    if(http_serversock_timeout(socket, &msg, &len) == 0) {
+      (void) tcp_send(&socket->tcp, msg, len);
+      free(msg);
+    }
+    tcp_socket_close(&socket->tcp);
+  }
+}
+
+#undef server
+#undef socket
+
 static void http_server_free(struct http_server* const server) {
   if(server->context.allocated_epoll) {
     net_epoll_stop(server->tcp.epoll);
@@ -1606,6 +1597,7 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
   }
   http1_create_message(msg, message);
   (void) tcp_send(&socket->tcp, msg, len);
+  free(msg);
 }
 
 #undef server
@@ -1678,6 +1670,12 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       break;
     }
   }
+  if(socket->context.read_used == 0) {
+    free(socket->context.read_buffer);
+    socket->context.read_buffer = NULL;
+    socket->context.read_size = 0;
+    return;
+  }
   struct http_header req_headers[255];
   struct http_message request = {0};
   request.headers = req_headers;
@@ -1696,11 +1694,17 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
   }
   if(state != http_incomplete) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-    const struct http_header* const connection = http1_seek_header(&request, "connection", 10);
+    const struct http_header* connection = NULL;
     int close_connection = 0;
-    if(connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
+    if(socket->context.session.parsed_headers) {
+      connection = http1_seek_header(&request, "connection", 10);
+      if(connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
+        close_connection = 1;
+      }
+    } else {
       close_connection = 1;
     }
+    socket->context.session = (struct http_parser_session){0};
     struct http_header res_headers[255];
     struct http_message response = {0};
     response.headers = res_headers;
@@ -1713,6 +1717,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         if(func == NULL) {
           response.status_code = http_s_not_found;
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
+          response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
           ((void (*)(struct http_server*, struct http_serversock*, struct http_message*, struct http_message*)) func)(server, socket, &request, &response);
         }
@@ -1724,56 +1729,67 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         http_s_payload_too_large. It means pretty much the same thing. */
         response.status_code = http_s_payload_too_large;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_path_too_long: {
         response.status_code = http_s_request_uri_too_long;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_invalid_version: {
         response.status_code = http_s_http_version_not_supported;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_header_name_too_long: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Header Name Too Large";
+        response.reason_phrase_len = 29;
         break;
       }
       case http_header_value_too_long: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Header Value Too Large";
+        response.reason_phrase_len = 30;
         break;
       }
       case http_too_many_headers: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Has Too Many Headers";
+        response.reason_phrase_len = 28;
         break;
       }
       case http_method_too_long: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = "Request Method Too Large";
+        response.reason_phrase_len = 24;
         break;
       }
       case http_transfer_not_supported: {
         response.status_code = http_s_not_implemented;
         response.reason_phrase = "Transfer-Encoding Not Implemented";
+        response.reason_phrase_len = 33;
         break;
       }
       case http_encoding_not_supported: {
         response.status_code = http_s_not_implemented;
         response.reason_phrase = "Content-Encoding Not Implemented";
+        response.reason_phrase_len = 32;
         break;
       }
       case http_corrupted_body_compression: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = "Malformed Body Compression";
+        response.reason_phrase_len = 26;
         break;
       }
       default: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
     }
@@ -1818,6 +1834,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
                 pick(server->context.mode, BROTLI_MODE_GENERIC));
               break;
             }
+            default: __builtin_unreachable();
           }
 #undef pick
           if(body == NULL) {
@@ -1863,6 +1880,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
             add_header("Content-Encoding", 16, "br", 2);
             break;
           }
+          default: __builtin_unreachable();
         }
       }
       out:
@@ -1872,14 +1890,12 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       server->context.mem_level = 0;
       server->context.mode = 0;
       
-      if(response.body_len != 0) {
-        char content_length[11];
-        const int len = sprintf(content_length, "%u", response.body_len);
-        if(len < 0) {
-          goto err_res;
-        }
-        add_header("Content-Length", 14, content_length, len);
+      char content_length[11];
+      const int len = sprintf(content_length, "%u", response.body_len);
+      if(len < 0) {
+        goto err_res;
       }
+      add_header("Content-Length", 14, content_length, len);
       
       char date_header[30];
       date_header[0] = 0;
@@ -1891,6 +1907,10 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
 #undef add_header
       http_serversock_send(socket, &response);
     }
+    free(socket->context.read_buffer);
+    socket->context.read_buffer = NULL;
+    socket->context.read_used = 0;
+    socket->context.read_size = 0;
     if(close_connection == 0) {
       return;
     }
@@ -1906,8 +1926,12 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  free(socket->context.read_buffer);
-  socket->context.read_buffer = NULL;
+  if(socket->context.read_buffer != NULL) {
+    free(socket->context.read_buffer);
+    socket->context.read_buffer = NULL;
+    socket->context.read_used = 0;
+    socket->context.read_size = 0;
+  }
   if(server->context.force_close) {
     tcp_socket_force_close(&socket->tcp);
   } else {
@@ -1921,7 +1945,7 @@ static int http_serversock_onnomem(struct tcp_socket* soc) {
 }
 
 static void http_serversock_onclose(struct tcp_socket* soc) {
-  if(!socket->context.expected) {
+  if(!socket->context.expected && socket->context.timeout.timeout != NULL) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
   }
   tcp_socket_free(&socket->tcp);
@@ -1938,6 +1962,28 @@ static void http_serversock_onfree(struct tcp_socket* soc) {
 #undef socket
 
 
+
+#define socket ((struct https_serversock*) data)
+#define server ((struct http_server*) socket->tls.tcp.server)
+
+static void https_serversock_stop_socket(void* data) {
+  socket->context.expected = 1;
+  if(server->context.force_close) {
+    tcp_socket_force_close(&socket->tls.tcp);
+  } else {
+    tls_socket_stop_receiving_data(&socket->tls);
+    char* msg;
+    uint32_t len;
+    if(http_serversock_timeout((struct http_serversock*) socket, &msg, &len) == 0) {
+      (void) tls_send(&socket->tls, msg, len);
+      free(msg);
+    }
+    tls_socket_close(&socket->tls);
+  }
+}
+
+#undef server
+#undef socket
 
 static void https_server_free(struct https_server* const server) {
   if(server->context.allocated_epoll) {
@@ -2003,6 +2049,7 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
   }
   http1_create_message(msg, message);
   (void) tls_send(&socket->tls, msg, len);
+  free(msg);
 }
 
 #undef server
@@ -2037,8 +2084,8 @@ static void https_serversock_onopen(struct tls_socket* soc) {
   }
 }
 
-static void https_serversock_onmessage(struct tls_socket* soc) {
-  struct http_header req_headers[255];
+static void https_serversock_onmessage(struct tls_socket* soc) { // TODO add version limitations for server and client, only use tls 1.2 or 1.3
+  struct http_header req_headers[255]; // TODO: when tls readclose happens, think about what to do for client and server
   struct http_message request = {0};
   request.headers = req_headers;
   request.headers_len = 255;
@@ -2055,11 +2102,17 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
   }
   if(state != http_incomplete) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-    const struct http_header* const connection = http1_seek_header(&request, "connection", 10);
+    const struct http_header* connection = NULL;
     int close_connection = 0;
-    if(connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
+    if(socket->context.session.parsed_headers) {
+      connection = http1_seek_header(&request, "connection", 10);
+      if(connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
+        close_connection = 1;
+      }
+    } else {
       close_connection = 1;
     }
+    socket->context.session = (struct http_parser_session){0};
     struct http_header res_headers[255];
     struct http_message response = {0};
     response.headers = res_headers;
@@ -2072,6 +2125,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         if(func == NULL) {
           response.status_code = http_s_not_found;
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
+          response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
           ((void (*)(struct https_server*, struct https_serversock*, struct http_message*, struct http_message*)) func)(server, socket, &request, &response);
         }
@@ -2080,56 +2134,67 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       case http_body_too_long: {
         response.status_code = http_s_payload_too_large;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_path_too_long: {
         response.status_code = http_s_request_uri_too_long;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_invalid_version: {
         response.status_code = http_s_http_version_not_supported;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
       case http_header_name_too_long: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Header Name Too Large";
+        response.reason_phrase_len = 29;
         break;
       }
       case http_header_value_too_long: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Header Value Too Large";
+        response.reason_phrase_len = 30;
         break;
       }
       case http_too_many_headers: {
         response.status_code = http_s_request_header_fields_too_large;
         response.reason_phrase = "Request Has Too Many Headers";
+        response.reason_phrase_len = 28;
         break;
       }
       case http_method_too_long: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = "Request Method Too Large";
+        response.reason_phrase_len = 24;
         break;
       }
       case http_transfer_not_supported: {
         response.status_code = http_s_not_implemented;
         response.reason_phrase = "Transfer-Encoding Not Implemented";
+        response.reason_phrase_len = 33;
         break;
       }
       case http_encoding_not_supported: {
         response.status_code = http_s_not_implemented;
         response.reason_phrase = "Content-Encoding Not Implemented";
+        response.reason_phrase_len = 32;
         break;
       }
       case http_corrupted_body_compression: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = "Malformed Body Compression";
+        response.reason_phrase_len = 26;
         break;
       }
       default: {
         response.status_code = http_s_bad_request;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
+        response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         break;
       }
     }
@@ -2173,6 +2238,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
                 pick(server->context.mode, BROTLI_MODE_GENERIC));
               break;
             }
+            default: __builtin_unreachable();
           }
 #undef pick
           if(body == NULL) {
@@ -2216,6 +2282,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
             add_header("Content-Encoding", 16, "br", 2);
             break;
           }
+          default: __builtin_unreachable();
         }
       }
       out:
@@ -2225,14 +2292,12 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       server->context.mem_level = 0;
       server->context.mode = 0;
       
-      if(response.body_len != 0) {
-        char content_length[11];
-        const int len = sprintf(content_length, "%u", response.body_len);
-        if(len < 0) {
-          goto err_res;
-        }
-        add_header("Content-Length", 14, content_length, len);
+      char content_length[11];
+      const int len = sprintf(content_length, "%u", response.body_len);
+      if(len < 0) {
+        goto err_res;
       }
+      add_header("Content-Length", 14, content_length, len);
       
       char date_header[30];
       date_header[0] = 0;
@@ -2244,6 +2309,10 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
 #undef add_header
       https_serversock_send(socket, &response);
     }
+    free(socket->tls.read_buffer);
+    socket->tls.read_buffer = NULL;
+    socket->tls.read_used = 0;
+    socket->tls.read_size = 0;
     if(close_connection == 0) {
       return;
     }
@@ -2259,8 +2328,12 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  free(socket->tls.read_buffer);
-  socket->tls.read_buffer = NULL;
+  if(socket->tls.read_buffer != NULL) {
+    free(socket->tls.read_buffer);
+    socket->tls.read_buffer = NULL;
+    socket->tls.read_used = 0;
+    socket->tls.read_size = 0;
+  }
   if(server->context.force_close) {
     tcp_socket_force_close(&socket->tls.tcp);
   } else {
@@ -2274,7 +2347,7 @@ static int https_serversock_onnomem(struct tls_socket* soc) {
 }
 
 static void https_serversock_onclose(struct tls_socket* soc) {
-  if(!socket->context.expected) {
+  if(!socket->context.expected && socket->context.timeout.timeout != NULL) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
   }
   tls_socket_free(&socket->tls);

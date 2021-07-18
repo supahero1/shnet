@@ -1,7 +1,7 @@
 .PHONY: empty build test build-tests clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
 empty: ;
 
-CC = gcc
+CC := gcc
 CFLAGS += -pthread -Wall -pedantic -O3
 LDLIBS += -lshnet
 LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
@@ -9,7 +9,7 @@ TESTLIBS += $(LIBS) -lm
 DIR_IN  := src
 DIR_OUT := bin
 DIR_TEST := tests
-DIR_INCLUDE := /usr/local/include
+DIR_INCLUDE := /usr/local/include/shnet
 DIR_LIB := /usr/local/lib
 
 ifneq ($(debug),)
@@ -28,8 +28,8 @@ ${DIR_OUT}:
 shnet:
 	mkdir -p shnet
 
-${DIR_INCLUDE}/shnet:
-	mkdir -p $(DIR_INCLUDE)/shnet
+${DIR_INCLUDE}:
+	mkdir -p $(DIR_INCLUDE)
 
 build: $(OBJECTS)
 
@@ -104,8 +104,8 @@ clean: | $(DIR_OUT)
 	rm -r -f $(DIR_OUT) logs.txt
 	mkdir -p $(DIR_OUT)
 
-include: | $(DIR_INCLUDE)/shnet
-	cp $(DIR_IN)/*.h $(DIR_INCLUDE)/shnet
+include: | $(DIR_INCLUDE)
+	cp $(DIR_IN)/*.h $(DIR_INCLUDE)
 
 copy-headers:
 	cp $(DIR_IN)/*.h shnet
@@ -130,7 +130,7 @@ strip-dynamic: build-dynamic copy-headers
 
 uninstall:
 	rm -f $(DIR_LIB)/libshnet.*
-	rm -r -f $(DIR_INCLUDE)/shnet shnet
+	rm -r -f $(DIR_INCLUDE) shnet
 
 
 ${DIR_OUT}/refheap.o: $(DIR_OUT)/heap.o
