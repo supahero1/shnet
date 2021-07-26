@@ -47,10 +47,9 @@ enum net_consts {
   net_epoll_no_wakeup_method = 0,
   net_epoll_wakeup_method,
   
-  net_unspecified = 0,
-  net_wakeup_method,
-  net_socket,
-  net_server
+  net_server = 1,
+  net_socket = 2,
+  net_secure = 4
 };
 
 extern struct addrinfo net_get_addr_struct(const int, const int, const int, const int);

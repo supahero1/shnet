@@ -120,114 +120,210 @@ Z_HUFFMAN_ONLY
 Z_RLE
 */
 
-void* deflate_compress2(void* const input, const size_t input_len, size_t* const output_len, const int level, const int window_bits, const int mem_level, const int strategy) {
-  *output_len = compressBound(input_len);
-  void* output;
-  z_stream strm = {0};
-  if(deflateInit2(&strm, level, Z_DEFLATED, window_bits, mem_level, strategy) != Z_OK) {
-    errno = ENOMEM;
+z_stream* deflater(z_stream* stream, const int level, const int window_bits, const int mem_level, const int strategy) {
+  uint8_t alloc = 0;
+  if(stream == NULL) {
+    alloc = 1;
+    stream = calloc(1, sizeof(z_stream));
+    if(stream == NULL) {
+      return NULL;
+    }
+  }
+  if(deflateInit2(stream, level, Z_DEFLATED, window_bits, mem_level, strategy) != Z_OK) {
+    if(alloc) {
+      free(stream);
+    }
     return NULL;
   }
-  *output_len = deflateBound(&strm, input_len);
-  output = malloc(*output_len);
+  return stream;
+}
+
+void* deflate_(z_stream* stream, void* const input, const size_t input_len, void* output, size_t* output_len, int flush) {
+  uint8_t alloc_s = 0;
+  z_stream s;
+  if(stream == NULL) {
+    /* Assume no context takeover, just 1 compression */
+    alloc_s = 1;
+    s = (z_stream) {0};
+    stream = deflater(&s, Z_DEFAULT_COMPRESSION, Z_DEFLATE_DEFAULT_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+    if(stream == NULL) {
+      return NULL;
+    }
+    flush = Z_FINISH;
+  }
+  size_t len;
+  if(output_len == NULL) {
+    output_len = &len;
+    len = deflateBound(stream, input_len);
+  } else if(*output_len == 0) {
+    *output_len = deflateBound(stream, input_len);
+  }
+  uint8_t alloc_o = 0;
   if(output == NULL) {
-    deflateEnd(&strm);
-    return NULL;
+    alloc_o = 1;
+    output = malloc(*output_len);
+    if(output == NULL) {
+      if(alloc_s) {
+        deflateEnd(stream);
+      }
+      return NULL;
+    }
   }
-  strm.next_in = input;
-  strm.avail_in = input_len;
-  strm.next_out = output;
-  strm.avail_out = *output_len;
-  switch(deflate(&strm, Z_FINISH)) {
+  stream->next_in = input;
+  stream->avail_in = input_len;
+  stream->next_out = output;
+  stream->avail_out = *output_len;
+  switch(deflate(stream, flush)) {
+    case Z_OK:
     case Z_STREAM_END: {
-      deflateEnd(&strm);
+      *output_len -= stream->avail_out;
+      if(alloc_s) {
+        deflateEnd(stream);
+      }
       return output;
     }
     default: {
-      free(output);
-      deflateEnd(&strm);
+      if(alloc_o) {
+        free(output);
+      }
+      if(alloc_s) {
+        deflateEnd(stream);
+      }
       errno = EINVAL;
       return NULL;
     }
   }
 }
 
-void* deflate_compress(void* const input, const size_t input_len, size_t* const output_len) {
-  *output_len = compressBound(input_len);
-  void* const output = malloc(*output_len);
-  if(output == NULL) {
-    return NULL;
-  }
-  errno = compress2(output, output_len, input, input_len, Z_DEFAULT_COMPRESSION);
-  if(errno != Z_OK) {
-    free(output);
-    errno = EINVAL;
-    return NULL;
-  }
-  return output;
+void deflater_free(z_stream* const stream) {
+  deflateEnd(stream);
+  free(stream);
 }
 
-void* deflate_decompress2(void* const input, size_t input_len, size_t* const output_len, const size_t limit, const int window_bits) {
-  void* output = malloc(input_len);
+z_stream* inflater(z_stream* stream, const int window_bits) {
+  uint8_t alloc = 0;
+  if(stream == NULL) {
+    alloc = 1;
+    stream = calloc(1, sizeof(z_stream));
+    if(stream == NULL) {
+      return NULL;
+    }
+  }
+  if(inflateInit2(stream, window_bits) != Z_OK) {
+    if(alloc) {
+      free(stream);
+    }
+    return NULL;
+  }
+  return stream;
+}
+
+void* inflate_(z_stream* stream, void* const input, size_t input_len, void* output, size_t* output_len, const size_t limit, int flush) {
+  size_t avail = input_len << 1;
+  uint8_t alloc_o = 0;
   if(output == NULL) {
-    return NULL;
+    alloc_o = 1;
+    output = malloc(avail);
+    if(output == NULL) {
+      return NULL;
+    }
   }
-  z_stream strm = {0};
-  strm.next_in = input;
-  strm.avail_in = input_len;
-  strm.next_out = output;
-  strm.avail_out = input_len;
-  size_t avail = input_len;
+  z_stream s;
+  uint8_t origin_null = 0;
+  if(stream == NULL) {
+    origin_null = 1;
+    s = (z_stream) {0};
+    stream = &s;
+  }
+  stream->next_in = input;
+  stream->avail_in = input_len;
+  uint8_t alloc_s = 0;
+  if(origin_null) {
+    /* Assume no context takeover, just 1 decompression */
+    alloc_s = 1;
+    stream = inflater(stream, Z_DEFLATE_DEFAULT_WINDOW_BITS);
+    if(stream == NULL) {
+      if(alloc_o) {
+        free(output);
+      }
+      return NULL;
+    }
+    flush = Z_NO_FLUSH;
+  }
+  stream->next_out = output;
+  stream->avail_out = avail;
+  input_len <<= 1;
   size_t total = 0;
-  if(inflateInit2(&strm, window_bits) != Z_OK) {
-    errno = ENOMEM;
-    return NULL;
-  }
   while(1) {
-    switch(inflate(&strm, Z_NO_FLUSH)) {
+    switch(inflate(stream, flush)) {
       case Z_OK: {
-        if(strm.avail_out == 0) {
+        if(stream->avail_out == 0 && stream->avail_in != 0) {
           total = input_len;
           avail = input_len;
-          strm.avail_out += input_len;
+          stream->avail_out += input_len;
           input_len <<= 1;
           if(input_len > limit) {
-            free(output);
-            inflateEnd(&strm);
+            if(alloc_o) {
+              free(output);
+            }
+            if(alloc_s) {
+              inflateEnd(stream);
+            }
             errno = EOVERFLOW;
             return NULL;
           }
           output = realloc(output, input_len);
           if(output == NULL) {
-            inflateEnd(&strm);
+            if(alloc_s) {
+              inflateEnd(stream);
+            }
             return NULL;
           }
-          strm.next_out = (unsigned char*) output + avail;
+          stream->next_out = (unsigned char*) output + avail;
           break;
         }
-        /* Input must be somehow invalid if we still have output space */
+        if(stream->avail_in == 0) {
+          goto stream_end;
+        } /* Else, strangely, there are more blocks after the last one. Fail. */
       }
       default: {
-        free(output);
-        inflateEnd(&strm);
+        if(alloc_o) {
+          free(output);
+        }
+        if(alloc_s) {
+          inflateEnd(stream);
+        }
         errno = EINVAL;
         return NULL;
       }
       case Z_STREAM_END: {
-        total += avail - strm.avail_out;
-        *output_len = total;
-        inflateEnd(&strm);
+        stream_end:
+        total += avail - stream->avail_out;
+        if(output_len != NULL) {
+          *output_len = total;
+        }
+        if(alloc_s) {
+          inflateEnd(stream);
+        }
         return output;
       }
       case Z_MEM_ERROR: {
-        free(output);
-        inflateEnd(&strm);
+        if(alloc_o) {
+          free(output);
+        }
+        if(alloc_s) {
+          inflateEnd(stream);
+        }
         errno = ENOMEM;
         return NULL;
       }
       case Z_DATA_ERROR: {
-        free(output);
-        inflateEnd(&strm);
+        if(alloc_o) {
+          free(output);
+        }
+        if(alloc_s) {
+          inflateEnd(stream);
+        }
         errno = EINVAL;
         return NULL;
       }
@@ -235,24 +331,63 @@ void* deflate_decompress2(void* const input, size_t input_len, size_t* const out
   }
 }
 
-void* deflate_decompress(void* const input, size_t input_len, size_t* const output_len, const size_t limit) {
-  return deflate_decompress2(input, input_len, output_len, limit, Z_DEFLATE_DEFAULT_WINDOW_BITS);
+void inflater_free(z_stream* const stream) {
+  inflateEnd(stream);
+  free(stream);
 }
 
 
 
-void* gzip_compress(void* const input, const size_t input_len, size_t* const output_len) {
-  return deflate_compress2(input, input_len, output_len, Z_DEFAULT_COMPRESSION, Z_GZIP_DEFAULT_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+z_stream* gzipper(z_stream* stream, const int level, const int window_bits, const int mem_level, const int strategy) {
+  return deflater(stream, level, window_bits | 16, mem_level, strategy);
 }
 
-void* gzip_compress2(void* const input, const size_t input_len, size_t* const output_len, const int level, const int window_bits, const int mem_level, const int strategy) {
-  return deflate_compress2(input, input_len, output_len, level, window_bits | 16, mem_level, strategy);
+void* gzip(z_stream* stream, void* const input, const size_t input_len, void* output, size_t* output_len, int flush) {
+  uint8_t alloc_s = 0;
+  z_stream s;
+  if(stream == NULL) {
+    alloc_s = 1;
+    s = (z_stream) {0};
+    stream = gzipper(&s, Z_DEFAULT_COMPRESSION, Z_GZIP_DEFAULT_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+    if(stream == NULL) {
+      return NULL;
+    }
+    flush = Z_FINISH;
+  }
+  void* const ret = deflate_(stream, input, input_len, output, output_len, flush);
+  if(alloc_s) {
+    deflateEnd(stream);
+  }
+  return ret;
 }
 
-void* gzip_decompress(void* const input, size_t input_len, size_t* const output_len, const size_t limit) {
-  return deflate_decompress2(input, input_len, output_len, limit, Z_GZIP_DEFAULT_WINDOW_BITS);
+void gzipper_free(z_stream* const stream) {
+  deflater_free(stream);
 }
 
-void* gzip_decompress2(void* const input, size_t input_len, size_t* const output_len, const size_t limit, const int window_bits) {
-  return deflate_decompress2(input, input_len, output_len, limit, window_bits | 15);
+z_stream* gunzipper(z_stream* stream, const int window_bits) {
+  return inflater(stream, window_bits | 16);
+}
+
+void* gunzip(z_stream* stream, void* const input, size_t input_len, void* output, size_t* output_len, const size_t limit, int flush) {
+  uint8_t alloc_s = 0;
+  z_stream s;
+  if(stream == NULL) {
+    alloc_s = 1;
+    s = (z_stream) {0};
+    stream = gunzipper(&s, Z_GZIP_DEFAULT_WINDOW_BITS);
+    if(stream == NULL) {
+      return NULL;
+    }
+    flush = Z_NO_FLUSH;
+  }
+  void* const ret = inflate_(stream, input, input_len, output, output_len, limit, flush);
+  if(alloc_s) {
+    inflateEnd(stream);
+  }
+  return ret;
+}
+
+void gunzipper_free(z_stream* const stream) {
+  inflater_free(stream);
 }

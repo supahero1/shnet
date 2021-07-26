@@ -179,13 +179,15 @@ static const char http_hex[] = {
   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
   0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  0,  0,  0,  0,  0,
-  0,  10, 11, 12, 13, 14, 15, 0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0, 10, 11, 12, 13, 14, 15,  0,  0,  0,  0,  0,  0,  0,  0,  0,
   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  10, 11, 12, 13, 14, 15
+  0, 10, 11, 12, 13, 14, 15
 };
 
 #define IS_TOKEN(a) (http_tokens[(int)(a)])
 #define HEX_TO_NUM(a) (http_hex[(int)(a)])
+#define IS_DIGIT(a) ((a) >= '0' && (a) <= '9')
+#define IS_HEX(a) (IS_DIGIT(a) || ((a) >= 'A' && (a) <= 'F') || ((a) >= 'a' && (a) <= 'f'))
 
 const char* http1_parser_strerror(const int err) {
   switch(err) {
@@ -210,21 +212,23 @@ const char* http1_parser_strerror(const int err) {
     case http_no_chunk_size: return "http_no_chunk_size";
     case http_invalid_status_code: return "http_invalid_status_code";
     case http_reason_phrase_too_long: return "http_reason_phrase_too_long";
+    case http_invalid: return "http_invalid";
+    case http_closed: return "http_closed";
     default: return "http_unknown_error";
   }
 }
 
-uint32_t http1_message_length(const struct http_message* const message) {
+uint64_t http1_message_length(const struct http_message* const message) {
   if(message->method != NULL) { /* Request */
     /* 2 spaces, 2 CRLF, sizeof HTTP/1.1  = 14 */
-    uint32_t length = message->method_len + 14 + message->path_len + message->body_len + message->headers_len * 4;
+    uint64_t length = message->method_len + 14 + message->path_len + message->body_len + message->headers_len * 4;
     for(uint32_t i = 0; i < message->headers_len; ++i) {
       length += message->headers[i].name_len + message->headers[i].value_len;
     }
     return length;
   } else { /* Response */
     /* sizeof HTTP/1.1, 2 SP, 3 numbers, 2 CLRF  = 17 */
-    uint32_t length = message->reason_phrase_len + 17 + message->body_len + message->headers_len * 4;
+    uint64_t length = message->reason_phrase_len + 17 + message->body_len + message->headers_len * 4;
     for(uint32_t i = 0; i < message->headers_len; ++i) {
       length += message->headers[i].name_len + message->headers[i].value_len;
     }
@@ -238,7 +242,7 @@ void http1_create_message(char* buffer, const struct http_message* const message
   if(message->method != NULL) {
     (void) memcpy(buffer, message->method, message->method_len);
     buffer += message->method_len;
-    buffer[0] = ' ';
+    *buffer = ' ';
     ++buffer;
     (void) memcpy(buffer, message->path, message->path_len);
     buffer += message->path_len;
@@ -247,40 +251,40 @@ void http1_create_message(char* buffer, const struct http_message* const message
   } else {
     (void) memcpy(buffer, "HTTP/1.1 ", 9);
     buffer += 9;
-    buffer[0] = 48 + message->status_code / 100;
+    *buffer = 48 + message->status_code / 100;
     ++buffer;
-    buffer[0] = 48 + (message->status_code % 100) / 10;
+    *buffer = 48 + (message->status_code % 100) / 10;
     ++buffer;
-    buffer[0] = 48 + message->status_code % 10;
+    *buffer = 48 + message->status_code % 10;
     ++buffer;
-    buffer[0] = ' ';
+    *buffer = ' ';
     ++buffer;
     if(message->reason_phrase != NULL) {
       (void) memcpy(buffer, message->reason_phrase, message->reason_phrase_len);
       buffer += message->reason_phrase_len;
     }
-    buffer[0] = '\r';
+    *buffer = '\r';
     ++buffer;
-    buffer[0] = '\n';
+    *buffer = '\n';
     ++buffer;
   }
   for(uint32_t i = 0; i < message->headers_len; ++i) {
     (void) memcpy(buffer, message->headers[i].name, message->headers[i].name_len);
     buffer += message->headers[i].name_len;
-    buffer[0] = ':';
+    *buffer = ':';
     ++buffer;
-    buffer[0] = ' ';
+    *buffer = ' ';
     ++buffer;
     (void) memcpy(buffer, message->headers[i].value, message->headers[i].value_len);
     buffer += message->headers[i].value_len;
-    buffer[0] = '\r';
+    *buffer = '\r';
     ++buffer;
-    buffer[0] = '\n';
+    *buffer = '\n';
     ++buffer;
   }
-  buffer[0] = '\r';
+  *buffer = '\r';
   ++buffer;
-  buffer[0] = '\n';
+  *buffer = '\n';
   ++buffer;
   if(message->body != NULL) {
     (void) memcpy(buffer, message->body, message->body_len);
@@ -293,14 +297,14 @@ do { \
   if((a) > size) return http_incomplete; \
 } while(0)
 
-static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http_parser_session* const session,
+static int http1_parse_headers_and_body(char* buffer, uint64_t size, uint64_t* const total_size, struct http_parser_session* const session,
   const struct http_parser_settings* const settings, struct http_message* const message) {
-  uint32_t idx = 0;
+  uint64_t idx = 0;
   if(session->last_at == http_pla_body) {
     goto pla_body;
   }
-  ATLEAST(2);
   if(settings->max_headers == 0 || message->headers_len == 0) {
+    ATLEAST(2);
     if(buffer[0] == '\r') {
       session->last_idx += 2;
       buffer += 2;
@@ -312,6 +316,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
   } else {
     uint32_t i = session->last_header_idx;
     for(; i < message->headers_len; ++i) {
+      ATLEAST(2);
       if(buffer[0] == '\r') {
         session->last_idx += 2;
         buffer += 2;
@@ -321,7 +326,7 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       /* Header name */
       ATLEAST(5);
       if(!settings->no_character_validation) {
-        uint32_t j = 0;
+        uint64_t j = 0;
         for(; j < size; ++j) {
           if(!IS_TOKEN(buffer[j])) {
             if(buffer[j] == ':') {
@@ -368,11 +373,11 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       ATLEAST(3);
       buffer += idx + 1;
       --size;
-      uint32_t whole_idx = idx + 1;
+      uint64_t whole_idx = idx + 1;
       idx = 0;
       /* Header value */
       if(!settings->no_character_validation) {
-        uint32_t j = 0;
+        uint64_t j = 0;
         for(; j < size; ++j) {
           if(buffer[j] < 32 || buffer[j] > 126) {
             if(buffer[j] == '\r') {
@@ -412,14 +417,14 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       }
       if(!settings->no_body_parsing) {
         if(message->headers[i].name_len == 14 && strncasecmp(message->headers[i].name, "content-length", 14) == 0) {
-          if(message->headers[i].value_len > 10) {
-            /* Certainly bigger than maximum int value */
+          if(message->headers[i].value_len > 20) {
+            /* Certainly bigger than maximum 64bit value */
             return http_body_too_long;
           }
-          char str[11];
-          (void) memcpy(str, message->headers[i].value, 10);
-          str[10] = 0;
-          const uint32_t body_len = atoi(str);
+          const char save = message->headers[i].value[message->headers[i].value_len];
+          message->headers[i].value[message->headers[i].value_len] = 0;
+          const uint64_t body_len = atoll(message->headers[i].value);
+          message->headers[i].value[message->headers[i].value_len] = save;
           if(body_len > settings->max_body_len) {
             return http_body_too_long;
           }
@@ -487,51 +492,54 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       return http_valid;
     }
     ATLEAST(message->body_len);
-    decode:
-    if(message->allocated_body) {
-      buffer = message->body;
+    if(settings->no_processing) {
+      /* Now that we have the entire body, we can leave */
+      session->parsed_body = 1;
+      return http_valid;
     }
     if(message->encoding == http_e_none) {
       message->body = buffer;
-    } else {
-      size_t len;
-      errno = 0;
-      switch(message->encoding) {
-        case http_e_gzip: {
-          message->body = gzip_decompress(buffer, message->body_len, &len, settings->max_body_len);
-          break;
-        }
-        case http_e_deflate: {
-          message->body = deflate_decompress(buffer, message->body_len, &len, settings->max_body_len);
-          break;
-        }
-        case http_e_brotli: {
-          message->body = brotli_decompress(buffer, message->body_len, &len, settings->max_body_len);
-          break;
-        }
-        default: __builtin_unreachable();
-      }
-      if(message->body == NULL) {
-        if(errno == ENOMEM) {
-          return http_out_of_memory;
-        } else if(errno == EOVERFLOW) {
-          return http_body_too_long;
-        } else {
-          return http_corrupted_body_compression;
-        }
-      }
-      message->body_len = len;
-      if(message->allocated_body) {
-        free(buffer);
-      }
-      message->allocated_body = 1;
-      /* No encoding now */
-      message->encoding = http_e_none;
+      session->parsed_body = 1;
+      return http_valid;
     }
+    decode:;
+    size_t len;
+    switch(message->encoding) {
+      case http_e_gzip: {
+        message->body = gunzip(NULL, buffer, message->body_len, NULL, &len, settings->max_body_len, 0);
+        break;
+      }
+      case http_e_deflate: {
+        message->body = inflate_(NULL, buffer, message->body_len, NULL, &len, settings->max_body_len, 0);
+        break;
+      }
+      case http_e_brotli: {
+        message->body = brotli_decompress(buffer, message->body_len, &len, settings->max_body_len);
+        break;
+      }
+      default: __builtin_unreachable();
+    }
+    if(message->body == NULL) {
+      if(errno == ENOMEM) {
+        return http_out_of_memory;
+      } else if(errno == EOVERFLOW) {
+        return http_body_too_long;
+      } else {
+        return http_corrupted_body_compression;
+      }
+    }
+    void* const ptr = realloc(message->body, len);
+    if(ptr != NULL) {
+      message->body = ptr;
+    }
+    message->body_len = len;
+    message->allocated_body = 1;
+    /* No encoding now */
+    message->encoding = http_e_none;
   } else {
     while(1) {
-      uint32_t chunk_len = 0;
-      uint32_t i = 0;
+      uint64_t chunk_len = 0;
+      uint64_t i = 0;
       ATLEAST(3);
       for(; i < size; ++i) {
         if(!IS_HEX(buffer[i])) {
@@ -558,26 +566,35 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
       buffer += i + 2;
       --size;
       ATLEAST(chunk_len + 2);
+      session->last_idx += i + 2;
       if(chunk_len == 0) {
-        session->last_idx += i + 4;
-        if(message->body_len > 0) {
+        if(message->body_len > 0 && settings->no_processing == 0) {
           /* So that if we resume the session, we won't end up here */
           message->transfer = http_t_none;
-          goto decode;
+          if(message->encoding != http_e_none) {
+            size = message->body_len;
+            buffer = message->body;
+            goto decode;
+          } else {
+            session->parsed_body = 1;
+            return http_valid;
+          }
         } else {
           session->parsed_body = 1;
           return http_valid;
         }
       }
-      char* const ptr = realloc(message->body, message->body_len + chunk_len);
-      if(ptr == NULL) {
-        return http_out_of_memory;
+      if(settings->no_processing == 0) {
+        (void) memmove(buffer - i - 4, buffer, size);
+        *total_size -= i + 4;
+        buffer -= i + 4;
+        session->last_idx -= i + 4;
       }
-      message->allocated_body = 1;
-      message->body = ptr;
-      (void) memcpy(message->body + message->body_len, buffer, chunk_len);
+      if(message->body == NULL) {
+        message->body = buffer;
+      }
       message->body_len += chunk_len;
-      session->last_idx += i + 4 + chunk_len;
+      session->last_idx += chunk_len + 2;
       buffer += chunk_len + 2;
       size -= chunk_len + 2;
     }
@@ -588,9 +605,9 @@ static int http1_parse_headers_and_body(char* buffer, uint32_t size, struct http
 
 /* message->headers and message->headers_len must be initialised */
 
-int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session* const session,
+int http1_parse_request(char* buffer, uint64_t size, uint64_t* const total_size, struct http_parser_session* const session,
   const struct http_parser_settings* const settings, struct http_message* const message) {
-  uint32_t idx = 0;
+  uint64_t idx = 0;
   buffer += session->last_idx;
   size -= session->last_idx;
   switch(session->last_at) {
@@ -603,7 +620,7 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
   }
   ATLEAST(2);
   if(!settings->no_character_validation) {
-    uint32_t i = 0;
+    uint64_t i = 0;
     for(; i < size; ++i) {
       if(!IS_TOKEN(buffer[i])) {
         if(buffer[i] == ' ') {
@@ -672,7 +689,7 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
       return http_no_path;
     }
     message->path = buffer;
-    message->path_len = path_len; // path is 0?????????
+    message->path_len = path_len;
     idx += path_len + 1;
   }
   session->last_at = http_pla_version;
@@ -699,12 +716,12 @@ int http1_parse_request(char* buffer, uint32_t size, struct http_parser_session*
   buffer += 10;
   size -= 10;
   pla_headers:
-  return http1_parse_headers_and_body(buffer, size, session, settings, message);
+  return http1_parse_headers_and_body(buffer, size, total_size, session, settings, message);
 }
 
-int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session* const session,
+int http1_parse_response(char* buffer, uint64_t size, uint64_t* const total_size, struct http_parser_session* const session,
   const struct http_parser_settings* const settings, struct http_message* const message) {
-  uint32_t idx = 0;
+  uint64_t idx = 0;
   buffer += session->last_idx;
   size -= session->last_idx;
   switch(session->last_at) {
@@ -753,7 +770,7 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
   }
   ATLEAST(2);
   if(!settings->no_character_validation) {
-    uint32_t i = 0;
+    uint64_t i = 0;
     for(; i < size; ++i) {
       if(buffer[i] == '\r' || buffer[i] < 32 || buffer[i] > 126 || buffer[i] == '\n') {
         if(buffer[i] == '\r') {
@@ -799,10 +816,8 @@ int http1_parse_response(char* buffer, uint32_t size, struct http_parser_session
     return http_valid;
   }
   pla_headers:
-  return http1_parse_headers_and_body(buffer, size, session, settings, message);
+  return http1_parse_headers_and_body(buffer, size, total_size, session, settings, message);
 }
-
-#undef ATLEAST
 
 struct http_header* http1_seek_header(const struct http_message* const message, const char* const name, const uint32_t len) {
   for(uint32_t i = 0; i < message->headers_len; ++i) {
@@ -812,3 +827,5 @@ struct http_header* http1_seek_header(const struct http_message* const message, 
   }
   return NULL;
 }
+
+#undef ATLEAST

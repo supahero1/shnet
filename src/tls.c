@@ -34,7 +34,7 @@ static void tls_onshutdown(struct tcp_server*);
 
 static int tls_internal_send(struct tls_socket* const, const void*, int);
 
-static int tls_internal_read(struct tls_socket* const);
+static uint64_t tls_internal_read(struct tls_socket* const);
 
 
 static struct tcp_socket_callbacks tls_socket_callbacks;
@@ -164,15 +164,17 @@ static void tls_onopen(struct tcp_socket* soc) {
     }
     default: break;
   }
+  tcp_socket_nodelay_on(&socket->tcp);
 }
 
 static void tls_onmessage(struct tcp_socket* soc) {
-  const int read = tls_internal_read(socket);
+  const uint64_t read = tls_internal_read(socket);
   if(!tls_socket_test_flag(socket, tls_opened)) {
     (void) pthread_mutex_lock(&socket->ssl_lock);
     const int is_init_fin = SSL_is_init_finished(socket->ssl);
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
+      tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tls_opened);
       if(socket->callbacks->onopen != NULL) {
         socket->callbacks->onopen(socket);
@@ -231,9 +233,10 @@ static void tls_onsend(struct tcp_socket* soc) {
     (void) tls_internal_send(socket, NULL, 0);
     if(!tls_socket_test_flag(socket, tls_opened)) {
       (void) pthread_mutex_lock(&socket->ssl_lock);
-      const int is_finished = SSL_is_init_finished(socket->ssl);
+      const int is_init_fin = SSL_is_init_finished(socket->ssl);
       (void) pthread_mutex_unlock(&socket->ssl_lock);
-      if(is_finished) {
+      if(is_init_fin) {
+        tcp_socket_nodelay_off(&socket->tcp);
         tls_socket_set_flag(socket, tls_opened);
         if(socket->callbacks->onopen != NULL) {
           socket->callbacks->onopen(socket);
@@ -261,9 +264,7 @@ static void tls_onfree(struct tcp_socket* soc) {
   if(socket->read_buffer != NULL) {
     free(socket->read_buffer);
   }
-  if(socket->tcp.server != NULL) {
-    (void) memset(soc + 1, 0, sizeof(struct tls_socket) - sizeof(struct tcp_socket));
-  } else {
+  if(socket->tcp.server == NULL) {
     const int offset = offsetof(struct tls_socket, ssl);
     (void) memset((char*) soc + offset, 0, sizeof(struct tls_socket) - offset);
   }
@@ -298,7 +299,9 @@ int tls_socket_init(struct tls_socket* const socket, const int which) {
     SSL_set_connect_state(socket->ssl);
   } else {
     SSL_set_accept_state(socket->ssl);
+    socket->tcp.base.which |= net_server;
   }
+  socket->tcp.base.which |= net_secure;
   /* Required to shrink and grow the buffer of records to be sent */
   SSL_set_mode(socket->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
   return 0;
@@ -370,18 +373,18 @@ The application must not repeat the call if errno was ENOMEM, since that means
 onnomem() callback failed, meaning the socket is closing.
 errno -1 means a fatal OpenSSL error has occured. */
 
-int tls_send(struct tls_socket* const socket, const void* data, int size) {
-  if(tls_socket_test_flag(socket, tls_shutdown_wr) || tls_socket_test_flag(socket, tcp_shutdown_wr)) {
+uint64_t tls_send(struct tls_socket* const socket, const void* data, uint64_t size) {
+  if(tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr)) {
     errno = EPIPE;
     return 0;
   }
   (void) pthread_mutex_lock(&socket->tcp.lock);
   /* Send buffered records first, if possible. This way, there will be no dumb
-  recordering if we first try to send the requested data and epoll has not yet
+  reordering if we first try to send the requested data and epoll has not yet
   woken up to notice it can send the buffered records. */
-  int addon = sizeof(struct tls_record);
+  uint64_t addon = sizeof(struct tls_record);
 #define record ((struct tls_record*) socket->tcp.send_buffer)
-  for(uint32_t i = 0; i < socket->tcp.send_used; ++i) {
+  for(uint64_t i = 0; i < socket->tcp.send_used; ++i) {
     switch(tls_internal_send(socket, socket->tcp.send_buffer + addon, record->size)) {
       case 1: {
         addon += record->total_size;
@@ -424,7 +427,7 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
     case 0: {
       /* Buffer the data */
       (void) pthread_mutex_lock(&socket->tcp.lock);
-      const uint32_t total_size = (size + sizeof(struct tls_record) - 1) & -sizeof(struct tls_record);
+      const uint64_t total_size = (size + sizeof(struct tls_record) - 1) & -sizeof(struct tls_record);
       if(socket->tcp.send_size - socket->tcp.send_used < total_size) {
         while(1) {
           char* const ptr = realloc(socket->tcp.send_buffer, socket->tcp.send_used + total_size);
@@ -465,12 +468,12 @@ int tls_send(struct tls_socket* const socket, const void* data, int size) {
 
 
 
-static int tls_internal_read(struct tls_socket* const socket) {
+static uint64_t tls_internal_read(struct tls_socket* const socket) {
   if(tls_socket_test_flag(socket, tcp_data_ended)) {
     errno = EPIPE;
     return 0;
   }
-  int addon = 0;
+  uint64_t addon = 0;
   while(1) {
     (void) pthread_mutex_lock(&socket->read_lock);
     if(socket->read_used + socket->settings->read_buffer_growth + addon > socket->read_size) {
@@ -539,9 +542,9 @@ static int tls_internal_read(struct tls_socket* const socket) {
   }
 }
 
-int tls_read(struct tls_socket* const socket, void* const data, const int size) {
+uint64_t tls_read(struct tls_socket* const socket, void* const data, const uint64_t size) {
   (void) pthread_mutex_lock(&socket->read_lock);
-  const int to_read = size > socket->read_used ? socket->read_used : size;
+  const uint64_t to_read = size > socket->read_used ? socket->read_used : size;
   (void) memcpy(data, socket->read_buffer, to_read);
   socket->read_used -= to_read;
   if(socket->read_used != 0) {
@@ -568,11 +571,11 @@ The underlying code might want to write some bytes to the read buffer at any
 time, so well-written applications will probably have better performance by not
 creating many lock contention opportunities and using tls_read() to copy memory. */
 
-unsigned char tls_peek(const struct tls_socket* const socket, const int offset) {
+unsigned char tls_peek(const struct tls_socket* const socket, const uint64_t offset) {
   return socket->read_buffer[offset];
 }
 
-unsigned char tls_peek_once(struct tls_socket* const socket, const int offset) {
+unsigned char tls_peek_once(struct tls_socket* const socket, const uint64_t offset) {
   (void) pthread_mutex_lock(&socket->read_lock);
   const unsigned char byte = tls_peek(socket, offset);
   (void) pthread_mutex_unlock(&socket->read_lock);
@@ -624,7 +627,11 @@ int tls_create_server(struct tls_server* const server, struct addrinfo* const in
     server->tcp.socket_size = sizeof(struct tls_socket);
   }
   server->tcp.callbacks = &tls_server_callbacks;
-  return tcp_create_server(&server->tcp, info);
+  const int err = tcp_create_server(&server->tcp, info);
+  if(err == 0) {
+    server->tcp.base.which |= net_secure;
+  }
+  return err;
 }
 
 void tls_server_foreach_conn(struct tls_server* const server, void (*callback)(struct tls_socket*, void*), void* data, const int write) {

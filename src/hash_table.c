@@ -3,17 +3,18 @@
 #include <string.h>
 #include <stdlib.h>
 
-void http_hash_table_insert(struct http_hash_table* const table, char* const key, http_hash_table_value_t value) {
+void http_hash_table_insert(struct http_hash_table* const table, char* const key, void* const data, http_hash_table_func_t func) {
   uint64_t index = FNV_1a(key, 0) % table->size;
   while(table->table[index].key != NULL) {
     index = (index + 1) % table->size;
   }
   table->table[index].key = key;
-  table->table[index].value = value;
+  table->table[index].data = data;
+  table->table[index].func = func;
   ++table->used;
 }
 
-http_hash_table_value_t http_hash_table_find(const struct http_hash_table* const table, const char* const key) {
+struct http_hash_table_entry* http_hash_table_find(const struct http_hash_table* const table, const char* const key) {
   const size_t len = strlen(key);
   uint64_t index = FNV_1a(key, len) % table->size;
   if(table->table[index].key == NULL) {
@@ -24,7 +25,7 @@ http_hash_table_value_t http_hash_table_find(const struct http_hash_table* const
       return NULL;
     }
     if(len == strlen(table->table[index].key) && strncmp(table->table[index].key, key, len) == 0) {
-      return table->table[index].value;
+      return table->table + index;
     }
     index = (index + 1) % table->size;
   }

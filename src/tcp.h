@@ -17,10 +17,6 @@ enum tcp_consts {
   tcp_can_send = 2U,
   tcp_opened = 4U,
   tcp_data_ended = 8U,
-  /* For this to work, before the last corked send the application must call
-  tcp_socket_cock_off(), NOT AFTER. This way, we don't switch to kernel twice.
-  That is because this option is NOT created using setsockopt(). */
-  tcp_cork = 16U,
   
   /* TCP server flags */
   
@@ -99,7 +95,7 @@ struct tcp_socket_callbacks {
 };
 
 struct tcp_socket_settings {
-  uint32_t send_buffer_cleanup_threshold;
+  uint64_t send_buffer_cleanup_threshold;
   uint32_t onreadclose_auto_res:1;
   uint32_t remove_from_epoll_onclose:1;
   uint32_t dont_free_addrinfo:1;
@@ -112,6 +108,7 @@ struct tcp_socket_settings {
   uint32_t free_on_free:1;
   /* Look tcp_server's "offset" member of settings for an explanation. */
   uint32_t free_offset:28;
+  uint32_t _unused:32;
 };
 
 /* A tcp_socket's address after the call to tcp_create_socket() MUST NOT BE CHANGED.
@@ -124,13 +121,13 @@ struct tcp_socket {
   struct tcp_socket_settings* settings;
   struct net_epoll* epoll;
   /* If the connection fails and info is not NULL, the connection will be silently
-  retried with tthe next available address */
+  retried with the next available address */
   struct addrinfo* info;
   struct addrinfo* cur_info;
   pthread_mutex_t lock;
   char* send_buffer;
-  uint32_t send_used;
-  uint32_t send_size;
+  uint64_t send_used;
+  uint64_t send_size;
   _Atomic uint32_t flags;
 };
 
@@ -138,9 +135,15 @@ extern void tcp_socket_cork_on(struct tcp_socket* const);
 
 extern void tcp_socket_cork_off(struct tcp_socket* const);
 
-extern int tcp_socket_keepalive(const struct tcp_socket* const);
+extern void tcp_socket_nodelay_on(struct tcp_socket* const);
 
-extern int tcp_socket_keepalive_explicit(const struct tcp_socket* const, const int, const int, const int);
+extern void tcp_socket_nodelay_off(struct tcp_socket* const);
+
+extern int  tcp_socket_keepalive(const struct tcp_socket* const);
+
+extern int  tcp_socket_keepalive_explicit(const struct tcp_socket* const, const int, const int, const int);
+
+extern void tcp_socket_linger(const struct tcp_socket* const, const int);
 
 extern void tcp_socket_stop_receiving_data(struct tcp_socket* const);
 
@@ -151,11 +154,11 @@ extern void tcp_socket_close(struct tcp_socket* const);
 
 extern void tcp_socket_force_close(struct tcp_socket* const);
 
-extern int tcp_create_socket(struct tcp_socket* const);
+extern int  tcp_create_socket(struct tcp_socket* const);
 
-extern int tcp_send(struct tcp_socket* const, const void*, int);
+extern uint64_t tcp_send(struct tcp_socket* const, const void*, uint64_t);
 
-extern int tcp_read(struct tcp_socket* const, void*, int);
+extern uint64_t tcp_read(struct tcp_socket* const, void*, uint64_t);
 
 
 
@@ -216,7 +219,7 @@ struct tcp_server {
 
 extern void tcp_server_free(struct tcp_server* const);
 
-extern int tcp_create_server(struct tcp_server* const, struct addrinfo* const);
+extern int  tcp_create_server(struct tcp_server* const, struct addrinfo* const);
 
 extern void tcp_server_foreach_conn(struct tcp_server* const, void (*)(struct tcp_socket*, void*), void*, const int);
 
@@ -224,7 +227,7 @@ extern void tcp_server_dont_accept_conn(struct tcp_server* const);
 
 extern void tcp_server_accept_conn(struct tcp_server* const);
 
-extern int tcp_server_shutdown(struct tcp_server* const);
+extern int  tcp_server_shutdown(struct tcp_server* const);
 
 extern uint32_t tcp_server_get_conn_amount_raw(const struct tcp_server* const);
 
@@ -232,6 +235,6 @@ extern uint32_t tcp_server_get_conn_amount(struct tcp_server* const);
 
 
 
-extern int tcp_epoll(struct net_epoll* const);
+extern int  tcp_epoll(struct net_epoll* const);
 
 #endif // __Qz_51_Jfgr_mbwOPa_oh_vMG78RXim

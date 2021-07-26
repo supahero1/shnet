@@ -17,8 +17,14 @@ int cleaned = 0;
 
 int which = 0;
 
+char b[512];
+
+uint64_t offset = 0;
+
 void cleanup(void) {
   cleaned = 1;
+  
+  offset = 0;
   
   if(message.allocated_body) {
     free(message.body);
@@ -41,16 +47,18 @@ void cleanup(void) {
   message.headers_len = 8;
 }
 
-void test_explicit(char* const name, char* const buf, const int expected, const int clean, const unsigned length) {
+void test_explicit(char* const name, char* const buf, const int expected, const int clean, uint64_t length) {
   if(cleaned == 0) {
-    cleaned = 1;
     cleanup();
   }
+  (void) memcpy(b + offset, buf, length);
+  offset += length;
+  b[offset] = 0;
   int res;
   if(which == 0) {
-    res = http1_parse_request(buf, length, &session, &settings, &message);
+    res = http1_parse_request(b, offset, &offset, &session, &settings, &message);
   } else {
-    res = http1_parse_response(buf, length, &session, &settings, &message);
+    res = http1_parse_response(b, offset, &offset, &session, &settings, &message);
   }
   if(res != expected) {
     _debug("Test suite %s yielded unexpected value: %s", 1, name, http1_parser_strerror(res));
@@ -68,7 +76,7 @@ void test(char* const name, char* const buf, const int expected, const int clean
   test_explicit(name, buf, expected, clean, strlen(buf));
 }
 
-void test_addon(char* const name, char* const buf, const int expected, const int clean, const unsigned addon) {
+void test_addon(char* const name, char* const buf, const int expected, const int clean, const uint64_t addon) {
   test_explicit(name, buf, expected, clean, strlen(buf) + addon);
 }
 
@@ -259,9 +267,7 @@ int main() {
   , http_incomplete, 0);
   cleaned = 1;
   test("44",
-  "GET / HTTP/1.1\r\n"
-  "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
+  "\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -277,9 +283,7 @@ int main() {
   , http_incomplete, 0);
   cleaned = 1;
   test("47",
-  "GET / HTTP/1.1\r\n"
-  "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
+  "\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -290,9 +294,7 @@ int main() {
   , http_incomplete, 0);
   cleaned = 1;
   test("49",
-  "GET / HTTP/1.1\r\n"
-  "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
+  "\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -303,9 +305,7 @@ int main() {
   , http_incomplete, 0);
   cleaned = 1;
   test("51",
-  "GET / HTTP/1.1\r\n"
-  "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
+  "\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -316,9 +316,7 @@ int main() {
   , http_incomplete, 0);
   cleaned = 1;
   test("53",
-  "GET / HTTP/1.1\r\n"
-  "Transfer-Encoding: chunked\r\n"
-  "\r\na\r\nSome text \r\n7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
+  "7\r\nI wrote\r\n1\r\n.\r\n0\r\n\r\n"
   , http_valid, 0);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
@@ -326,7 +324,7 @@ int main() {
   char buff[512];
   memset(buff, 0, sizeof(buff));
   size_t size;
-  void* compressed = deflate_compress("Some text I wrote.", 18, &size);
+  void* compressed = deflate_(NULL, "Some text I wrote.", 18, NULL, &size, 0);
   not_check(compressed, NULL);
   int len = sprintf(buff, "GET / HTTP/1.1\r\n"
   "Content-Length: %lu\r\n"
@@ -337,6 +335,7 @@ int main() {
   test_explicit("54", buff, http_valid, 0, len + size);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
+  free(compressed);
   
   memset(buff, 0, sizeof(buff));
   compressed = brotli_compress("Some text I wrote.", 18, &size);
@@ -350,6 +349,7 @@ int main() {
   test_explicit("55", buff, http_valid, 0, len + size);
   check(message.body_len, 18);
   cmp(message.body, "Some text I wrote.");
+  free(compressed);
   
   cleanup();
   settings.stop_at_version = 1;

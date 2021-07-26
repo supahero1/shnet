@@ -32,13 +32,13 @@ void brotli_test(char* text) {
 
 void deflate_test(char* text) {
   size_t len = strlen(text) + 1;
-  size_t deflate_compressed_length;
-  char* deflate_compressed = deflate_compress(text, len, &deflate_compressed_length);
+  size_t deflate_compressed_length = 0;
+  char* deflate_compressed = deflate_(NULL, text, len, NULL, &deflate_compressed_length, 0);
   if(deflate_compressed == NULL) {
     TEST_FAIL;
   }
   size_t deflate_decompressed_length;
-  char* deflate_decompressed = deflate_decompress(deflate_compressed, deflate_compressed_length, &deflate_decompressed_length, 8192);
+  char* deflate_decompressed = inflate_(NULL, deflate_compressed, deflate_compressed_length, NULL, &deflate_decompressed_length, 8192, 0);
   if(deflate_decompressed == NULL) {
     TEST_FAIL;
   }
@@ -54,13 +54,13 @@ void deflate_test(char* text) {
 
 void gzip_test(char* text) {
   size_t len = strlen(text) + 1;
-  size_t gzip_compressed_length;
-  char* gzip_compressed = gzip_compress(text, len, &gzip_compressed_length);
+  size_t gzip_compressed_length = 0;
+  char* gzip_compressed = gzip(NULL, text, len, NULL, &gzip_compressed_length, 0);
   if(gzip_compressed == NULL) {
     TEST_FAIL;
   }
   size_t gzip_decompressed_length;
-  char* gzip_decompressed = gzip_decompress(gzip_compressed, gzip_compressed_length, &gzip_decompressed_length, 8192);
+  char* gzip_decompressed = gunzip(NULL, gzip_compressed, gzip_compressed_length, NULL, &gzip_decompressed_length, 8192, 0);
   if(gzip_decompressed == NULL) {
     TEST_FAIL;
   }
