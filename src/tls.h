@@ -54,14 +54,14 @@ struct tls_socket_callbacks {
 };
 
 struct tls_socket_settings {
-  uint32_t read_buffer_cleanup_threshold;
-  uint32_t read_buffer_growth;
+  int read_buffer_cleanup_threshold;
+  int read_buffer_growth;
   uint32_t onreadclose_auto_res:3;
 };
 
 struct tls_record {
-  int size;
-  int total_size;
+  uint64_t size;
+  uint64_t total_size;
   // ... data
 };
 
@@ -75,8 +75,8 @@ struct tls_socket {
   pthread_mutex_t read_lock;
   pthread_mutex_t ssl_lock;
   char* read_buffer;
-  uint32_t read_used;
-  uint32_t read_size;
+  uint64_t read_used;
+  uint64_t read_size;
 };
 
 extern void tls_socket_free(struct tls_socket* const);
@@ -92,13 +92,13 @@ extern int tls_socket_init(struct tls_socket* const, const int);
 
 extern int tls_create_socket(struct tls_socket* const);
 
-extern int tls_send(struct tls_socket* const, const void*, int);
+extern uint64_t tls_send(struct tls_socket* const, const void*, uint64_t);
 
-extern int tls_read(struct tls_socket* const, void* const, const int);
+extern uint64_t tls_read(struct tls_socket* const, void* const, const uint64_t);
 
-extern unsigned char tls_peek(const struct tls_socket* const, const int);
+extern unsigned char tls_peek(const struct tls_socket* const, const uint64_t);
 
-extern unsigned char tls_peek_once(struct tls_socket* const, const int);
+extern unsigned char tls_peek_once(struct tls_socket* const, const uint64_t);
 
 
 

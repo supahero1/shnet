@@ -406,7 +406,7 @@ static void net_epoll_thread(void* net_epoll_thread_data) {
   while(1) {
     int count = epoll_wait(epoll->fd, events, NET_EPOLL_DEFAULT_MAX_EVENTS, -1);
     for(int i = 0; i < count; ++i) {
-      if(event_base->which == net_wakeup_method) {
+      if(event_base->which == 0) {
         uint64_t r;
         const int ret = eventfd_read(epoll->base.sfd, &r);
         (void) ret;
@@ -438,7 +438,7 @@ static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
   while(1) {
     int count = epoll_wait(epoll->fd, epoll->events, epoll->events_size, -1);
     for(int i = 0; i < count; ++i) {
-      if(event_base->which == net_wakeup_method) {
+      if(event_base->which == 0) {
         uint64_t r;
         const int ret = eventfd_read(epoll->base.sfd, &r);
         (void) ret;
@@ -484,7 +484,6 @@ int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
       goto err_mutex;
     }
     epoll->base.events = EPOLLIN;
-    epoll->base.which = net_wakeup_method;
     epoll->base.sfd = fd;
     if(net_epoll_add(epoll, &epoll->base) != 0) {
       (void) close(epoll->base.sfd);

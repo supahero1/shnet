@@ -15,10 +15,9 @@ And more.
 
 It does support:
 1. Chunked transfer
-2. DEFLATE and Brotli compression and decompression
+2. DEFLATE, Brotli and Gzip compression and decompression
 3. Stream parsing
-4. Parsing only part of a message and resuming parsing
-5. Various parsing settings
+4. Various parsing settings
 */
 
 enum http_p_sconsts {
@@ -28,7 +27,7 @@ enum http_p_sconsts {
   
   /* PROTOCOL */
   http_p_http1 = 0,
-  http_p_http2,
+  http_p_websocket,
   
   /* TRANSFER */
   http_t_none = 0,
@@ -128,14 +127,13 @@ extern char* http1_default_reason_phrase(const int);
 
 extern uint32_t http1_default_reason_phrase_len(const int);
 
-#define IS_DIGIT(a) ((a) >= '0' && (a) <= '9')
-#define IS_HEX(a) (IS_DIGIT(a) || ((a) >= 'A' && (a) <= 'F') || ((a) >= 'a' && (a) <= 'f'))
-
 struct http_header {
   char* name;
   char* value;
-  uint32_t name_len;
-  uint32_t value_len;
+  uint32_t name_len:31;
+  uint32_t allocated_name:1;
+  uint32_t value_len:31;
+  uint32_t allocated_value:1;
 };
 
 enum http_parser_consts {
@@ -170,7 +168,9 @@ enum http_parser_consts {
   http_corrupted_body_compression,
   http_no_chunk_size,
   http_invalid_status_code,
-  http_reason_phrase_too_long
+  http_reason_phrase_too_long,
+  http_invalid,
+  http_closed
 };
 
 extern const char* http1_parser_strerror(const int);
@@ -183,6 +183,7 @@ struct http_message {
   };
   struct http_header* headers;
   char* body;
+  uint64_t body_len;
   
   union {
     uint32_t method_len:8;
@@ -197,8 +198,11 @@ struct http_message {
   uint32_t transfer:1;
   uint32_t encoding:2;
   uint32_t allocated_body:1;
-  uint32_t __unused:26;
-  uint32_t body_len;
+  uint32_t _unused1:2;
+  uint32_t close_code:16;
+  uint32_t opcode:4;
+  uint32_t client:1;
+  uint32_t _unused2:3;
 };
 
 struct http_parser_session {
@@ -215,8 +219,9 @@ struct http_parser_session {
   uint32_t parsed_body:1;
   uint32_t last_at:3;
   uint32_t last_header_idx:8;
-  uint32_t _unused:16;
-  uint32_t last_idx;
+  uint32_t _unused1:16;
+  uint32_t _unused2:32;
+  uint64_t last_idx;
 };
 
 struct http_parser_settings {
@@ -233,8 +238,11 @@ struct http_parser_settings {
   uint32_t stop_at_every_header:1;
   
   uint32_t no_character_validation:1;
+  /* No body parsing means it will ignore content-length, content-encoding,
+  and other body-related headers. It MUST NOT be used if a body might appear. */
   uint32_t no_body_parsing:1;
-  uint32_t _unused1:1;
+  
+  uint32_t no_permessage_deflate:1;
   
   union {
     uint32_t max_method_len:8;
@@ -245,20 +253,23 @@ struct http_parser_settings {
   
   uint32_t max_header_value_len:16;
   uint32_t max_header_name_len:8;
-  uint32_t dont_accept_encoding:3;
-  uint32_t _unused2:5;
   
-  uint32_t max_body_len;
+  uint32_t dont_accept_encoding:3;
+  uint32_t client:1;
+  uint32_t no_processing:1;
+  uint32_t _unused:3;
+  
+  uint64_t max_body_len;
 };
 
-extern uint32_t http1_message_length(const struct http_message* const);
+extern uint64_t http1_message_length(const struct http_message* const);
 
 extern void http1_create_message(char*, const struct http_message* const);
 
-extern int http1_parse_request(char*, uint32_t, struct http_parser_session* const,
+extern int http1_parse_request(char*, uint64_t, uint64_t* const, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);
 
-extern int http1_parse_response(char*, uint32_t, struct http_parser_session* const,
+extern int http1_parse_response(char*, uint64_t, uint64_t* const, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);
 
 extern struct http_header* http1_seek_header(const struct http_message* const, const char* const, const uint32_t);

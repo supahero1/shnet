@@ -40,6 +40,9 @@ test: $(TEST_EXECS) | $(DIR_TEST)
 	$(DIR_OUT)/test_time
 	$(DIR_OUT)/test_udp
 	
+	$(DIR_OUT)/test_compression
+	$(DIR_OUT)/test_http_p
+	
 	$(DIR_OUT)/test_tcp 1 1 1
 	$(DIR_OUT)/test_tcp 1 1 0
 	$(DIR_OUT)/test_tcp 100 1 1
@@ -93,9 +96,6 @@ test: $(TEST_EXECS) | $(DIR_TEST)
 	$(DIR_OUT)/test_tls_stress 100 100 0
 	$(DIR_OUT)/test_tls_stress 100 1000 1
 	$(DIR_OUT)/test_tls_stress 100 1000 0
-	
-	$(DIR_OUT)/test_compression
-	$(DIR_OUT)/test_http_p
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
@@ -147,7 +147,7 @@ ${DIR_OUT}/tcp.o: $(DIR_OUT)/net.o
 
 ${DIR_OUT}/tls.o: $(DIR_OUT)/tcp.o
 
-${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o
+${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o $(DIR_OUT)/base64.o
 
 ${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_IN)/%.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@

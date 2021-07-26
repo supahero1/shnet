@@ -6,11 +6,12 @@
 
 /* A specialised open-addressed hash table for HTTP servers. Deletion is impossible. */
 
-typedef void (*http_hash_table_value_t)(void*, void*, void*, void*);
+typedef void (*http_hash_table_func_t)(void*, void*, void*, void*);
 
 struct http_hash_table_entry {
   char* key;
-  void (*value)(void*, void*, void*, void*);
+  void* data;
+  void (*func)(void*, void*, void*, void*);
 };
 
 struct http_hash_table {
@@ -19,9 +20,9 @@ struct http_hash_table {
   uint64_t size;
 };
 
-extern void http_hash_table_insert(struct http_hash_table* const, char* const, http_hash_table_value_t);
+extern void http_hash_table_insert(struct http_hash_table* const, char* const, void* const, http_hash_table_func_t);
 
-extern http_hash_table_value_t http_hash_table_find(const struct http_hash_table* const, const char* const);
+extern struct http_hash_table_entry* http_hash_table_find(const struct http_hash_table* const, const char* const);
 
 extern int http_hash_table_init(struct http_hash_table* const, const uint64_t);
 

@@ -25,7 +25,7 @@ void onshutdown(struct http_server* server) {
   puts("server shutdown success");
 }
 
-void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_message* request, struct http_message* response) {
+void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_parser_settings* settings, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
   response->reason_phrase = http1_default_reason_phrase(response->status_code);
@@ -50,7 +50,7 @@ void sonshutdown(struct https_server* server) {
 void sock_onresponse(struct http_socket* socket, struct http_message* message) {
   printf("got a response to request nr %u, status code %u\n", socket->context.requests_used, message->status_code);
   if(message->body != NULL) {
-    printf("the received message (len %u):\n%s\n\n", message->body_len, message->body);
+    printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
   }
 }
 
@@ -67,7 +67,7 @@ void sock_onclose(struct http_socket* socket, int reason) {
 void sock_sonresponse(struct https_socket* socket, struct http_message* message) {
   printf("got a response to request nr %u, status code %u\n", socket->context.requests_used, message->status_code);
   if(message->body != NULL) {
-    printf("the received message (len %u):\n%s\n\n", message->body_len, message->body);
+    printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
   }
 }
 

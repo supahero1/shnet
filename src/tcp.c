@@ -30,11 +30,19 @@ static inline void tcp_socket_clear_flag(struct tcp_socket* const socket, const 
 
 
 void tcp_socket_cork_on(struct tcp_socket* const socket) {
-  tcp_socket_set_flag(socket, tcp_cork);
+  (void) net_socket_setopt_true(socket->base.sfd, tcp_protocol, TCP_CORK);
 }
 
 void tcp_socket_cork_off(struct tcp_socket* const socket) {
-  tcp_socket_clear_flag(socket, tcp_cork);
+  (void) net_socket_setopt_false(socket->base.sfd, tcp_protocol, TCP_CORK);
+}
+
+void tcp_socket_nodelay_on(struct tcp_socket* const socket) {
+  (void) net_socket_setopt_true(socket->base.sfd, tcp_protocol, TCP_NODELAY);
+}
+
+void tcp_socket_nodelay_off(struct tcp_socket* const socket) {
+  (void) net_socket_setopt_false(socket->base.sfd, tcp_protocol, TCP_NODELAY);
 }
 
 static inline int tcp_socket_keepalive_internal(const int sfd, const int retries, const int idle_time, const int reprobe_time) {
@@ -63,6 +71,10 @@ int tcp_socket_keepalive_explicit(const struct tcp_socket* const socket, const i
 
 static inline void tcp_socket_no_linger(const int sfd) {
   (void) setsockopt(sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = 0 }), sizeof(struct linger));
+}
+
+void tcp_socket_linger(const struct tcp_socket* const socket, const int secs) {
+  (void) setsockopt(socket->base.sfd, SOL_SOCKET, SO_LINGER, &((struct linger) { .l_onoff = 1, .l_linger = secs }), sizeof(struct linger));
 }
 
 void tcp_socket_stop_receiving_data(struct tcp_socket* const socket) {
@@ -114,7 +126,7 @@ void tcp_socket_free(struct tcp_socket* const socket) {
       (void) close(socket->base.sfd);
       socket->base.sfd = -1;
     }
-    socket->base.which = net_unspecified;
+    socket->base.which = 0;
     socket->base.events = 0;
     if(socket->settings->free_on_free) {
       free((char*) socket - socket->settings->free_offset);
@@ -136,7 +148,7 @@ void tcp_socket_close(struct tcp_socket* const socket) {
 /* Not gracefully, but quicker */
 
 void tcp_socket_force_close(struct tcp_socket* const socket) {
-  tcp_socket_set_flag(socket, tcp_shutdown_wr);
+  tcp_socket_set_flag(socket, tcp_data_ended | tcp_shutdown_wr);
   tcp_socket_clear_flag(socket, tcp_can_send);
   tcp_socket_no_linger(socket->base.sfd);
   (void) shutdown(socket->base.sfd, SHUT_RDWR);
@@ -208,7 +220,7 @@ int tcp_create_socket(struct tcp_socket* const sock) {
   (void) close(sock->base.sfd);
   /* Don't zero the address */
   sock->base.sfd = -1;
-  sock->base.which = net_unspecified;
+  sock->base.which = 0;
   sock->base.events = 0;
   return -1;
 }
@@ -219,17 +231,16 @@ If errno is EPIPE, no data may be sent in the future and partial or no data was 
 That may be because either we closed the channel, or the connection is closed.
 */
 
-int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
+uint64_t tcp_send(struct tcp_socket* const socket, const void* data, uint64_t size) {
   if(tcp_socket_test_flag(socket, tcp_shutdown_wr)) {
     errno = EPIPE;
     return 0;
   }
-  const uint32_t cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
   (void) pthread_mutex_lock(&socket->lock);
   if(socket->send_used > 0) {
-    int addon = 0;
+    uint64_t addon = 0;
     while(1) {
-      const size_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
+      const size_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL);
       if(bytes == -1) {
         if(errno == EAGAIN) {
           tcp_socket_clear_flag(socket, tcp_can_send);
@@ -273,7 +284,7 @@ int tcp_send(struct tcp_socket* const socket, const void* data, int size) {
   if(tcp_socket_test_flag(socket, tcp_can_send)) {
     /* We are allowed to send data. Do it instead of waiting for epoll to preserve memory. */
     while(1) {
-      const size_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL | cork);
+      const size_t bytes = send(socket->base.sfd, data, size, MSG_NOSIGNAL);
       if(bytes == -1) {
         if(errno == EAGAIN) {
           tcp_socket_clear_flag(socket, tcp_can_send);
@@ -339,7 +350,7 @@ only means that the peer won't send more data - we can close our channel to
 gracefully close the TCP connection. Data might still be pending in the kernel
 buffer, waiting to be collected by the application with tcp_read(). */
 
-int tcp_read(struct tcp_socket* const socket, void* data, int size) {
+uint64_t tcp_read(struct tcp_socket* const socket, void* data, uint64_t size) {
   /* We MUST NOT check if the socket is closed or closing for reading, because
   there still might be data pending in the kernel buffer that we might want.
   
@@ -349,7 +360,7 @@ int tcp_read(struct tcp_socket* const socket, void* data, int size) {
     errno = EPIPE;
     return 0;
   }
-  const int all = size;
+  const uint64_t all = size;
   while(1) {
     const size_t bytes = recv(socket->base.sfd, data, size, 0);
     if(bytes == -1) {
@@ -503,9 +514,8 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
       tcp_send(), because upon failure it would buffer the already-buffered data
       we are trying to send. */
       int addon = 0;
-      const uint32_t cork = tcp_socket_test_flag(socket, tcp_cork) ? MSG_MORE : 0;
       while(1) {
-        const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL | cork);
+        const ssize_t bytes = send(socket->base.sfd, socket->send_buffer + addon, socket->send_used, MSG_NOSIGNAL);
         if(bytes == -1) {
           if(errno == EAGAIN) {
             /* If the kernel doesn't accept more data, don't send more in the future */
@@ -557,10 +567,8 @@ static void tcp_socket_onevent(int events, struct net_socket_base* base) {
   later. This way, the application has multiple choices, but it also has greater
   responsibility if it wants to read later or not read at all.
   We also get rid of the tcp_can_read flag. */
-  if(events & EPOLLIN) {
-    if(socket->callbacks->onmessage != NULL) {
-      socket->callbacks->onmessage(socket);
-    }
+  if((events & EPOLLIN) && socket->callbacks->onmessage != NULL) {
+    socket->callbacks->onmessage(socket);
   }
   if(events & EPOLLRDHUP) {
     /* We need to send back a FIN, but let the application choose the right moment */
@@ -583,7 +591,7 @@ void tcp_server_free(struct tcp_server* const server) {
   free(server->freeidx);
   (void) close(server->base.sfd);
   server->base.sfd = -1;
-  server->base.which = net_unspecified;
+  server->base.which = 0;
   server->base.events = 0;
   server->base.onclose = NULL;
   const uint32_t offset = offsetof(struct tcp_server, lock);
@@ -879,7 +887,7 @@ uint32_t tcp_server_get_conn_amount(struct tcp_server* const server) {
 }
 
 static void tcp_onevent(struct net_epoll* epoll, int events, struct net_socket_base* base) {
-  if(base->which == net_socket) {
+  if(base->which & net_socket) {
     tcp_socket_onevent(events, base);
   } else {
     tcp_server_onevent(events, base);

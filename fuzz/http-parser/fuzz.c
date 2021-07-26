@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
   (void) memset(&session, 0, sizeof(session));
   struct http_parser_settings settings;
   (void) memset(&settings, 0, sizeof(settings));
-  struct http_request request;
+  struct http_message request;
   (void) memset(&request, 0, sizeof(request));
   settings.max_method_len = 16;
   settings.max_headers = 16;
@@ -42,6 +42,6 @@ int main(int argc, char* argv[]) {
   request.headers = headers;
   request.headers_len = 16;
   
-  (void) http1_parse_request(input, red - 1, &session, &settings, &request);
+  (void) http1_parse_request(input, red - 1, &red, &session, &settings, &request);
   return 0;
 }

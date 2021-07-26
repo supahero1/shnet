@@ -14,7 +14,7 @@ void onresponse(struct http_socket* socket, struct http_message* message) {
       TEST_FAIL;
     }
     message->body[message->body_len] = 0;
-    printf("the received message (len %u):\n%s\n\n", message->body_len, message->body);
+    printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
   }
 }
 
@@ -36,7 +36,7 @@ void sonresponse(struct https_socket* socket, struct http_message* message) {
       TEST_FAIL;
     }
     message->body[message->body_len] = 0;
-    printf("the received message (len %u):\n%s\n\n", message->body_len, message->body);
+    printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
   }
 }
 

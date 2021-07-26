@@ -77,6 +77,11 @@ If full build was chosen, the user can then test the library:
 sudo make test
 ```
 
+Note though that some tests require big amount of file descriptors available. To make sure TCP and TLS tests work, do:
+```bash
+ulimit -n 20000
+```
+
 To remove build files:
 ```bash
 sudo make clean
