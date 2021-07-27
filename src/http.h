@@ -205,15 +205,15 @@ struct http_resource {
   char* path;
   struct http_parser_settings* settings;
   union {
-    void (*http_callback)(struct http_server*, struct http_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*);
-    void (*https_callback)(struct https_server*, struct https_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*);
+    void (*http_callback)(struct http_server*, struct http_serversock*, struct http_message*, struct http_message*);
+    void (*https_callback)(struct https_server*, struct https_serversock*, struct http_message*, struct http_message*);
   };
 };
 
 struct http_server_callbacks;
 struct https_server_callbacks;
 
-struct http_server_options {
+struct http_server_options { // TODO setup a mutex for ws compressor - it is possible for a thread and epoll to try sending at the same time!
   struct http_resource* resources;
   struct tcp_socket_settings* tcp_socket_settings;
   struct tls_socket_settings* tls_socket_settings;
@@ -234,7 +234,10 @@ struct http_server_options {
   SSL_CTX* ctx;
   char* cert_path;
   char* key_path;
-  EVP_PKEY* key;
+  union {
+    EVP_PKEY* key;
+    RSA* rsa_key;
+  };
   
   uint64_t timeout_after;
   
@@ -242,8 +245,8 @@ struct http_server_options {
   uint32_t resources_len;
   int family;
   int flags;
-  int key_type;
-  uint32_t socket_size;
+  uint32_t socket_size:31;
+  uint32_t key_rsa:1;
 };
 
 struct http_server_context {

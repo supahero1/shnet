@@ -1352,15 +1352,32 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
       goto err_ctx;
     }
     if(opt->key == NULL) {
-      if(SSL_CTX_use_PrivateKey_file(server->tls.ctx, opt->key_path, opt->key_type) != 1) {
-        goto err_ctx;
+      if(opt->key_rsa) {
+        if(SSL_CTX_use_RSAPrivateKey_file(server->tls.ctx, opt->key_path, SSL_FILETYPE_PEM) != 1) {
+          goto err_ctx;
+        }
+      } else {
+        if(SSL_CTX_use_PrivateKey_file(server->tls.ctx, opt->key_path, SSL_FILETYPE_PEM) != 1) {
+          goto err_ctx;
+        }
       }
-    } else if(SSL_CTX_use_PrivateKey(server->tls.ctx, opt->key) != 1) {
-      goto err_ctx;
+    } else if(opt->key != NULL) {
+      if(opt->key_rsa) {
+        if(SSL_CTX_use_RSAPrivateKey(server->tls.ctx, opt->rsa_key) != 1) {
+          goto err_ctx;
+        }
+      } else {
+        if(SSL_CTX_use_PrivateKey(server->tls.ctx, opt->key) != 1) {
+          goto err_ctx;
+        }
+      }
     }
     if(SSL_CTX_set_min_proto_version(server->tls.ctx, TLS1_2_VERSION) == 0) {
       goto err_ctx;
     }
+  }
+  if(SSL_CTX_check_private_key(server->tls.ctx) != 1) {
+    goto err_ctx;
   }
   if(opt->info == NULL) {
     struct addrinfo const hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
@@ -1729,7 +1746,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct http_server*, struct http_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, socket->context.settings, &request, &response);
+          ((void (*)(struct http_server*, struct http_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
         }
         break;
       }
@@ -2262,7 +2279,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct https_server*, struct https_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, socket->context.settings, &request, &response);
+          ((void (*)(struct https_server*, struct https_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
         }
         break;
       }

@@ -39,13 +39,13 @@ My personal preference is on GCC, added clang because it tries to be compatible 
 
 To install the dependencies, one can do (debian):
 ```bash
-sudo apt update
+sudo apt update -y
 sudo apt install libgcc-11-dev zlib1g-dev libbrotli-dev -y
 ```
 
 ..., or (fedora):
 ```bash
-yum groupinstall "Development Tools"
+yum groupinstall "Development Tools" -y
 yum install openssl-devel zlib-devel brotli-devel -y
 ```
 

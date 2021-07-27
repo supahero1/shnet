@@ -25,7 +25,7 @@ void onshutdown(struct http_server* server) {
   puts("server shutdown success");
 }
 
-void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_parser_settings* settings, struct http_message* request, struct http_message* response) {
+void sonrequest(struct https_server* server, struct https_serversock* socket, struct http_message* request, struct http_message* response) {
   puts("received a request, cool!");
   response->status_code = 200;
   response->reason_phrase = http1_default_reason_phrase(response->status_code);
@@ -106,7 +106,6 @@ int main() {
   
   server_options.cert_path = "/path/to/tests/cert.pem";
   server_options.key_path = "/path/to/tests/key.pem";
-  server_options.key_type = SSL_FILETYPE_PEM;
   
   server_options.timeout_after = 5;
   
