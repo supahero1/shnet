@@ -1375,6 +1375,9 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
     if(SSL_CTX_set_min_proto_version(server->tls.ctx, TLS1_2_VERSION) == 0) {
       goto err_ctx;
     }
+    if(SSL_CTX_build_cert_chain(server->tls.ctx, SSL_BUILD_CHAIN_FLAG_CHECK) != 1) {
+      goto err_ctx;
+    }
   }
   if(opt->info == NULL) {
     struct addrinfo const hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
