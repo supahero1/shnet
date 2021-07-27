@@ -1351,7 +1351,7 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
     if(SSL_CTX_use_certificate_chain_file(server->tls.ctx, opt->cert_path) != 1) {
       goto err_ctx;
     }
-    if(opt->key == NULL) {
+    if(opt->key_path != NULL) {
       if(opt->key_rsa) {
         if(SSL_CTX_use_RSAPrivateKey_file(server->tls.ctx, opt->key_path, SSL_FILETYPE_PEM) != 1) {
           goto err_ctx;
@@ -1442,7 +1442,7 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
   }
   err_serv:
   free(server);
-  return 0;
+  return -1;
 }
 
 void https_server_foreach_conn(struct https_server* const server, void (*callback)(struct https_serversock*, void*), void* data, const int write) {
