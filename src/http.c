@@ -1376,9 +1376,6 @@ static int https_setup_server(struct http_uri* const uri, struct http_server_opt
       goto err_ctx;
     }
   }
-  if(SSL_CTX_check_private_key(server->tls.ctx) != 1) {
-    goto err_ctx;
-  }
   if(opt->info == NULL) {
     struct addrinfo const hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
     char port[6];
