@@ -1746,7 +1746,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct http_server*, struct http_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
+          ((void (*)(struct http_server*, struct http_serversock*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
         }
         break;
       }
@@ -2279,7 +2279,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct https_server*, struct https_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
+          ((void (*)(struct https_server*, struct https_serversock*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &request, &response);
         }
         break;
       }
