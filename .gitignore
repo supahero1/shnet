@@ -1,6 +1,6 @@
 bin/
 shnet/
 dev/
-logs.txt
+log*
 valgrind*
 vgcore*
