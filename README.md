@@ -20,9 +20,9 @@ The `tls` module is built using OpenSSL and runs on top of the `tcp` module usin
 
 The `compress` module implements DEFLATE and Brotli compression & decompression.
 
-The `http_p` module implements high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers is not be RFC compliant. The application is able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application can be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers is not start from the beginning again, but rather resume right where they stopped.
+The `http_p` module implements high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers are not RFC compliant. The application is able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application can be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers do not start from the beginning again, but rather resume right where they stopped.
 
-The `http` module implements http and https 1.1 client and server, and the websocket protocol for server only. The application can simply use `http(url, NULL)` and `http_server(url, NULL)` calls to make a client and a server respectively, without setting up epoll, time manager, or other necessary ingredients. The application is able to specify a lot of options though, using the second argument to these functions. The server is using a hash table to store and lookup requested resources in a matter of nanoseconds. Support for keep-alive connections, compression, chunked transfer, custom application headers, custom reason phrases and status codes, custom request methods, and more.
+The `http` module implements http and https 1.1 client and server, and the websocket protocol for server only. The application can simply use `http(url, NULL)` and `http_server(url, NULL)` calls to make a client and a server respectively, without setting up epoll, time manager, or other necessary ingredients. The application is able to specify a lot of options though, using the second argument to these functions. The server uses a hash table to store and lookup requested resources in a matter of nanoseconds. Support for keep-alive connections, compression, chunked transfer, custom application headers, custom reason phrases and status codes, custom request methods, and more.
 
 # Requirements
 
@@ -107,7 +107,7 @@ Table of contents
 
 # AVL
 
-Initialising an AVL tree:
+Initializing an AVL tree:
 
 ```c
 struct avl_tree avl_tree = {0};
@@ -151,7 +151,7 @@ int item = rand();
   value of avl_tree.compare is 0.
 */
 int err = avl_insert(&avl_tree, &item, avl_allow_copies);
-/* The return value -1 means an error has occured
+/* The return value -1 means an error has occurred
 and the value was no inserted. It might be for 2
 reasons:
 1. avl_disallow_copies mode was specified and
@@ -256,7 +256,7 @@ void* maximum_item = avl_max(&avl_tree);
 
 # Heap
 
-Initialising a heap:
+Initializing a heap:
 
 ```c
 struct heap heap = {0};
@@ -346,7 +346,7 @@ int is_empty = heap_is_empty(&heap);
 frees it's array of nodes and sets
 heap.used and heap.size to heap.item_size
 so that the heap can be used again at
-any time without initialising it again. */
+any time without initializing it again. */
 heap_free(&heap);
 ```
 
@@ -354,7 +354,7 @@ heap_free(&heap);
 
 Refheap is basically a heap with one pointer of reserved data. That pointer points to an application pointer that will be updated to point at the node the application wants to keep track of. That means the application can call `heap_down`, `heap_up`, and `heap_peak` with an index that can be fetched using `refheap_ref_to_idx()`.
 
-Initialising a refheap only differs by adding `sizeof(void**)` to `item_size`:
+Initializing a refheap only differs by adding `sizeof(void**)` to `item_size`:
 
 ```c
 heap.item_size = (uint32_t) + sizeof(void**);
