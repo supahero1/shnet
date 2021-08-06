@@ -5,9 +5,12 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 static FILE* log_file;
 static uint64_t start_time;
+
+static pthread_mutex_t mutex;
 
 void _debug(const char* fmt, const int console_log, ...) {
   if(log_file == NULL) {
@@ -15,16 +18,20 @@ void _debug(const char* fmt, const int console_log, ...) {
     if(log_file == NULL) {
       return;
     }
+    pthread_mutex_init(&mutex, NULL);
+    pthread_mutex_lock(&mutex);
     fprintf(log_file, "\nNew session started\n");
     struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
     (void) clock_gettime(CLOCK_REALTIME, &tp);
     start_time = tp.tv_sec * 1000000000 + tp.tv_nsec;
+  } else {
+    pthread_mutex_lock(&mutex);
   }
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
   (void) clock_gettime(CLOCK_REALTIME, &tp);
   const uint64_t t = tp.tv_sec * 1000000000 + tp.tv_nsec - start_time;
   const uint64_t secs = t / 1000000000;
-  fprintf(log_file, "[%4lud %4luh %4lus %5lums %5luus %5luns] ", secs / 86400, (secs / 3600) % 24, secs % 3600, (t / 1000000) % 1000, (t / 1000) % 1000, t % 1000);
+  fprintf(log_file, "[%4lud %4luh %4lus %5lums %5luus] ", secs / 86400, (secs / 3600) % 24, secs % 3600, (t / 1000000) % 1000, (t / 1000) % 1000);
   va_list args;
   va_start(args, console_log);
   vfprintf(log_file, fmt, args);
@@ -38,6 +45,7 @@ void _debug(const char* fmt, const int console_log, ...) {
     va_end(args2);
     putc('\n', stdout);
   }
+  pthread_mutex_unlock(&mutex);
 }
 
 #ifdef SHNET_DEBUG

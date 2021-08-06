@@ -5,59 +5,40 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <semaphore.h>
 #include <shnet/tls.h>
 #include <shnet/time.h>
 
-#include <openssl/ssl.h>
-
 sem_t sem;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-unsigned long conns = 0;
 
-_Atomic int num = 0;
+_Atomic uint64_t conns = 0;
 
-_Atomic int dont_reattempt = 0;
+#define time_to_wait_ms 100UL
 
-#define time_to_wait_s 1UL
+struct tls_socket_callbacks serversock_cb = {0};
+struct tls_socket_callbacks clientsock_cb = {0};
+struct tls_socket_settings clientsock_set = { 1, 1, 0, 1 };
 
-struct tcp_socket_settings serversock_tcp_set;
+struct tls_server_callbacks server_cb = {0};
 
-struct tls_socket_callbacks serversock_tls_cb;
-struct tls_socket_settings serversock_tls_set;
-
-struct tcp_socket_settings clientsock_tcp_set;
-
-struct tls_socket_callbacks clientsock_tls_cb;
-struct tls_socket_settings clientsock_tls_set;
-
-struct tls_server_callbacks server_tls_cb;
-struct tcp_server_settings server_set;
-
-struct addrinfo* res;
+void serversock_onopen(struct tls_socket* socket) {
+  tls_socket_force_close(socket);
+}
 
 void serversock_onclose(struct tls_socket* socket) {
   tls_socket_free(socket);
 }
 
-
-
-void clientsock_onopen(struct tls_socket* socket) {
-  ++conns;
-  tls_socket_force_close(socket);
+void onopen(struct tls_socket* socket) {
+  tcp_socket_keepalive_explicit(&socket->tcp, 1, 1, 1);
+  atomic_fetch_add(&conns, 1);
 }
 
-int socket_pick_address(struct addrinfo*, void*);
-
-void clientsock_onclose(struct tls_socket* socket) {
+void onclose(struct tls_socket* socket) {
   tls_socket_free(socket);
-  /* The socket is mostly zeroed now. We can reconnect. */
-  if(atomic_load(&dont_reattempt)) {
-    return;
-  }
-  if(tls_create_socket(socket) != 0) {
-    TEST_FAIL;
-  }
+  sem_post(&sem);
 }
 
 int sock_onnomem(struct tls_socket* socket) {
@@ -65,253 +46,151 @@ int sock_onnomem(struct tls_socket* socket) {
   return -1;
 }
 
-
-
-int onconnection(struct tls_socket* socket) {
-  socket->tcp.settings = &serversock_tcp_set;
-  socket->callbacks = &serversock_tls_cb;
-  socket->settings = &serversock_tls_set;
-  if(tls_socket_init(socket, net_server) != 0) {
-    TEST_FAIL;
-  }
+int onconnection(struct tls_socket* socket, const struct sockaddr* addr) {
+  socket->callbacks = &serversock_cb;
   return 0;
 }
 
-int serv_onnomem(struct tls_server* server) {
+int onnomem(struct tls_server* server) {
   TEST_FAIL;
   return -1;
 }
 
 void onshutdown(struct tls_server* server) {
-  tls_server_free(server);
+  (void) close(server->tcp.net.net.sfd);
+  server->tcp.net.net.sfd = -1;
   sem_post(&sem);
 }
 
 void unlock_mutexo(void* da) {
-  (void) da;
   pthread_mutex_unlock(&mutex);
 }
 
 int main(int argc, char **argv) {
-  puts("Testing tls_stress:");
+  _debug("Testing tls_stress:", 1);
   srand(time_get_time());
   sem_init(&sem, 0, 0);
   pthread_mutex_lock(&mutex);
   tls_ignore_sigpipe();
   
-  memset(&serversock_tcp_set, 0, sizeof(serversock_tcp_set));
-  memset(&serversock_tls_cb, 0, sizeof(serversock_tls_cb));
-  memset(&serversock_tls_set, 0, sizeof(serversock_tls_set));
-  memset(&clientsock_tcp_set, 0, sizeof(clientsock_tcp_set));
-  memset(&clientsock_tls_cb, 0, sizeof(clientsock_tls_cb));
-  memset(&clientsock_tls_set, 0, sizeof(clientsock_tls_set));
-  memset(&server_tls_cb, 0, sizeof(server_tls_cb));
-  memset(&server_set, 0, sizeof(server_set));
+  serversock_cb.onopen = serversock_onopen;
+  serversock_cb.onnomem = sock_onnomem;
+  serversock_cb.onclose = serversock_onclose;
   
-  serversock_tcp_set = (struct tcp_socket_settings) {
-    .send_buffer_cleanup_threshold = UINT_MAX,
-    .onreadclose_auto_res = 1,
-    .remove_from_epoll_onclose = 0,
-    .dont_free_addrinfo = 1
-  };
+  clientsock_cb.onopen = onopen;
+  clientsock_cb.onnomem = sock_onnomem;
+  clientsock_cb.onclose = onclose;
   
-  serversock_tls_cb = (struct tls_socket_callbacks) {
-    .oncreation = NULL,
-    .onopen = NULL,
-    .onmessage = NULL,
-    .tcp_onreadclose = NULL,
-    .tls_onreadclose = NULL,
-    .onnomem = sock_onnomem,
-    .onclose = serversock_onclose,
-    .onfree = NULL
-  };
+  server_cb.onconnection = onconnection;
+  server_cb.onnomem = onnomem;
+  server_cb.onshutdown = onshutdown;
   
-  serversock_tls_set = (struct tls_socket_settings) {
-    .read_buffer_cleanup_threshold = 0,
-    .read_buffer_growth = 4096,
-    .onreadclose_auto_res = tls_onreadclose_tls_close
-  };
+  const int number = atoi(argv[1]);
   
-  clientsock_tcp_set = serversock_tcp_set;
-  
-  clientsock_tls_cb = (struct tls_socket_callbacks) {
-    .oncreation = NULL,
-    .onopen = clientsock_onopen,
-    .onmessage = NULL,
-    .tcp_onreadclose = NULL,
-    .tls_onreadclose = NULL,
-    .onnomem = sock_onnomem,
-    .onclose = clientsock_onclose,
-    .onfree = NULL
-  };
-  
-  clientsock_tls_set = serversock_tls_set;
-  
-  server_tls_cb = (struct tls_server_callbacks) {
-    .onconnection = onconnection,
-    .onnomem = serv_onnomem,
-    .onshutdown = onshutdown
-  };
-  
-  server_set.max_conn = 10000;
-  server_set.backlog = 128;
-  
-  const int nclients = atoi(argv[1]);
-  const int nservers = atoi(argv[2]);
-  const int shared_epoll = atoi(argv[3]);
-  
-  /* Epoll setup */
-  struct net_epoll socket_epoll;
-  memset(&socket_epoll, 0, sizeof(socket_epoll));
-  if(tls_epoll(&socket_epoll) != 0) {
-    TEST_FAIL;
-  }
-  if(net_epoll_start(&socket_epoll) != 0) {
-    TEST_FAIL;
-  }
-  
-  struct net_epoll server_epoll;
-  if(shared_epoll == 0) {
-    memset(&server_epoll, 0, sizeof(server_epoll));
-    if(tls_epoll(&server_epoll) != 0) {
-      TEST_FAIL;
-    }
-    if(net_epoll_start(&server_epoll) != 0) {
-      TEST_FAIL;
-    }
-  }
-  
-  SSL_CTX* client_ctx = SSL_CTX_new(TLS_client_method());
-  if(client_ctx == NULL) {
-    TEST_FAIL;
-  }
-  
-  SSL_CTX* server_ctx = SSL_CTX_new(TLS_server_method());
-  if(server_ctx == NULL) {
-    TEST_FAIL;
-  }
-  
-  char cert_dest[512];
-  memset(cert_dest, 0, sizeof(cert_dest));
-  if(getcwd(cert_dest, 490) == NULL) {
-    TEST_FAIL;
-  }
-  strcat(cert_dest, "/tests/cert.pem");
-  if(SSL_CTX_use_certificate_file(server_ctx, cert_dest, SSL_FILETYPE_PEM) != 1) {
-    TEST_FAIL;
-  }
-  char key_dest[512];
-  memset(key_dest, 0, sizeof(key_dest));
-  if(getcwd(key_dest, 490) == NULL) {
-    TEST_FAIL;
-  }
-  strcat(key_dest, "/tests/key.pem");
-  if(SSL_CTX_use_PrivateKey_file(server_ctx, key_dest, SSL_FILETYPE_PEM) != 1) {
-    TEST_FAIL;
-  }
-  
-  struct addrinfo hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | wants_a_server | wants_own_ip_version);
-  res = net_get_address(NULL, "8099", &hints);
+  const struct addrinfo hints = net_get_addr_struct(ipv4, stream_socktype, tcp_protocol, 0);
+  struct addrinfo* res = net_get_address("localhost", "5000", &hints);
   if(res == NULL) {
-    printf("err %s\n", net_strerror(errno));
+    _debug("net_get_address() err %d %s\n", 1, errno, strerror(errno));
     TEST_FAIL;
   }
   
   /* TLS server setup */
-  struct tls_server* servers = calloc(nservers, sizeof(struct tls_server));
+  struct tls_server* servers = calloc(number, sizeof(struct tls_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  for(int i = 0; i < nservers; ++i) {
-    if(shared_epoll == 1) {
-      servers[i].tcp.epoll = &socket_epoll;
-    } else {
-      servers[i].tcp.epoll = &server_epoll;
-    }
-    servers[i].tcp.settings = &server_set;
-    servers[i].callbacks = &server_tls_cb;
-    servers[i].ctx = server_ctx;
-    if(tls_create_server(&servers[i], res) != 0) {
+  for(int i = 0; i < number; ++i) {
+    servers[i].callbacks = &server_cb;
+    if(tls_server(&servers[i], &((struct tls_server_options) {
+      .tcp = (struct tcp_server_options) {
+        .info = res,
+        .hostname = "localhost",
+        .port = "5000",
+        .family = ipv4,
+        .flags = 0
+      },
+      .cert_path = "./tests/cert.pem",
+      .key_path = "./tests/key.pem",
+      .flags = tls_rsa_key
+    })) != 0) {
       TEST_FAIL;
     }
   }
-  net_get_address_free(res);
   
   /* TLS socket setup */
-  
-  hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | numeric_hostname | wants_own_ip_version);
-  res = net_get_address("0.0.0.0", "8099", &hints);
-  if(res == NULL) {
-    printf("err %s\n", net_strerror(errno));
-    TEST_FAIL;
-  }
-  
-  struct tls_socket* sockets = calloc(nclients, sizeof(struct tls_socket));
+  struct tls_socket* sockets = calloc(number, sizeof(struct tls_socket));
   if(sockets == NULL) {
     TEST_FAIL;
   }
-  for(int i = 0; i < nclients; ++i) {
-    sockets[i].tcp.epoll = &socket_epoll;
-    sockets[i].tcp.settings = &clientsock_tcp_set;
-    sockets[i].callbacks = &clientsock_tls_cb;
-    sockets[i].settings = &clientsock_tls_set;
-    sockets[i].ctx = client_ctx;
+  for(int i = 0; i < number; ++i) {
+    sockets[i].tcp.epoll = servers[i].tcp.epoll;
+    sockets[i].callbacks = &clientsock_cb;
+    sockets[i].settings = clientsock_set;
     sockets[i].tcp.info = res;
-    if(tls_create_socket(&sockets[i]) != 0) {
+    if(tls_socket(&sockets[i], &((struct tls_socket_options) {
+      .tcp = (struct tcp_socket_options) {
+        .hostname = "localhost",
+        .port = "5000",
+        .family = ipv4,
+        .flags = 0
+      }
+    })) != 0) {
       TEST_FAIL;
     }
   }
   
   /* Time setup to stop the test */
-  struct time_manager manager;
-  memset(&manager, 0, sizeof(manager));
+  struct time_manager manager = {0};
   if(time_manager(&manager) != 0) {
     TEST_FAIL;
   }
   if(time_manager_start(&manager) != 0) {
     TEST_FAIL;
   }
-  if(time_manager_add_timeout(&manager, time_get_sec(time_to_wait_s), unlock_mutexo, NULL, NULL) != 0) {
+  if(time_manager_add_timeout(&manager, time_get_ms(time_to_wait_ms), unlock_mutexo, NULL, NULL) != 0) {
     TEST_FAIL;
   }
   /* Wait for the timeout to expire */
   pthread_mutex_lock(&mutex);
-  /* Shutdown the servers to deny new connections and close existing ones */
-  atomic_store(&dont_reattempt, 1);
-  for(int i = 0; i < nservers; ++i) {
+  /* Shutdown the servers to close existing connections. By design, the clients
+  will keep on trying to reconnect until they realise they have tried every
+  available mean of doing so, and then will finally stop. */
+  for(int i = 0; i < number; ++i) {
     if(tls_server_shutdown(&servers[i]) != 0) {
       TEST_FAIL;
     }
     sem_wait(&sem);
   }
+  for(int i = 0; i < number; ++i) {
+    sem_wait(&sem);
+  }
   /* The test is over */
-  printf("The results:\n"
-  "Clients used: %d\n"
-  "Servers used: %d\n"
-  "Shared epoll: %d\n"
-  "Throughput  : %lu clients/second\n",
-  nclients,
-  nservers,
-  shared_epoll,
-  conns / time_to_wait_s
+  _debug("The results:\n"
+  "Number used : %d\n"
+  "No. accepted: %lu\n"
+  "Throughput  : %lu clients/second",
+  1,
+  number,
+  atomic_load(&conns),
+  atomic_load(&conns) * 1000U / time_to_wait_ms
   );
-  /* Cleanup for valgrind */
-  /*pthread_mutex_unlock(&mutex);
+  for(int i = 0; i < number; ++i) {
+    net_epoll_stop(servers[i].tcp.epoll);
+    net_epoll_free(servers[i].tcp.epoll);
+    free(servers[i].tcp.epoll);
+    servers[i].tcp.epoll = NULL;
+    servers[i].tcp.alloc_epoll = 0;
+    tls_server_free(&servers[i]);
+  }
+  pthread_mutex_unlock(&mutex);
   pthread_mutex_destroy(&mutex);
   sem_destroy(&sem);
-  net_epoll_stop(&socket_epoll);
-  net_epoll_free(&socket_epoll);
-  if(shared_epoll == 0) {
-    net_epoll_stop(&server_epoll);
-    net_epoll_free(&server_epoll);
-  }
   free(sockets);
   free(servers);
   time_manager_stop(&manager);
   time_manager_free(&manager);
-  net_get_address_free(res);
-  SSL_CTX_free(client_ctx);
-  SSL_CTX_free(server_ctx);*/
+  net_free_address(res);
+  usleep(1000);
   TEST_PASS;
   return 0;
 }

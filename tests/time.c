@@ -55,13 +55,13 @@ void cbfunc4(void* data) {
     if(time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL) != 0) {
       TEST_FAIL;
     }
-    struct time_timeout_ref timeout = {0};
-    struct time_timeout_ref timeout2 = {0};
-    struct time_interval_ref interval = {0};
+    struct time_reference timeout = {0};
+    struct time_reference timeout2 = {0};
+    struct time_reference interval = {0};
     if(time_manager_add_timeout(data, time_get_ms(750), cbfunc6, data, &timeout) != 0) {
       TEST_FAIL;
     }
-    if(time_manager_add_interval(data, time_get_ms(100), time_ms_to_ns(100), cbfunc6, data, &interval, time_not_instant) != 0) {
+    if(time_manager_add_interval(data, time_get_ms(100), time_ms_to_ns(100), cbfunc6, data, &interval) != 0) {
       TEST_FAIL;
     }
     if(time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2) != 0) {
@@ -90,9 +90,10 @@ void cbfunc6(void* data) {
 uint64_t begin;
 uint64_t times;
 uint64_t last_time;
-uint64_t min = 100000000000;
+uint64_t min = UINT64_MAX;
 uint64_t max = 0;
-uint64_t avg[1000];
+#define AMOUNT 500
+uint64_t avg[AMOUNT];
 
 void cbbenchfunc(void* data) {
   uint64_t now = time_get_time();
@@ -105,19 +106,19 @@ void cbbenchfunc(void* data) {
     max = diff;
   }
   avg[times - 1] = diff;
-  printf("\r%.1f%%", (float) times / 10);
+  printf("\r%.1f%%", (float) times / 10 * (1000 / AMOUNT));
   fflush(stdout);
-  if(times++ == 1000) {
+  if(times++ == AMOUNT) {
     float average = 0;
-    for(int i = 0; i < 1000; ++i) {
+    for(int i = 0; i < AMOUNT; ++i) {
       average += (float) avg[i] / 1000000;
     }
-    average /= 1000;
+    average /= AMOUNT;
     float sd = 0;
-    for(int i = 0; i < 1000; ++i) {
+    for(int i = 0; i < AMOUNT; ++i) {
       sd += ((float) avg[i] / 1000000 - average) * ((float) avg[i] / 1000000 - average);
     }
-    sd /= 1000;
+    sd /= AMOUNT;
     sd = sqrt(sd);
     _debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
@@ -166,7 +167,7 @@ int main() {
   goto start;
   benchmark:
   _debug("2. Benchmark", 1);
-  puts("A \"frame loop\" will be created to see various statistics. An interval will be fired at 60FPS rate and the benchmark will end when 1000 samples have been collected.");
+  printf("An interval will be fired at 60FPS rate to see various statistics. The benchmark will end once %d samples are collected.\n", AMOUNT);
   memset(&manager, 0, sizeof(manager));
   if(time_manager(&manager) != 0) {
     TEST_FAIL;
@@ -177,7 +178,7 @@ int main() {
   begin = time_get_ns(16666666);
   last_time = begin - 16666666;
   times = 1;
-  if(time_manager_add_interval(&manager, begin, 16666666, cbbenchfunc, &manager, NULL, time_instant) != 0) {
+  if(time_manager_add_interval(&manager, begin, 16666666, cbbenchfunc, &manager, NULL) != 0) {
     TEST_FAIL;
   }
   pthread_mutex_lock(&mutexo);

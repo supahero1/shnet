@@ -14,8 +14,6 @@ The `contmem` module implements continuous memory for the `avl` module (because 
 
 The `net` module implements very basic operations on sockets - without managing them in any way. Such operations include for instance setting an address, port, family, etc., or getting the aforementioned things. There are mostly 3 functions for each of these operations that operate on 3 different structures. The module also implements an event loop. This event loop and the other networking modules have limitations that the application must be aware of in order to not fall victim to undefined behavior.
 
-The `udp` and `udplite` modules implement very basic functions to operate on `udp` and `udplite`. It is not comparable in any way to the `tcp` module, since I don't need to use the UDP protocol. Maybe the module will be expanded in the future.
-
 The `tcp` module implements non-blocking `tcp` clients and servers using the event loop and other various functions from the `net` module. The clients only have a lock for managing the buffered data to be sent - other than that, the limitations that the library has allow for high-performance sockets with minimal lock contention. Performance of the sockets does not drop by much when their amount is increased by thousands - it only drops slightly, because of the event loop needing to handle many more sockets.
 
 The `tls` module is built using OpenSSL and runs on top of the `tcp` module using callbacks that the `tcp` module provides. TLS clients have higher lock contention than TCP ones due to 2 more locks that are required to function. TLS functions are almost an exact copy of TCP ones to make it as intuitive to use as possible.
@@ -24,9 +22,7 @@ The `compress` module implements DEFLATE and Brotli compression & decompression.
 
 The `http_p` module implements high customizable HTTP 1.1 request and response parsing & creation, with support for chunked transfer and DEFLATE & Brotli content encoding. The parsers is not be RFC compliant. The application is able to specify what to parse, when to stop parsing and return the result to the application, and more. The parsers after returning to the application can be resumed to parse the rest, possibly with modified parsing settings. Upon parsing continuation, the parsers is not start from the beginning again, but rather resume right where they stopped.
 
-The `http` module implements http and https 1.1 client and server. The application can simply use `http(url, NULL)` and `http_server(url, NULL)` calls to make a client and a server respectively, without setting up epoll, time manager, or other necessary ingredients. The application is able to specify a lot of options though, using the second argument to these functions. The server is using a hash table to store and lookup requested resources in a matter of nanoseconds. Support for keep-alive connections, compression, chunked transfer, custom application headers, custom reason phrases and status codes, custom request methods, and more.
-
-In the nearest future, the `http` module will also feature the availability of switching to the websocket protocol. Making websockets a standalone module would make it very difficult to code.
+The `http` module implements http and https 1.1 client and server, and the websocket protocol for server only. The application can simply use `http(url, NULL)` and `http_server(url, NULL)` calls to make a client and a server respectively, without setting up epoll, time manager, or other necessary ingredients. The application is able to specify a lot of options though, using the second argument to these functions. The server is using a hash table to store and lookup requested resources in a matter of nanoseconds. Support for keep-alive connections, compression, chunked transfer, custom application headers, custom reason phrases and status codes, custom request methods, and more.
 
 # Requirements
 
@@ -65,8 +61,6 @@ sudo make static
 sudo make strip-static
 ```
 
-If the dynamic installation yields linking errors when compiling tests or application code, try the static one.
-
 To build without installing:
 ```bash
 sudo make build
@@ -75,11 +69,6 @@ sudo make build
 If full build was chosen, the user can then test the library:
 ```bash
 sudo make test
-```
-
-Note though that some tests require big amount of file descriptors available. To make sure TCP and TLS tests work, do:
-```bash
-ulimit -n 20000
 ```
 
 To remove build files:
@@ -94,7 +83,7 @@ sudo make uninstall
 
 To link it with your project, simply add the `-lshnet` flag.
 
-Multiple make commands can be chained very simply. The following command performs a full dynamic reinstall and tests at the end:
+Multiple make commands can be chained very simply. The following command performs a full dynamic reinstall and tests the library afterwards:
 ```bash
 sudo make clean uninstall dynamic test
 ```

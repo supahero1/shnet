@@ -17,10 +17,9 @@ int threads(struct threads* const threads) {
 #define thrd ((struct threads*) threads_thread_data)
 
 static void* threads_thread(void* threads_thread_data) {
-  (void) pthread_barrier_wait(thrd->barrier);
+  (void) pthread_barrier_wait(&thrd->barrier);
   if(atomic_fetch_sub(&thrd->togo, 1) == 1) {
-    (void) pthread_barrier_destroy(thrd->barrier);
-    free(thrd->barrier);
+    (void) pthread_barrier_destroy(&thrd->barrier);
     (void) sem_post(&thrd->sem);
   }
   thrd->func(thrd->data);
@@ -46,17 +45,11 @@ int threads_add(struct threads* const threads, const uint32_t amount) {
       return -1;
     }
   }
-  pthread_barrier_t* const barrier = malloc(sizeof(pthread_barrier_t));
-  if(barrier == NULL) {
-    return -1;
-  }
-  int err = pthread_barrier_init(barrier, NULL, amount);
+  int err = pthread_barrier_init(&threads->barrier, NULL, amount);
   if(err != 0) {
-    free(barrier);
     errno = err;
     return -1;
   }
-  threads->barrier = barrier;
   atomic_store(&threads->togo, amount);
   for(uint32_t i = threads->used; i < total; ++i) {
     int err = pthread_create(threads->threads + i, NULL, threads_thread, threads);
@@ -67,8 +60,7 @@ int threads_add(struct threads* const threads, const uint32_t amount) {
         (void) threads_remove(threads, i - threads->used);
         threads->used = old;
       } else {
-        (void) pthread_barrier_destroy(barrier);
-        free(barrier);
+        (void) pthread_barrier_destroy(&threads->barrier);
       }
       errno = err;
       return -1;
@@ -110,4 +102,25 @@ void threads_shutdown(struct threads* const threads) {
 void threads_free(struct threads* const threads) {
   free(threads->threads);
   (void) sem_destroy(&threads->sem);
+}
+
+
+
+int thread_start(struct thread* const thread, void* (*func)(void*), void* const data) {
+  const int err = pthread_create(&thread->thread, NULL, func, data);
+  if(err != 0) {
+    errno = err;
+    return -1;
+  }
+  return 0;
+}
+
+void thread_stop(struct thread* const thread) {
+  if(pthread_equal(thread->thread, pthread_self())) {
+    (void) pthread_detach(thread->thread);
+    pthread_cancel(thread->thread);
+  } else {
+    pthread_cancel(thread->thread);
+    (void) pthread_join(thread->thread, NULL);
+  }
 }

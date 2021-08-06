@@ -101,8 +101,6 @@ static int time_interval_compare(const void* a, const void* b) {
   }
 }
 
-static void time_manager_thread(void*);
-
 int time_manager(struct time_manager* const manager) {
   manager->timeouts.sign = heap_min;
   manager->timeouts.compare = time_timeout_compare;
@@ -131,13 +129,6 @@ int time_manager(struct time_manager* const manager) {
     errno = err;
     goto err_sem2;
   }
-  err = threads(&manager->thread);
-  if(err != 0) {
-    (void) pthread_mutex_destroy(&manager->mutex);
-    goto err_sem2;
-  }
-  manager->thread.func = time_manager_thread;
-  manager->thread.data = manager;
   atomic_store(&manager->latest, 0);
   return 0;
   
@@ -176,7 +167,7 @@ static int time_manager_set_latest(struct time_manager* const manager) {
 
 #define manager ((struct time_manager*) time_manager_thread_data)
 
-static void time_manager_thread(void* time_manager_thread_data) {
+static void* time_manager_thread(void* time_manager_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   while(1) {
     check_for_timers:
@@ -185,7 +176,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
       uint64_t time = atomic_load(&manager->latest);
       (void) sem_timedwait(&manager->work, &(struct timespec){ .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 });
       time = atomic_load(&manager->latest);
-      if(time_get_ns(0) >= time) {
+      if(time_get_time() >= time) {
         if(time == 0) {
           goto check_for_timers;
         }
@@ -195,17 +186,17 @@ static void time_manager_thread(void* time_manager_thread_data) {
     (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
     (void) pthread_mutex_lock(&manager->mutex);
     const uint64_t ltest = atomic_load(&manager->latest);
-    if(ltest == 0) {
+    if(ltest == 0 || time_get_time() < ltest) {
       (void) pthread_mutex_unlock(&manager->mutex);
     } else {
       if((ltest & 1) == 0) {
         struct time_timeout* latest = refheap_peak(&manager->timeouts, 0);
-        struct time_timeout_ref* const ref = *(struct time_timeout_ref**)((char*) latest - sizeof(void**));
+        struct time_reference* const ref = *(struct time_reference**)((char*) latest - sizeof(void**));
         if(ref != NULL) {
           ref->executed = 1;
         }
         struct time_timeout timeout = *latest;
-        refheap_delete(&manager->timeouts, latest);
+        refheap_delete(&manager->timeouts, manager->timeouts.item_size + sizeof(uint64_t**));
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
         timeout.func(timeout.data);
@@ -213,7 +204,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
         struct time_interval* latest = refheap_peak(&manager->intervals, 0);
         struct time_interval interval = *latest;
         ++latest->count;
-        refheap_down(&manager->intervals, refheap_ref_to_idx(&manager->intervals, latest));
+        refheap_down(&manager->intervals, manager->intervals.item_size + sizeof(uint64_t**));
         (void) sem_post(&manager->amount);
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
@@ -222,78 +213,17 @@ static void time_manager_thread(void* time_manager_thread_data) {
     }
     (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
   }
+  return NULL;
 }
 
 #undef manager
 
 int time_manager_start(struct time_manager* const manager) {
-  return threads_add(&manager->thread, 1);
-}
-
-int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_timeout_ref* const timeout) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  {
-    const int err = refheap_insert(&manager->timeouts, &(struct time_timeout){ .time = time, .func = func, .data = data }, timeout != NULL ? (void**)&timeout->timeout : NULL);
-    if(err == -1) {
-      (void) pthread_mutex_unlock(&manager->mutex);
-      return -1;
-    }
-  }
-  if(time_manager_set_latest(manager) == 0) {
-    (void) sem_post(&manager->work);
-  }
-  (void) sem_post(&manager->amount);
-  (void) pthread_mutex_unlock(&manager->mutex);
-  return 0;
-}
-
-int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t intrvl, void (*func)(void*), void* const data, struct time_interval_ref* const interval, const int instant) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  {
-    const int err = refheap_insert(&manager->intervals, &(struct time_interval){ .base_time = base_time, .interval = intrvl, .count = instant, .func = func, .data = data }, interval != NULL ? (void**)&interval->interval : NULL);
-    if(err == -1) {
-      (void) pthread_mutex_unlock(&manager->mutex);
-      return -1;
-    }
-  }
-  if(time_manager_set_latest(manager) == 0) {
-    (void) sem_post(&manager->work);
-  }
-  (void) sem_post(&manager->amount);
-  (void) pthread_mutex_unlock(&manager->mutex);
-  return 0;
-}
-
-int time_manager_cancel_timeout(struct time_manager* const manager, struct time_timeout_ref* const timeout) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  if(timeout->executed == 0 && timeout->timeout != NULL) {
-    timeout->executed = 1;
-    refheap_delete(&manager->timeouts, timeout->timeout);
-    (void) time_manager_set_latest(manager);
-    (void) sem_post(&manager->work);
-    (void) pthread_mutex_unlock(&manager->mutex);
-    return 1;
-  }
-  (void) pthread_mutex_unlock(&manager->mutex);
-  return 0;
-}
-
-int time_manager_cancel_interval(struct time_manager* const manager, struct time_interval_ref* const interval) {
-  (void) pthread_mutex_lock(&manager->mutex);
-  if(interval->executed == 0 && interval->interval != NULL) {
-    interval->executed = 1;
-    refheap_delete(&manager->intervals, interval->interval);
-    (void) time_manager_set_latest(manager);
-    (void) sem_post(&manager->work);
-    (void) pthread_mutex_unlock(&manager->mutex);
-    return 1;
-  }
-  (void) pthread_mutex_unlock(&manager->mutex);
-  return 0;
+  return thread_start(&manager->thread, time_manager_thread, manager);
 }
 
 void time_manager_stop(struct time_manager* const manager) {
-  threads_shutdown(&manager->thread);
+  thread_stop(&manager->thread);
 }
 
 void time_manager_free(struct time_manager* const manager) {
@@ -302,5 +232,115 @@ void time_manager_free(struct time_manager* const manager) {
   (void) pthread_mutex_destroy(&manager->mutex);
   refheap_free(&manager->timeouts);
   refheap_free(&manager->intervals);
-  threads_free(&manager->thread);
+}
+
+// when inserting and refheap is resized and realloc moves the memory, we need to update all the references, which would be kinda fucking dumb
+// better solution is to make the references indexes instead of pointers, then problem solved easily
+// the same goes for http too ig, the http_message thing that i needed to fix with http1_convert_message()
+
+int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_reference* const ref) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(refheap_insert(&manager->timeouts, &(struct time_timeout){ time, func, data }, ref == NULL ? NULL : &ref->timer) == -1) {
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return -1;
+  }
+  if(time_manager_set_latest(manager) == 0) {
+    (void) sem_post(&manager->work);
+  }
+  (void) sem_post(&manager->amount);
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
+}
+
+#define cast ((struct time_timeout*)(manager->timeouts.array + timeout->timer))
+
+struct time_timeout* time_manager_begin_modifying_timeout(struct time_manager* const manager, struct time_reference* const timeout) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(timeout->executed == 0 && timeout->timer != 0) {
+    timeout->last_time = cast->time;
+    return cast;
+  }
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return NULL;
+}
+
+void time_manager_end_modifying_timeout(struct time_manager* const manager, struct time_reference* const timeout) {
+  if(cast->time > timeout->last_time) {
+    refheap_down(&manager->timeouts, timeout->timer - sizeof(uint64_t**));
+  } else if(cast->time < timeout->last_time) {
+    refheap_up(&manager->timeouts, timeout->timer - sizeof(uint64_t**));
+  }
+  (void) time_manager_set_latest(manager);
+  (void) sem_post(&manager->work);
+  (void) pthread_mutex_unlock(&manager->mutex);
+}
+
+#undef cast
+
+int time_manager_cancel_timeout(struct time_manager* const manager, struct time_reference* const timeout) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(timeout->executed == 0 && timeout->timer != 0) {
+    timeout->executed = 1;
+    refheap_delete(&manager->timeouts, timeout->timer);
+    (void) time_manager_set_latest(manager);
+    (void) sem_post(&manager->work);
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return 1;
+  }
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
+}
+
+
+
+int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t interval, void (*func)(void*), void* const data, struct time_reference* const ref) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(refheap_insert(&manager->intervals, &(struct time_interval){ base_time, interval, 0, func, data }, ref == NULL ? NULL : &ref->timer) == -1) {
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return -1;
+  }
+  if(time_manager_set_latest(manager) == 0) {
+    (void) sem_post(&manager->work);
+  }
+  (void) sem_post(&manager->amount);
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
+}
+
+#define cast ((struct time_interval*)(manager->intervals.array + interval->timer))
+
+struct time_interval* time_manager_begin_modifying_interval(struct time_manager* const manager, struct time_reference* const interval) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(interval->timer != 0) {
+    interval->last_time = cast->base_time;
+    return cast;
+  }
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return NULL;
+}
+
+void time_manager_end_modifying_interval(struct time_manager* const manager, struct time_reference* const interval) {
+  if(cast->base_time > interval->last_time) {
+    refheap_down(&manager->intervals, interval->timer - sizeof(uint64_t**));
+  } else if(cast->base_time < interval->last_time) {
+    refheap_up(&manager->intervals, interval->timer - sizeof(uint64_t**));
+  }
+  (void) time_manager_set_latest(manager);
+  (void) sem_post(&manager->work);
+  (void) pthread_mutex_unlock(&manager->mutex);
+}
+
+#undef cast
+
+int time_manager_cancel_interval(struct time_manager* const manager, struct time_reference* const interval) {
+  (void) pthread_mutex_lock(&manager->mutex);
+  if(interval->timer != 0) {
+    refheap_delete(&manager->intervals, interval->timer);
+    (void) time_manager_set_latest(manager);
+    (void) sem_post(&manager->work);
+    (void) pthread_mutex_unlock(&manager->mutex);
+    return 1;
+  }
+  (void) pthread_mutex_unlock(&manager->mutex);
+  return 0;
 }

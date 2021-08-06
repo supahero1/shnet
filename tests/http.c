@@ -6,15 +6,40 @@
 #include <unistd.h>
 #include <shnet/http.h>
 
+#define WIDTH 50
+
+void hex_print(const unsigned char* const data, const uint64_t len) {
+  for(uint64_t i = 0; i < len; i += WIDTH) {
+    for(uint64_t j = 0; j < WIDTH; ++j) {
+      if(i + j >= len) {
+        printf("   ");
+      } else {
+        printf("%02X ", data[i + j]);
+      }
+    }
+    printf(" ");
+    for(uint64_t j = 0; j < WIDTH; ++j) {
+      if(i + j < len && data[i + j] > 31 && data[i + j] < 127) {
+        printf("%c", data[i + j]);
+      } else {
+        printf(".");
+      }
+    }
+    printf("\n");
+  }
+}
+
 void onresponse(struct http_socket* socket, struct http_message* message) {
   printf("got a response to request nr %u, status code %u\n", socket->context.requests_used, message->status_code);
   if(message->body != NULL) {
-    message->body = realloc(message->body, message->body_len + 1);
-    if(message->body == NULL) {
-      TEST_FAIL;
-    }
     message->body[message->body_len] = 0;
     printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
+  } else {
+    puts("no body");
+  }
+  if(socket->context.requests_used == socket->context.requests_size - 1) {
+    TEST_PASS;
+    exit(0);
   }
 }
 
@@ -31,12 +56,16 @@ void onclose(struct http_socket* socket, int reason) {
 void sonresponse(struct https_socket* socket, struct http_message* message) {
   printf("got a response to request nr %u, status code %u\n", socket->context.requests_used, message->status_code);
   if(message->body != NULL) {
-    message->body = realloc(message->body, message->body_len + 1);
-    if(message->body == NULL) {
-      TEST_FAIL;
-    }
     message->body[message->body_len] = 0;
     printf("the received message (len %lu):\n%s\n\n", message->body_len, message->body);
+    //printf("the received message (len %lu):\n", message->body_len);
+    //hex_print((unsigned char*) message->body, message->body_len);
+  } else {
+    puts("no body");
+  }
+  if(socket->context.requests_used == socket->context.requests_size - 1) {
+    TEST_PASS;
+    exit(0);
   }
 }
 
@@ -70,23 +99,23 @@ int main() {
   options.timeout_after = 5;
   
   struct http_message req = {0};
-  req.path = "/d.js";
+  req.path = "/c.js";
   req.path_len = strlen(req.path);
   
   struct http_request requests[2] = {0};
   requests[1].request = &req;
+  requests[1].no_cache = 1;
   
   options.requests = requests;
   options.requests_len = 2;
   
-  int err = http("https://static.diep.io/build_7d8655edcf09098d26ec676963ac899405b72f5d.wasm.js", &options);
+  int err = http("https://static.diep.io/build_5a2544748e1ac8a5677587d85572be709daf8a66.wasm.js", &options);
   if(err != 0) {
     puts("http() err");
     return 1;
   }
   puts("http() done");
   
-  sleep(2);
-  TEST_PASS;
+  sleep(60);
   return 0;
 }

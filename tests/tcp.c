@@ -5,72 +5,55 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <semaphore.h>
 #include <shnet/tcp.h>
 #include <shnet/time.h>
 
-/* This test suite was inspired by https://github.com/chronoxor/CppServer#tcp-echo-server
-which doesn't even respond to single pings, just resends whatever it received.
-Unlike the CppServer library, we don't lose much performance by using more clients,
-since there is no lock contention or anything that would stop the clients other
-than the machine's power. */
-
 sem_t sem;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-unsigned long msges = 0;
+uint64_t total = 0;
 
-#define how_many_pings 1000UL
-#define ping_size 32UL
-#define time_to_wait_s 1UL
+const uint64_t msg_size = 4096 << 7; /* 128 pages */
+#define time_to_wait_ms 100UL
 
-struct tcp_socket_callbacks serversock_cb;
-struct tcp_socket_settings serversock_set;
+_Atomic int keep_sending;
 
-struct tcp_server_callbacks server_cb;
-struct tcp_server_settings server_set;
+struct tcp_socket_callbacks serversock_cb = {0};
+struct tcp_socket_callbacks client_cb = {0};
 
-void serversock_onopen(struct tcp_socket* socket) {
-  (void) socket;
-  sem_post(&sem);
-}
+struct tcp_server_callbacks server_cb = {0};
+
+unsigned char* buf;
 
 void serversock_onmessage(struct tcp_socket* socket) {
-  unsigned char buf[ping_size * how_many_pings];
   errno = 0;
-  while(errno == 0) {
-    int read = tcp_read(socket, buf, ping_size * how_many_pings);
-    if(read == 0) {
-      return;
+  uint64_t read = 0;
+  while(atomic_load(&keep_sending) == 1 && errno == 0) {
+    const uint64_t r = tcp_read(socket, buf, msg_size);
+    if(r == 0) {
+      break;
     }
-    const int pings = read / ping_size;
-    msges += pings;
-    (void) tcp_send(socket, buf, ping_size * pings);
+    read += r;
   }
+  total += read;
+  if(read == 0 || atomic_load(&keep_sending) != 1) {
+    return;
+  }
+  tcp_send(socket, buf, 1, tcp_read_only | tcp_dont_free);
 }
-
-void serversock_onclose(struct tcp_socket* socket) {
-  tcp_socket_free(socket);
-  sem_post(&sem);
-}
-
-
 
 void onopen(struct tcp_socket* socket) {
-  (void) socket;
   sem_post(&sem);
 }
 
 void onmessage(struct tcp_socket* socket) {
-  unsigned char buf[ping_size * how_many_pings];
   errno = 0;
-  while(errno == 0) {
-    int read = tcp_read(socket, buf, ping_size * how_many_pings);
-    if(read == 0) {
-      return;
-    }
-    const int pings = read / ping_size;
-    (void) tcp_send(socket, buf, ping_size * pings);
+  (void) tcp_read(socket, buf, msg_size);
+  if(atomic_load(&keep_sending) != 1) {
+    return;
   }
+  tcp_send(socket, buf, msg_size, tcp_read_only | tcp_dont_free);
 }
 
 void onclose(struct tcp_socket* socket) {
@@ -83,11 +66,8 @@ int sock_onnomem(struct tcp_socket* socket) {
   return -1;
 }
 
-
-
-int onconnection(struct tcp_socket* socket) {
+int onconnection(struct tcp_socket* socket, const struct sockaddr* addr) {
   socket->callbacks = &serversock_cb;
-  socket->settings = &serversock_set;
   return 0;
 }
 
@@ -102,175 +82,143 @@ void onshutdown(struct tcp_server* server) {
 }
 
 void unlock_mutexo(void* da) {
-  (void) da;
   pthread_mutex_unlock(&mutex);
+  atomic_store(&keep_sending, 0);
+}
+
+void too_long(void* a) {
+  puts("too long");
+  sleep(9999);
 }
 
 int main(int argc, char **argv) {
-  puts("Testing tcp:");
+  _debug("Testing tcp:", 1);
   srand(time_get_time());
   sem_init(&sem, 0, 0);
   pthread_mutex_lock(&mutex);
+  atomic_store(&keep_sending, 1);
   
-  memset(&serversock_cb, 0, sizeof(serversock_cb));
-  serversock_cb.onopen = serversock_onopen;
+  buf = calloc(1, msg_size);
+  if(buf == NULL) {
+    TEST_FAIL;
+  }
+  
+  serversock_cb.onopen = onopen;
   serversock_cb.onmessage = serversock_onmessage;
   serversock_cb.onnomem = sock_onnomem;
-  serversock_cb.onclose = serversock_onclose;
+  serversock_cb.onclose = onclose;
   
-  memset(&serversock_set, 0, sizeof(serversock_set));
-  serversock_set.send_buffer_cleanup_threshold = UINT_MAX; /* Never cleanup (only free) */
-  serversock_set.onreadclose_auto_res = 1;
-  serversock_set.remove_from_epoll_onclose = 0;
-  serversock_set.dont_free_addrinfo = 1;
+  client_cb.onopen = onopen;
+  client_cb.onmessage = onmessage;
+  client_cb.onnomem = sock_onnomem;
+  client_cb.onclose = onclose;
   
-  memset(&server_cb, 0, sizeof(server_cb));
   server_cb.onconnection = onconnection;
   server_cb.onnomem = onnomem;
   server_cb.onshutdown = onshutdown;
   
-  memset(&server_set, 0, sizeof(server_set));
-  server_set.max_conn = 10000;
-  server_set.backlog = 128;
+  const int number = atoi(argv[1]);
   
-  const int nclients = atoi(argv[1]);
-  const int nservers = atoi(argv[2]);
-  const int shared_epoll = atoi(argv[3]);
-  
-  /* Epoll setup */
-  struct net_epoll socket_epoll = {0};
-  if(tcp_epoll(&socket_epoll) != 0) {
-    TEST_FAIL;
-  }
-  if(net_epoll_start(&socket_epoll) != 0) {
-    TEST_FAIL;
-  }
-  
-  struct net_epoll server_epoll = {0};
-  if(shared_epoll == 0) {
-    if(tcp_epoll(&server_epoll) != 0) {
-      TEST_FAIL;
-    }
-    if(net_epoll_start(&server_epoll) != 0) {
-      TEST_FAIL;
-    }
-  }
-  
-  struct addrinfo hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | wants_a_server | wants_own_ip_version);
-  struct addrinfo* res = net_get_address(NULL, "8099", &hints);
+  const struct addrinfo hints = net_get_addr_struct(ipv4, stream_socktype, tcp_protocol, 0);
+  struct addrinfo* res = net_get_address("localhost", "5000", &hints);
   if(res == NULL) {
-    printf("err %s\n", net_strerror(errno));
+    _debug("net_get_address() err %d %s\n", 1, errno, strerror(errno));
     TEST_FAIL;
   }
   
   /* TCP server setup */
-  struct tcp_server* servers = calloc(nservers, sizeof(struct tcp_server));
+  struct tcp_server* servers = calloc(number, sizeof(struct tcp_server));
   if(servers == NULL) {
     TEST_FAIL;
   }
-  for(int i = 0; i < nservers; ++i) {
-    if(shared_epoll == 1) {
-      servers[i].epoll = &socket_epoll;
-    } else {
-      servers[i].epoll = &server_epoll;
-    }
-    servers[i].settings = &server_set;
+  for(int i = 0; i < number; ++i) {
     servers[i].callbacks = &server_cb;
-    if(tcp_create_server(&servers[i], res) != 0) {
+    if(tcp_server(&servers[i], &((struct tcp_server_options) {
+      .info = res,
+      .hostname = "localhost",
+      .port = "5000",
+      .family = ipv4,
+      .flags = 0
+    })) != 0) {
       TEST_FAIL;
     }
   }
-  net_get_address_free(res);
   
   /* TCP socket setup */
-  struct tcp_socket_callbacks sock_cb;
-  memset(&sock_cb, 0, sizeof(sock_cb));
-  sock_cb.onopen = onopen;
-  sock_cb.onmessage = onmessage;
-  sock_cb.onnomem = sock_onnomem;
-  sock_cb.onclose = onclose;
-  
-  hints = net_get_addr_struct(any_family, stream_socktype, tcp_protocol, numeric_service | numeric_hostname | wants_own_ip_version);
-  res = net_get_address("0.0.0.0", "8099", &hints);
-  if(res == NULL) {
-    printf("err %s\n", net_strerror(errno));
-    TEST_FAIL;
-  }
-  
-  struct tcp_socket* sockets = calloc(nclients, sizeof(struct tcp_socket));
+  struct tcp_socket* sockets = calloc(number, sizeof(struct tcp_socket));
   if(sockets == NULL) {
     TEST_FAIL;
   }
-  for(int i = 0; i < nclients; ++i) {
-    sockets[i].epoll = &socket_epoll;
-    sockets[i].callbacks = &sock_cb;
-    sockets[i].settings = &serversock_set;
+  for(int i = 0; i < number; ++i) {
+    sockets[i].epoll = servers[i].epoll;
+    sockets[i].callbacks = &client_cb;
     sockets[i].info = res;
-    if(tcp_create_socket(&sockets[i]) != 0) {
+    if(tcp_socket(&sockets[i], NULL) != 0) {
       TEST_FAIL;
     }
   }
-  net_get_address_free(res);
   
   /* Time setup to stop the test */
-  struct time_manager manager;
-  memset(&manager, 0, sizeof(manager));
+  struct time_manager manager = {0};
   if(time_manager(&manager) != 0) {
     TEST_FAIL;
   }
   if(time_manager_start(&manager) != 0) {
     TEST_FAIL;
   }
-  for(int i = 0; i < (nclients << 1); ++i) {
+  for(int i = 0; i < (number << 1); ++i) {
     sem_wait(&sem);
   }
-  if(time_manager_add_timeout(&manager, time_get_sec(time_to_wait_s), unlock_mutexo, NULL, NULL) != 0) {
+  if(time_manager_add_timeout(&manager, time_get_ms(time_to_wait_ms), unlock_mutexo, NULL, NULL) != 0) {
     TEST_FAIL;
   }
-  unsigned char buf[ping_size * how_many_pings];
-  for(unsigned long i = 0; i < ping_size * how_many_pings; ++i) {
-    buf[i] = rand();
+  if(time_manager_add_timeout(&manager, time_get_ms(time_to_wait_ms << 1), too_long, NULL, NULL) != 0) {
+    TEST_FAIL;
   }
-  for(int i = 0; i < nclients; ++i) {
-    errno = 0;
-    (void) tcp_send(&sockets[i], buf, ping_size * how_many_pings);
+  for(int i = 0; i < number; ++i) {
+    tcp_send(&sockets[i], buf, msg_size, tcp_read_only | tcp_dont_free);
   }
   /* Wait for the timeout to expire, we will be sending data in the background */
   pthread_mutex_lock(&mutex);
-  /* Close the clients */
-  for(int i = 0; i < nclients; ++i) {
-    tcp_socket_force_close(&sockets[i]);
+  /* Close the sockets */
+  for(int i = 0; i < number; ++i) {
+    tcp_socket_force_close(sockets + i);
   }
-  for(int i = 0; i < (nclients << 1); ++i) {
+  for(int i = 0; i < (number << 1); ++i) {
     sem_wait(&sem);
   }
   /* Close the servers */
-  for(int i = 0; i < nservers; ++i) {
+  for(int i = 0; i < number; ++i) {
     if(tcp_server_shutdown(&servers[i]) != 0) {
       TEST_FAIL;
     }
     sem_wait(&sem);
   }
   /* The test is over */
-  printf("The results:\n"
-  "Clients used: %d\n"
-  "Servers used: %d\n"
-  "Shared epoll: %d\n"
-  "Data size   : %lu\n"
-  "Amount of pings received in %lu sec: %lu\n"
-  "Throughput: %lu b/s, %lu kb/s, %lu mb/s, %lu gb/s\n",
-  nclients,
-  nservers,
-  shared_epoll,
-  ping_size * how_many_pings,
-  time_to_wait_s,
-  msges,
-  (msges * ping_size) / time_to_wait_s,
-  (msges * ping_size) / (time_to_wait_s * 1000U),
-  (msges * ping_size) / (time_to_wait_s * 1000000U),
-  (msges * ping_size) / (time_to_wait_s * 1000000000U)
+  _debug("The results:\n"
+  "Cores used : %d\n"
+  "Data size  : %lu\n"
+  "B in %lu ms: %lu\n"
+  "Throughput : %lu b/s, %lu kb/s, %lu mb/s, %lu gb/s",
+  1,
+  number,
+  msg_size,
+  time_to_wait_ms,
+  total,
+  total * 1000U / time_to_wait_ms,
+  total / time_to_wait_ms,
+  total / (time_to_wait_ms * 1000U),
+  total / (time_to_wait_ms * 1000000U)
   );
-  /* Cleanup for valgrind deleted, look tls_stress.c */
+  pthread_mutex_unlock(&mutex);
+  pthread_mutex_destroy(&mutex);
+  sem_destroy(&sem);
+  free(sockets);
+  free(servers);
+  time_manager_stop(&manager);
+  time_manager_free(&manager);
+  net_free_address(res);
+  free(buf);
   TEST_PASS;
   return 0;
 }
