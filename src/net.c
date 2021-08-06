@@ -22,9 +22,9 @@ struct addrinfo net_get_addr_struct(const int family, const int socktype, const 
   };
 }
 
-struct addrinfo* net_get_address(const char* const hostname, const char* const service, const struct addrinfo* const hints) {
+struct addrinfo* net_get_address(const char* const hostname, const char* const port, const struct addrinfo* const hints) {
   struct addrinfo* addr;
-  int err = getaddrinfo(hostname, service, hints, &addr);
+  int err = getaddrinfo(hostname, port, hints, &addr);
   if(err != 0) {
     errno = err;
     return NULL;
@@ -35,7 +35,7 @@ struct addrinfo* net_get_address(const char* const hostname, const char* const s
 #define addr ((struct net_async_address*) net_get_address_thread_data)
 
 static void* net_get_address_thread(void* net_get_address_thread_data) {
-  addr->callback(addr, net_get_address(addr->hostname, addr->service, addr->hints));
+  addr->callback(addr, net_get_address(addr->hostname, addr->port, addr->hints));
   (void) pthread_detach(pthread_self());
   return NULL;
 }
@@ -52,228 +52,22 @@ int net_get_address_async(struct net_async_address* const addr) {
   return 0;
 }
 
-const char* net_strerror(const int code) {
-  return gai_strerror(code);
-}
-
-void net_get_address_free(struct addrinfo* const info) {
+void net_free_address(struct addrinfo* const info) {
   freeaddrinfo(info);
 }
 
-int net_foreach_addrinfo(struct addrinfo* info, int (*callback)(struct addrinfo*, void*), void* data) {
-  do {
-    if(callback(info, data) == 0) {
-      return 0;
-    }
-    info = info->ai_next;
-  } while(info != NULL);
-  if(info == NULL) {
-    return -1;
-  }
-  return 0;
-}
-
-
-
-int net_get_name(const void* const sockaddr, const socklen_t sockaddrlen, char* const hostname, const socklen_t len, const int flags) {
-  return getnameinfo((struct sockaddr*) sockaddr, sockaddrlen, hostname, len, NULL, 0, NI_NAMEREQD | flags);
-}
-
-
-
-int net_string_to_address(void* const addr, const char* const buffer) {
-  int err;
-  if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    err = inet_pton(ipv4, buffer, &((struct sockaddr_in*) addr)->sin_addr.s_addr);
-  } else {
-    err = inet_pton(ipv6, buffer, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr);
-  }
-  if(err != 1) {
-    return -1;
-  }
-  return 0;
-}
-
-int net_address_to_string(void* const whole_addr, char* const buffer) {
+int net_address_to_string(void* const addr, char* const buffer) {
   const void* err;
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    err = inet_ntop(ipv4, &((struct sockaddr_in*) whole_addr)->sin_addr.s_addr, buffer, ipv4_strlen);
+  if(((struct sockaddr*) addr)->sa_family == ipv4) {
+    err = inet_ntop(ipv4, &((struct sockaddr_in*) addr)->sin_addr.s_addr, buffer, ipv4_strlen);
   } else {
-    err = inet_ntop(ipv6, ((struct sockaddr_in6*) whole_addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
+    err = inet_ntop(ipv6, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
   }
   if(err == NULL) {
     return -1;
   }
   return 0;
 }
-
-
-
-void net_set_family(void* const whole_addr, const int family) {
-  ((struct sockaddr*) whole_addr)->sa_family = family;
-}
-
-void net_sockbase_set_family(struct net_socket_base* const base, const int family) {
-  net_set_family(&base->addr, family);
-}
-
-void net_addrinfo_set_family(struct addrinfo* const info, const int family) {
-  net_set_family(info->ai_addr, family);
-  info->ai_family = family;
-}
-
-
-
-int net_get_family(const void* const whole_addr) {
-  return ((struct sockaddr*) whole_addr)->sa_family;
-}
-
-int net_sockbase_get_family(const struct net_socket_base* const base) {
-  return net_get_family(&base->addr);
-}
-
-int net_addrinfo_get_family(const struct addrinfo* const info) {
-  return net_get_family(info->ai_addr);
-}
-
-
-
-void net_set_any_addr(void* const whole_addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    ((struct sockaddr_in*) whole_addr)->sin_addr.s_addr = INADDR_ANY;
-  } else {
-    ((struct sockaddr_in6*) whole_addr)->sin6_addr = in6addr_any;
-  }
-}
-
-void net_sockbase_set_any_addr(struct net_socket_base* const base) {
-  net_set_any_addr(&base->addr);
-}
-
-void net_addrinfo_set_any_addr(struct addrinfo* const info) {
-  net_set_any_addr(info->ai_addr);
-}
-
-
-
-void net_set_loopback_addr(void* const whole_addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    ((struct sockaddr_in*) whole_addr)->sin_addr.s_addr = INADDR_LOOPBACK;
-  } else {
-    ((struct sockaddr_in6*) whole_addr)->sin6_addr = in6addr_loopback;
-  }
-}
-
-void net_sockbase_set_loopback_addr(struct net_socket_base* const base) {
-  net_set_loopback_addr(&base->addr);
-}
-
-void net_addrinfo_set_loopback_addr(struct addrinfo* const info) {
-  net_set_loopback_addr(info->ai_addr);
-}
-
-
-
-void net_set_addr(void* const whole_addr, const void* const addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    (void) memcpy(&((struct sockaddr_in*) whole_addr)->sin_addr.s_addr, addr, 4);
-  } else {
-    (void) memcpy(((struct sockaddr_in6*) whole_addr)->sin6_addr.s6_addr, addr, 16);
-  }
-}
-
-void net_sockbase_set_addr(struct net_socket_base* const base, const void* const addr) {
-  net_set_addr(&base->addr, addr);
-}
-
-void net_addrinfo_set_addr(struct addrinfo* const info, const void* const addr) {
-  net_set_addr(info->ai_addr, addr);
-}
-
-
-
-void net_set_whole_addr(void* const whole_addr, const void* const addr) {
-  if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    (void) memcpy(((struct sockaddr_in*) whole_addr), addr, sizeof(struct sockaddr_in));
-  } else {
-    (void) memcpy(((struct sockaddr_in6*) whole_addr), addr, sizeof(struct sockaddr_in6));
-  }
-}
-
-void net_sockbase_set_whole_addr(struct net_socket_base* const base, const void* const addr) {
-  net_set_whole_addr(&base->addr, addr);
-}
-
-void net_addrinfo_set_whole_addr(struct addrinfo* const info, const void* const addr) {
-  net_set_whole_addr(info->ai_addr, addr);
-  info->ai_family = net_get_family(addr);
-}
-
-
-
-void* net_get_addr(const void* const whole_addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    return &((struct sockaddr_in*) whole_addr)->sin_addr.s_addr;
-  } else {
-    return ((struct sockaddr_in6*) whole_addr)->sin6_addr.s6_addr;
-  }
-}
-
-void* net_sockbase_get_addr(const struct net_socket_base* const base) {
-  return net_get_addr(&base->addr);
-}
-
-void* net_addrinfo_get_addr(const struct addrinfo* const info) {
-  return net_get_addr(info->ai_addr);
-}
-
-
-
-void* net_sockbase_get_whole_addr(struct net_socket_base* const base) {
-  return &base->addr;
-}
-
-void* net_addrinfo_get_whole_addr(const struct addrinfo* const info) {
-  return info->ai_addr;
-}
-
-
-
-void net_set_port(void* const whole_addr, const uint16_t port) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    ((struct sockaddr_in*) whole_addr)->sin_port = htons(port);
-  } else {
-    ((struct sockaddr_in6*) whole_addr)->sin6_port = htons(port);
-  }
-}
-
-void net_sockbase_set_port(struct net_socket_base* const base, const uint16_t port) {
-  net_set_port(&base->addr, port);
-}
-
-void net_addrinfo_set_port(struct addrinfo* const info, const uint16_t port) {
-  net_set_port(info->ai_addr, port);
-}
-
-
-
-uint16_t net_get_port(const void* const whole_addr) {
-  if(((struct sockaddr*) whole_addr)->sa_family == ipv4) {
-    return ntohs(((struct sockaddr_in*) whole_addr)->sin_port);
-  } else {
-    return ntohs(((struct sockaddr_in6*) whole_addr)->sin6_port);
-  }
-}
-
-uint16_t net_sockbase_get_port(const struct net_socket_base* const base) {
-  return net_get_port(&base->addr);
-}
-
-uint16_t net_addrinfo_get_port(const struct addrinfo* const info) {
-  return net_get_port(info->ai_addr);
-}
-
-
 
 int net_get_ipv4_addrlen() {
   return sizeof(struct sockaddr_in);
@@ -283,197 +77,201 @@ int net_get_ipv6_addrlen() {
   return sizeof(struct sockaddr_in6);
 }
 
-int net_get_addrlen(const void* const addr) {
-  if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    return net_get_ipv4_addrlen();
-  } else {
-    return net_get_ipv6_addrlen();
-  }
+int net_socket_get(const struct addrinfo* const info) {
+  return socket(info->ai_family, info->ai_socktype, info->ai_protocol);
 }
 
-int net_addrinfo_get_addrlen(const struct addrinfo* const info) {
-  return info->ai_addrlen;
+#define socket ((struct net_socket*) sock)
+
+int net_socket_bind(const void* const sock, const struct addrinfo* const info) {
+  return bind(socket->sfd, info->ai_addr, info->ai_family == ipv4 ? net_get_ipv4_addrlen() : net_get_ipv6_addrlen());
 }
 
-
-
-int net_get_socket(const struct addrinfo* const addr) {
-  return socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+int net_socket_connect(const void* const sock, const struct addrinfo* const info) {
+  return connect(socket->sfd, info->ai_addr, info->ai_family == ipv4 ? net_get_ipv4_addrlen() : net_get_ipv6_addrlen());
 }
 
-int net_bind_socket(const int sfd, const void* const addr) {
-  return bind(sfd, (struct sockaddr*) addr, net_get_addrlen(addr));
-}
-
-int net_connect_socket(const int sfd, const void* const addr) {
-  return connect(sfd, (struct sockaddr*) addr, net_get_addrlen(addr));
-}
-
-
-
-int net_socket_setopt_true(const int sfd, const int level, const int option_name) {
-  if(setsockopt(sfd, level, option_name, &(int){1}, sizeof(int)) == 0) {
+int net_socket_setopt_true(const void* const sock, const int level, const int option_name) {
+  if(setsockopt(socket->sfd, level, option_name, &(int){1}, sizeof(int)) == 0) {
     return 0;
   }
   return -1;
 }
 
-int net_socket_setopt_false(const int sfd, const int level, const int option_name) {
-  if(setsockopt(sfd, level, option_name, &(int){0}, sizeof(int)) == 0) {
+int net_socket_setopt_false(const void* const sock, const int level, const int option_name) {
+  if(setsockopt(socket->sfd, level, option_name, &(int){0}, sizeof(int)) == 0) {
     return 0;
   }
   return -1;
 }
 
-
-
-int net_socket_reuse_addr(const int sfd) {
-  return net_socket_setopt_true(sfd, SOL_SOCKET, SO_REUSEADDR);
+int net_socket_reuse_addr(const void* const sock) {
+  return net_socket_setopt_true(sock, SOL_SOCKET, SO_REUSEADDR);
 }
 
-int net_socket_dont_reuse_addr(const int sfd) {
-  return net_socket_setopt_false(sfd, SOL_SOCKET, SO_REUSEADDR);
+int net_socket_dont_reuse_addr(const void* const sock) {
+  return net_socket_setopt_false(sock, SOL_SOCKET, SO_REUSEADDR);
 }
 
-int net_socket_reuse_port(const int sfd) {
-  return net_socket_setopt_true(sfd, SOL_SOCKET, SO_REUSEPORT);
+int net_socket_reuse_port(const void* const sock) {
+  return net_socket_setopt_true(sock, SOL_SOCKET, SO_REUSEPORT);
 }
 
-int net_socket_dont_reuse_port(const int sfd) {
-  return net_socket_setopt_false(sfd, SOL_SOCKET, SO_REUSEPORT);
+int net_socket_dont_reuse_port(const void* const sock) {
+  return net_socket_setopt_false(sock, SOL_SOCKET, SO_REUSEPORT);
 }
 
-
-
-int net_socket_get_family(const int sfd, int* const family) {
-  return getsockopt(sfd, SOL_SOCKET, SO_DOMAIN, family, &(socklen_t){sizeof(int)});
+int net_socket_get_family(const void* const sock, int* const family) {
+  return getsockopt(socket->sfd, SOL_SOCKET, SO_DOMAIN, family, &(socklen_t){sizeof(int)});
 }
 
-int net_socket_get_socktype(const int sfd, int* const socktype) {
-  return getsockopt(sfd, SOL_SOCKET, SO_TYPE, socktype, &(socklen_t){sizeof(int)});
+int net_socket_get_socktype(const void* const sock, int* const socktype) {
+  return getsockopt(socket->sfd, SOL_SOCKET, SO_TYPE, socktype, &(socklen_t){sizeof(int)});
 }
 
-int net_socket_get_protocol(const int sfd, int* const protocol) {
-  return getsockopt(sfd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){sizeof(int)});
+int net_socket_get_protocol(const void* const sock, int* const protocol) {
+  return getsockopt(socket->sfd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){sizeof(int)});
 }
 
+int net_socket_get_address(const void* const sock, void* const address) {
+  return getpeername(socket->sfd, address, &(socklen_t){sizeof(struct sockaddr_in6)});
+}
 
-
-int net_socket_dont_block(const int sfd) {
-  const int flags = fcntl(sfd, F_GETFL, 0);
+int net_socket_dont_block(const void* const sock) {
+  const int flags = fcntl(socket->sfd, F_GETFL, 0);
   if(flags == -1) {
     return -1;
   }
-  const int res = fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+  const int res = fcntl(socket->sfd, F_SETFL, flags | O_NONBLOCK);
   if(res == -1) {
     return -1;
   }
   return 0;
 }
 
-int net_socket_block(const int sfd) {
-  int flags = fcntl(sfd, F_GETFL, 0);
+int net_socket_block(const void* const sock) {
+  const int flags = fcntl(socket->sfd, F_GETFL, 0);
   if(flags == -1) {
     return -1;
   }
-  if((flags ^ O_NONBLOCK) != 0) {
-    flags ^= O_NONBLOCK;
-  }
-  const int res = fcntl(sfd, F_SETFL, flags);
+  const int res = fcntl(socket->sfd, F_SETFL, flags & ~O_NONBLOCK);
   if(res == -1) {
     return -1;
   }
   return 0;
 }
 
-int net_socket_base_options(const int sfd) {
-  if(net_socket_dont_block(sfd) != 0 ||
-     net_socket_reuse_addr(sfd) != 0 ||
-     net_socket_reuse_port(sfd) != 0) {
+int net_socket_default_options(const void* const sock) {
+  if(net_socket_dont_block(sock) != 0 ||
+     net_socket_reuse_addr(sock) != 0 ||
+     net_socket_reuse_port(sock) != 0) {
     return -1;
   }
   return 0;
 }
 
-
+#undef socket
 
 #define epoll ((struct net_epoll*) net_epoll_thread_data)
-#define event_base ((struct net_socket_base*) events[i].data.ptr)
+#define event_net ((struct net_socket*) events[i].data.ptr)
 
-static void net_epoll_thread(void* net_epoll_thread_data) {
+static void* net_epoll_thread(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   struct epoll_event events[NET_EPOLL_DEFAULT_MAX_EVENTS];
   while(1) {
     int count = epoll_wait(epoll->fd, events, NET_EPOLL_DEFAULT_MAX_EVENTS, -1);
+    int check = 0;
     for(int i = 0; i < count; ++i) {
-      if(event_base->which == 0) {
+      if(event_net->wakeup) {
         uint64_t r;
-        const int ret = eventfd_read(epoll->base.sfd, &r);
+        const int ret = eventfd_read(epoll->net.sfd, &r);
         (void) ret;
+        check = 1;
         continue;
       }
-      epoll->on_event(epoll, events[i].events, event_base);
-      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+      epoll->on_event(epoll, events[i].events, event_net);
     }
-    (void) pthread_mutex_lock(&epoll->lock);
-    for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
+    if(check) {
+      (void) pthread_mutex_lock(&epoll->lock);
+      for(unsigned int i = 0; i < epoll->nets_used; ++i) {
+        epoll->nets[i]->on_event(epoll->nets[i]);
+      }
+      if(epoll->nets != NULL) {
+        free(epoll->nets);
+        epoll->nets = NULL;
+        epoll->nets_size = 0;
+        epoll->nets_used = 0;
+      }
+      (void) pthread_mutex_unlock(&epoll->lock);
+    }
+    if(epoll->close) {
       (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-      epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
+      net_epoll_stop(epoll);
+      net_epoll_free(epoll);
+      if(epoll->free) {
+        free(epoll);
+      }
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
-    free(epoll->bases_tbc);
-    epoll->bases_tbc = NULL;
-    epoll->bases_tbc_size = 0;
-    epoll->bases_tbc_used = 0;
-    (void) pthread_mutex_unlock(&epoll->lock);
   }
+  return NULL;
 }
 
-#undef event_base
+#undef event_net
 
-#define event_base ((struct net_socket_base*) epoll->events[i].data.ptr)
+#define event_net ((struct net_socket*) epoll->events[i].data.ptr)
 
-static void net_epoll_thread_eventless(void* net_epoll_thread_data) {
+static void* net_epoll_thread_eventless(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   while(1) {
     int count = epoll_wait(epoll->fd, epoll->events, epoll->events_size, -1);
+    int check = 0;
     for(int i = 0; i < count; ++i) {
-      if(event_base->which == 0) {
+      if(event_net->wakeup) {
         uint64_t r;
-        const int ret = eventfd_read(epoll->base.sfd, &r);
+        const int ret = eventfd_read(epoll->net.sfd, &r);
         (void) ret;
+        check = 1;
         continue;
       }
-      epoll->on_event(epoll, epoll->events[i].events, event_base);
-      (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+      epoll->on_event(epoll, epoll->events[i].events, event_net);
     }
-    (void) pthread_mutex_lock(&epoll->lock);
-    for(uint32_t i = 0; i < epoll->bases_tbc_used; ++i) {
+    if(check) {
+      (void) pthread_mutex_lock(&epoll->lock);
+      for(unsigned int i = 0; i < epoll->nets_used; ++i) {
+        epoll->nets[i]->on_event(epoll->nets[i]);
+      }
+      if(epoll->nets != NULL) {
+        free(epoll->nets);
+        epoll->nets = NULL;
+        epoll->nets_size = 0;
+        epoll->nets_used = 0;
+      }
+      (void) pthread_mutex_unlock(&epoll->lock);
+    }
+    if(epoll->close) {
       (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-      epoll->bases_tbc[i]->onclose(epoll->bases_tbc[i]);
+      net_epoll_stop(epoll);
+      net_epoll_free(epoll);
+      if(epoll->free) {
+        free(epoll);
+      }
       (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
-    free(epoll->bases_tbc);
-    epoll->bases_tbc = NULL;
-    epoll->bases_tbc_size = 0;
-    epoll->bases_tbc_used = 0;
-    (void) pthread_mutex_unlock(&epoll->lock);
   }
+  return NULL;
 }
 
-#undef event_base
+#undef event_net
 #undef epoll
 
-int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
-  if(threads(&epoll->threads) != 0) {
-    return -1;
-  }
+int net_epoll(struct net_epoll* const epoll, const int support_wakeup_method) {
   int fd = epoll_create1(0);
   if(fd == -1) {
-    goto err_threads;
+    return -1;
   }
   epoll->fd = fd;
-  if(wakeup_method == net_epoll_wakeup_method) {
+  if(support_wakeup_method) {
     fd = pthread_mutex_init(&epoll->lock, NULL);
     if(fd != 0) {
       errno = fd;
@@ -483,101 +281,89 @@ int net_epoll(struct net_epoll* const epoll, const int wakeup_method) {
     if(fd == -1) {
       goto err_mutex;
     }
-    epoll->base.events = EPOLLIN;
-    epoll->base.sfd = fd;
-    if(net_epoll_add(epoll, &epoll->base) != 0) {
-      (void) close(epoll->base.sfd);
+    epoll->net.sfd = fd;
+    epoll->net.wakeup = 1;
+    if(net_epoll_add(epoll, &epoll->net, EPOLLIN) != 0) {
+      (void) close(epoll->net.sfd);
       goto err_mutex;
     }
   } else {
-    epoll->base.sfd = -1;
+    epoll->net.sfd = -1;
   }
-  if(epoll->events == NULL) {
-    epoll->threads.func = net_epoll_thread;
-  } else {
-    epoll->threads.func = net_epoll_thread_eventless;
-  }
-  epoll->threads.data = epoll;
   return 0;
   
   err_mutex:
   pthread_mutex_destroy(&epoll->lock);
   err_fd:
   (void) close(epoll->fd);
-  err_threads:
-  threads_free(&epoll->threads);
   return -1;
 }
 
 int net_epoll_start(struct net_epoll* const epoll) {
-  return threads_add(&epoll->threads, 1);
+  return thread_start(&epoll->thread, epoll->events == NULL ? net_epoll_thread : net_epoll_thread_eventless, epoll);
 }
 
 void net_epoll_stop(struct net_epoll* const epoll) {
-  threads_shutdown(&epoll->threads);
+  thread_stop(&epoll->thread);
 }
 
 void net_epoll_free(struct net_epoll* const epoll) {
-  threads_free(&epoll->threads);
   (void) close(epoll->fd);
-  if(epoll->base.sfd != -1) {
-    (void) close(epoll->base.sfd);
+  if(epoll->net.sfd != -1) {
+    (void) close(epoll->net.sfd);
   }
-  free(epoll->bases_tbc);
+  if(epoll->nets != NULL) {
+    free(epoll->nets);
+  }
 }
 
-static int net_epoll_modify(struct net_epoll* const epoll, struct net_socket_base* const base, const int method) {
-  return epoll_ctl(epoll->fd, method, base->sfd, &((struct epoll_event) {
-    .events = base->events,
+static int net_epoll_modify(struct net_epoll* const epoll, void* const net, const int method, const int events) {
+  return epoll_ctl(epoll->fd, method, ((struct net_socket*) net)->sfd, &((struct epoll_event) {
+    .events = events,
     .data = (epoll_data_t) {
-      .ptr = base
+      .ptr = net
     }
   }));
 }
 
-int net_epoll_add(struct net_epoll* const epoll, struct net_socket_base* const base) {
-  return net_epoll_modify(epoll, base, EPOLL_CTL_ADD);
+int net_epoll_add(struct net_epoll* const epoll, void* const net, const int events) {
+  return net_epoll_modify(epoll, net, EPOLL_CTL_ADD, events);
 }
 
-int net_epoll_mod(struct net_epoll* const epoll, struct net_socket_base* const base) {
-  return net_epoll_modify(epoll, base, EPOLL_CTL_MOD);
+int net_epoll_mod(struct net_epoll* const epoll, void* const net, const int events) {
+  return net_epoll_modify(epoll, net, EPOLL_CTL_MOD, events);
 }
 
-int net_epoll_remove(struct net_epoll* const epoll, struct net_socket_base* const base) {
-  return net_epoll_modify(epoll, base, EPOLL_CTL_DEL);
+int net_epoll_remove(struct net_epoll* const epoll, void* const net) {
+  return net_epoll_modify(epoll, net, EPOLL_CTL_DEL, 0);
 }
 
-
-
-int net_epoll_tbc_resize(struct net_epoll* const epoll, const uint32_t new_size) {
-  (void) pthread_mutex_lock(&epoll->lock);
-  struct net_socket_base** const ptr = realloc(epoll->bases_tbc, sizeof(struct net_socket_base*) * new_size);
+static int net_epoll_resize_(struct net_epoll* const epoll, const uint32_t new_size) {
+  struct net_server** const ptr = realloc(epoll->nets, sizeof(struct net_socket*) * new_size);
   if(ptr == NULL) {
     (void) pthread_mutex_unlock(&epoll->lock);
     return -1;
   }
-  epoll->bases_tbc = ptr;
-  ++epoll->bases_tbc_size;
-  (void) pthread_mutex_unlock(&epoll->lock);
+  epoll->nets = ptr;
+  epoll->nets_size = new_size;
   return 0;
 }
 
-/* This will ONLY work when the base is in 1 epoll */
-
-int net_epoll_safe_remove(struct net_epoll* const epoll, struct net_socket_base* const base) {
+int net_epoll_resize(struct net_epoll* const epoll, const uint32_t new_size) {
   (void) pthread_mutex_lock(&epoll->lock);
-  if(epoll->bases_tbc_used == epoll->bases_tbc_size) {
-    struct net_socket_base** const ptr = realloc(epoll->bases_tbc, sizeof(struct net_socket_base*) * (epoll->bases_tbc_size + 1));
-    if(ptr == NULL) {
-      (void) pthread_mutex_unlock(&epoll->lock);
-      return -1;
-    }
-    epoll->bases_tbc = ptr;
-    ++epoll->bases_tbc_size;
-  }
-  epoll->bases_tbc[epoll->bases_tbc_used++] = base;
+  const int ret = net_epoll_resize_(epoll, new_size);
   (void) pthread_mutex_unlock(&epoll->lock);
-  const int ret = eventfd_write(epoll->base.sfd, 1);
+  return ret;
+}
+
+int net_epoll_create_event(struct net_epoll* const epoll, void* const net) {
+  (void) pthread_mutex_lock(&epoll->lock);
+  if(epoll->nets_used == epoll->nets_size && net_epoll_resize_(epoll, epoll->nets_used + 1) != 0) {
+    return -1;
+  }
+  epoll->nets[epoll->nets_used++] = net;
+  (void) pthread_mutex_unlock(&epoll->lock);
+  const int ret = eventfd_write(epoll->net.sfd, 1);
   (void) ret;
   return 0;
 }

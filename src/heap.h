@@ -17,19 +17,19 @@ struct heap {
   uint32_t item_size;
 };
 
-extern int heap_resize(struct heap* const, const uint64_t);
+extern int   heap_resize(struct heap* const, const uint64_t);
 
-extern int heap_insert(struct heap* const, const void* const);
+extern int   heap_insert(struct heap* const, const void* const);
 
-extern void heap_pop(struct heap* const);
+extern void  heap_pop(struct heap* const);
 
-extern void heap_down(const struct heap* const, const uint64_t);
+extern void  heap_down(const struct heap* const, const uint64_t);
 
-extern void heap_up(const struct heap* const, const uint64_t);
+extern void  heap_up(const struct heap* const, const uint64_t);
 
-extern void heap_free(struct heap* const);
+extern void  heap_free(struct heap* const);
 
-extern int heap_is_empty(const struct heap* const);
+extern int   heap_is_empty(const struct heap* const);
 
 extern void* heap_peak(const struct heap* const, const uint64_t);
 

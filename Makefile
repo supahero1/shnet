@@ -38,64 +38,21 @@ test: $(TEST_EXECS) | $(DIR_TEST)
 	$(DIR_OUT)/test_avl
 	$(DIR_OUT)/test_threads
 	$(DIR_OUT)/test_time
-	$(DIR_OUT)/test_udp
 	
 	$(DIR_OUT)/test_compression
 	$(DIR_OUT)/test_http_p
 	
-	$(DIR_OUT)/test_tcp 1 1 1
-	$(DIR_OUT)/test_tcp 1 1 0
-	$(DIR_OUT)/test_tcp 100 1 1
-	$(DIR_OUT)/test_tcp 100 1 0
-	$(DIR_OUT)/test_tcp 100 100 1
-	$(DIR_OUT)/test_tcp 100 100 0
-	$(DIR_OUT)/test_tcp 100 1000 1
-	$(DIR_OUT)/test_tcp 100 1000 0
+	$(DIR_OUT)/test_tcp 1
+	$(DIR_OUT)/test_tcp 4
 	
-	$(DIR_OUT)/test_tcp_stress 1 1 1
-	$(DIR_OUT)/test_tcp_stress 1 1 0
-	$(DIR_OUT)/test_tcp_stress 1 10 1
-	$(DIR_OUT)/test_tcp_stress 1 10 0
-	$(DIR_OUT)/test_tcp_stress 1 100 1
-	$(DIR_OUT)/test_tcp_stress 1 100 0
-	$(DIR_OUT)/test_tcp_stress 1 1000 1
-	$(DIR_OUT)/test_tcp_stress 1 1000 0
+	$(DIR_OUT)/test_tcp_stress 1
+	$(DIR_OUT)/test_tcp_stress 4
 	
-	$(DIR_OUT)/test_tcp_stress 100 1 1
-	$(DIR_OUT)/test_tcp_stress 100 1 0
-	$(DIR_OUT)/test_tcp_stress 100 10 1
-	$(DIR_OUT)/test_tcp_stress 100 10 0
-	$(DIR_OUT)/test_tcp_stress 100 100 1
-	$(DIR_OUT)/test_tcp_stress 100 100 0
-	$(DIR_OUT)/test_tcp_stress 100 1000 1
-	$(DIR_OUT)/test_tcp_stress 100 1000 0
+	$(DIR_OUT)/test_tls 1
+	$(DIR_OUT)/test_tls 4
 	
-	$(DIR_OUT)/test_tls 1 1 1
-	$(DIR_OUT)/test_tls 1 1 0
-	$(DIR_OUT)/test_tls 100 1 1
-	$(DIR_OUT)/test_tls 100 1 0
-	$(DIR_OUT)/test_tls 100 100 1
-	$(DIR_OUT)/test_tls 100 100 0
-	$(DIR_OUT)/test_tls 100 1000 1
-	$(DIR_OUT)/test_tls 100 1000 0
-	
-	$(DIR_OUT)/test_tls_stress 1 1 1
-	$(DIR_OUT)/test_tls_stress 1 1 0
-	$(DIR_OUT)/test_tls_stress 1 10 1
-	$(DIR_OUT)/test_tls_stress 1 10 0
-	$(DIR_OUT)/test_tls_stress 1 100 1
-	$(DIR_OUT)/test_tls_stress 1 100 0
-	$(DIR_OUT)/test_tls_stress 1 1000 1
-	$(DIR_OUT)/test_tls_stress 1 1000 0
-	
-	$(DIR_OUT)/test_tls_stress 100 1 1
-	$(DIR_OUT)/test_tls_stress 100 1 0
-	$(DIR_OUT)/test_tls_stress 100 10 1
-	$(DIR_OUT)/test_tls_stress 100 10 0
-	$(DIR_OUT)/test_tls_stress 100 100 1
-	$(DIR_OUT)/test_tls_stress 100 100 0
-	$(DIR_OUT)/test_tls_stress 100 1000 1
-	$(DIR_OUT)/test_tls_stress 100 1000 0
+	$(DIR_OUT)/test_tls_stress 1
+	$(DIR_OUT)/test_tls_stress 4
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)

@@ -4,7 +4,11 @@
 
 #include <errno.h>
 #include <string.h>
-
+/* So here is the todo list:
+1. go through the code from top to bottom. dont care about performance or anything. generally serversocks require the most attention. make sure the code is CLEAN! and that there are no mem leaks. (high prio, needs this for the code to work)
+2. make a test with a POST request
+3. write a function like "try_compress(request, response)", it shall compare request and response available encodings and pick one. prio is: brotli, deflate, gzip. in the future maybe let the app choose custom prio, but not for now. MAKE THE CODE CLEAN!
+*/
 static void http_client_onopen(struct tcp_socket*);
 
 static void http_client_onmessage(struct tcp_socket*);
@@ -49,43 +53,87 @@ static void https_serversock_onclose(struct tls_socket*);
 static void https_serversock_onfree(struct tls_socket*);
 
 
-static int  http_server_onconnection(struct tcp_socket*);
+static int  http_server_onconnection(struct tcp_socket*, const struct sockaddr*);
 
 static int  http_server_onnomem(struct tcp_server*);
+
+static void http_server_onerror(struct tcp_server*);
 
 static void http_server_onshutdown(struct tcp_server*);
 
 
-static int  https_server_onconnection(struct tls_socket*);
+static int  https_server_onconnection(struct tls_socket*, const struct sockaddr*);
 
 static int  https_server_onnomem(struct tls_server*);
+
+static void https_server_onerror(struct tls_server*);
 
 static void https_server_onshutdown(struct tls_server*);
 
 
-static struct tcp_socket_callbacks http_client_callbacks = {0};
+static struct tcp_socket_callbacks http_client_callbacks = {
+  NULL,
+  http_client_onopen,
+  http_client_onmessage,
+  NULL,
+  NULL,
+  http_client_onnomem,
+  http_client_onclose,
+  http_client_onfree
+};
 
-static struct tcp_socket_settings  http_client_settings = { 0, 1, 0, 0, 1, 0 };
+static struct tcp_socket_settings  http_client_settings = { 1, 1, 0, 0, 0, 0, 1, 0 };
 
-static struct tcp_socket_callbacks http_serversock_callbacks = {0};
+static struct tcp_socket_callbacks http_serversock_callbacks = {
+  NULL,
+  http_serversock_onopen,
+  http_serversock_onmessage,
+  NULL,
+  NULL,
+  http_serversock_onnomem,
+  http_serversock_onclose,
+  http_serversock_onfree
+};
 
-static struct tcp_socket_settings  http_serversock_settings = { 0, 1, 0, 1, 0, 0 };
+static struct tcp_socket_settings  http_serversock_settings = { 1, 0, 0, 0, 0, 0, 1, 0 };
 
 
-static struct tls_socket_callbacks https_client_callbacks = {0};
+static struct tls_socket_callbacks https_client_callbacks = {
+  NULL,
+  https_client_onopen,
+  https_client_onmessage,
+  https_client_onnomem,
+  https_client_onclose,
+  https_client_onfree
+};
 
-static struct tls_socket_settings  https_client_settings = { 0, 65536, tls_onreadclose_do_nothing };
+static struct tcp_socket_settings  https_client_settings = { 1, 1, 0, 0, 0, 0, 1, 1 };
 
-static struct tls_socket_callbacks https_serversock_callbacks = {0};
+static struct tls_socket_callbacks https_serversock_callbacks = {
+  NULL,
+  https_serversock_onopen,
+  https_serversock_onmessage,
+  https_serversock_onnomem,
+  https_serversock_onclose,
+  https_serversock_onfree
+};
+
+static struct tcp_socket_settings  https_serversock_settings = { 1, 0, 0, 0, 0, 0, 1, 1 };
 
 
-static struct tcp_server_settings  http_server_settings = { 100, 64, 0 };
+static struct tcp_server_callbacks http_server_callbacks = {
+  http_server_onconnection,
+  http_server_onnomem,
+  http_server_onerror,
+  http_server_onshutdown
+};
 
-static struct tcp_server_callbacks http_server_callbacks = {0};
-
-static struct tcp_server_settings  https_server_settings = { 100, 64, 0 };
-
-static struct tls_server_callbacks https_server_callbacks = {0};
+static struct tls_server_callbacks https_server_callbacks = {
+  https_server_onconnection,
+  https_server_onnomem,
+  https_server_onerror,
+  https_server_onshutdown
+};
 
 
 static struct http_parser_settings http_request_parser_settings = {
@@ -99,7 +147,7 @@ static struct http_parser_settings http_request_parser_settings = {
 
 static struct http_parser_settings http_prerequest_parser_settings = {
   .max_method_len = 255,
-  .max_path_len = 2048,
+  .max_path_len = 255,
   .stop_at_path = 1,
   .no_character_validation = 1
 };
@@ -113,73 +161,10 @@ static struct http_parser_settings http_response_parser_settings = {
   .client = 1
 };
 
-static pthread_once_t __http_once = PTHREAD_ONCE_INIT;
-
-static void __http_init(void) {
-  tls_ignore_sigpipe();
-  
-  http_client_callbacks = (struct tcp_socket_callbacks) {
-    NULL,
-    http_client_onopen,
-    http_client_onmessage,
-    NULL,
-    NULL,
-    http_client_onnomem,
-    http_client_onclose,
-    http_client_onfree
-  };
-  http_serversock_callbacks = (struct tcp_socket_callbacks) {
-    NULL,
-    http_serversock_onopen,
-    http_serversock_onmessage,
-    NULL,
-    NULL,
-    http_serversock_onnomem,
-    http_serversock_onclose,
-    http_serversock_onfree
-  };
-  
-  https_client_callbacks = (struct tls_socket_callbacks) {
-    NULL,
-    https_client_onopen,
-    https_client_onmessage,
-    NULL,
-    NULL,
-    https_client_onnomem,
-    https_client_onclose,
-    https_client_onfree
-  };
-  https_serversock_callbacks = (struct tls_socket_callbacks) {
-    NULL,
-    https_serversock_onopen,
-    https_serversock_onmessage,
-    NULL,
-    NULL,
-    https_serversock_onnomem,
-    https_serversock_onclose,
-    https_serversock_onfree
-  };
-  
-  http_server_callbacks = (struct tcp_server_callbacks) {
-    http_server_onconnection,
-    http_server_onnomem,
-    http_server_onshutdown
-  };
-  https_server_callbacks = (struct tls_server_callbacks) {
-    https_server_onconnection,
-    https_server_onnomem,
-    https_server_onshutdown
-  };
-}
-
-static void http_init(void) {
-  (void) pthread_once(&__http_once, __http_init);
-}
 
 const char* http_str_close_reason(const int err) {
   switch(err) {
     case http_unreachable: return "http_unreachable";
-    case http_async_socket_creation_failed: return "http_async_socket_creation_failed";
     case http_invalid_response: return "http_invalid_response";
     case http_no_keepalive: return "http_no_keepalive";
     case http_unexpected_close: return "http_unexpected_close";
@@ -200,16 +185,17 @@ static struct http_uri http_parse_uri(char* const str) {
   const size_t len = strlen(str);
   char* const port = memchr(uri.hostname, ':', len - 7 - uri.secure);
   if(port != NULL) {
+    uri.port_ptr = port + 1;
     uri.port = atoi(port + 1);
-    uri.hostname_len = (uint32_t)((uintptr_t) port - (uintptr_t) str) - 7 - uri.secure;
+    uri.hostname_len = (uintptr_t) port - (uintptr_t) str - 7 - uri.secure;
     uri.path = memchr(port, '/', len - ((uintptr_t) port - (uintptr_t) str));
     if(uri.path == NULL) {
       uri.path = "/";
       uri.path_len = 1;
-      uri.port_len = (uint16_t)(len - 1 - ((uintptr_t) port - (uintptr_t) str));
+      uri.port_len = len - 1 - ((uintptr_t) port - (uintptr_t) str);
     } else {
-      uri.path_len = (uint32_t)(len - ((uintptr_t) uri.path - (uintptr_t) str));
-      uri.port_len = (uint32_t)((uintptr_t) uri.path - (uintptr_t) port - 1);
+      uri.path_len = len - ((uintptr_t) uri.path - (uintptr_t) str);
+      uri.port_len = (uintptr_t) uri.path - (uintptr_t) port - 1;
     }
   } else {
     uri.path = memchr(uri.hostname, '/', len - 7 - uri.secure);
@@ -218,8 +204,8 @@ static struct http_uri http_parse_uri(char* const str) {
       uri.path_len = 1;
       uri.hostname_len = len - 7 - uri.secure;
     } else {
-      uri.path_len = (uint32_t)(len - ((uintptr_t) uri.path - (uintptr_t) str));
-      uri.hostname_len = (uint32_t)((uintptr_t) uri.path - (uintptr_t) uri.hostname);
+      uri.path_len = len - ((uintptr_t) uri.path - (uintptr_t) str);
+      uri.hostname_len = (uintptr_t) uri.path - (uintptr_t) uri.hostname;
     }
   }
   return uri;
@@ -228,6 +214,7 @@ static struct http_uri http_parse_uri(char* const str) {
 static struct http_requests* http_setup_requests(struct http_uri* const uri, struct http_options* const opt) {
   struct http_request req = {0};
   if(opt->requests_len == 0) {
+    /* No requests means a GET request by default */
     opt->requests_len = 1;
     opt->requests = &req;
   }
@@ -237,13 +224,13 @@ static struct http_requests* http_setup_requests(struct http_uri* const uri, str
   }
   for(uint32_t k = 0; k < opt->requests_len; ++k) {
     struct http_header headers[255];
-    uint32_t idx = 0;
-    uint32_t done_idx = 0;
+    uint8_t idx = 0;
+    uint8_t done_idx = 0;
 #define set_header(a,b,c,d) \
 do { \
   int done = 0; \
   if(opt->requests[k].request != NULL && opt->requests[k].request->headers != NULL) { \
-    for(uint32_t i = done_idx; i < opt->requests[k].request->headers_len; ++i) { \
+    for(uint8_t i = done_idx; i < opt->requests[k].request->headers_len; ++i) { \
       if(opt->requests[k].request->headers[i].name_len == b) { \
         const int cmp = strncasecmp(opt->requests[k].request->headers[i].name, a, b); \
         if(cmp <= 0) { \
@@ -259,14 +246,14 @@ do { \
       } else { \
         if(!done) { \
           done = 1; \
-          headers[idx++] = (struct http_header){a,c,b,0,d,0}; \
+          headers[idx++] = (struct http_header){a,c,d,b,0,0}; \
         } \
         break; \
       } \
     } \
   } \
   if(!done) { \
-    headers[idx++] = (struct http_header){a,c,b,0,d,0}; \
+    headers[idx++] = (struct http_header){a,c,d,b,0,0}; \
   } \
 } while(0)
     set_header("Accept", 6, "*/*", 3);
@@ -296,6 +283,7 @@ do { \
               pick(opt->requests[k].mode, Z_DEFAULT_STRATEGY)
             );
             if(stream == NULL) {
+              deflateEnd(stream);
               break;
             }
             body = gzip(stream, opt->requests[k].request->body, opt->requests[k].request->body_len, NULL, &body_len, Z_FINISH);
@@ -311,6 +299,7 @@ do { \
               pick(opt->requests[k].mode, Z_DEFAULT_STRATEGY)
             );
             if(stream == NULL) {
+              deflateEnd(stream);
               break;
             }
             body = deflate_(stream, opt->requests[k].request->body, opt->requests[k].request->body_len, NULL, &body_len, Z_FINISH);
@@ -328,20 +317,23 @@ do { \
         }
 #undef pick
         if(body == NULL) {
-          if(opt->requests[k].compression_is_required) {
-            goto err;
-          } else {
+          if(opt->requests[k].compression_isnt_required) {
             goto out;
+          } else {
+            goto err;
           }
         }
         void* const ptr = realloc(body, body_len);
+        if(opt->requests[k].request->alloc_body) {
+          free(opt->requests[k].request->body);
+        }
         if(ptr != NULL) {
           opt->requests[k].request->body = ptr;
           opt->requests[k].request->body_len = body_len;
         } else {
           opt->requests[k].request->body = body;
         }
-        opt->requests[k].request->allocated_body = 1;
+        opt->requests[k].request->alloc_body = 1;
         switch(opt->requests[k].request->encoding) {
           case http_e_gzip: {
             set_header("Content-Encoding", 16, "gzip", 4);
@@ -377,23 +369,26 @@ do { \
         .headers = headers
       };
     }
+    char content_length[21];
+    const int len = sprintf(content_length, "%lu", request.body_len);
+    if(len < 0) {
+      goto err;
+    }
+    set_header("Content-Length", 14, content_length, len);
     set_header("Host", 4, uri->hostname, uri->hostname_len + (uri->port_len ? uri->port_len + 1 : 0));
     if(opt->requests[k].no_cache) {
       set_header("Pragma", 6, "no-cache", 8);
     }
-    set_header("User-Agent", 10, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 91);
+    set_header("User-Agent", 10, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36", 105);
 #undef set_header
     request.headers_len = idx;
     requests[k].len = http1_message_length(&request);
     requests[k].msg = malloc(requests[k].len);
     if(requests[k].msg == NULL) {
-      if(opt->requests[k].request->allocated_body) {
-        free(opt->requests[k].request->body);
-      }
       goto err;
     }
     http1_create_message(requests[k].msg, &request);
-    if(opt->requests[k].request != NULL && opt->requests[k].request->allocated_body) {
+    if(opt->requests[k].request != NULL && opt->requests[k].request->alloc_body) {
       free(opt->requests[k].request->body);
     }
     if(opt->requests[k].response_settings != NULL) {
@@ -404,8 +399,11 @@ do { \
     continue;
     
     err:
-    while(k != 0) {
-      free(requests[--k].msg);
+    if(opt->requests[k].request != NULL && opt->requests[k].request->alloc_body) {
+      free(opt->requests[k].request->body);
+    }
+    for(uint8_t i = 0; i < k; ++i) {
+      free(requests[i].msg);
     }
     free(requests);
     return NULL;
@@ -420,379 +418,80 @@ static void http_free_requests(struct http_requests* requests, const uint32_t am
   free(requests);
 }
 
-static void http_free_socket(struct http_socket* const socket) {
-  if(socket->context.read_buffer != NULL) {
-    free(socket->context.read_buffer);
+static int http_socket(struct http_uri* const uri, struct http_options* const opt, struct http_requests* requests) {
+  struct http_socket* const socket = calloc(1, sizeof(struct http_socket));
+  if(socket == NULL) {
+    return -1;
   }
-  if(socket->context.allocated_epoll) {
-    net_epoll_stop(socket->tcp.epoll);
-    net_epoll_free(socket->tcp.epoll);
-    free(socket->tcp.epoll);
+  socket->tcp.settings = http_client_settings;
+  socket->tcp.callbacks = &http_client_callbacks;
+  socket->tcp.info = opt->info;
+  socket->tcp.epoll = opt->epoll;
+  socket->context.timeout_after = opt->timeout_after ? opt->timeout_after : 10;
+  socket->context.read_growth = opt->read_growth ? opt->read_growth : 16384;
+  socket->context.requests = requests;
+  socket->context.requests_size = opt->requests_len;
+  socket->callbacks = opt->http_callbacks;
+  if(opt->timeout_after != UINT64_MAX) {
+    if(opt->manager != NULL) {
+      socket->context.manager = opt->manager;
+    } else {
+      socket->context.manager = calloc(1, sizeof(struct time_manager));
+      if(socket->context.manager == NULL) {
+        goto err_sock;
+      }
+      if(time_manager(socket->context.manager) != 0) {
+        free(socket->context.manager);
+        goto err_sock;
+      }
+      if(time_manager_start(socket->context.manager) != 0) {
+        time_manager_stop(socket->context.manager);
+        free(socket->context.manager);
+        goto err_sock;
+      }
+      socket->context.alloc_manager = 1;
+    }
   }
-  if(socket->context.allocated_manager) {
+  char hostname[256];
+  (void) memcpy(hostname, uri->hostname, uri->hostname_len);
+  hostname[uri->hostname_len] = 0;
+  char port[6];
+  if(uri->port_ptr != NULL) {
+    (void) memcpy(port, uri->port_ptr, uri->port_len);
+    port[uri->port_len] = 0;
+  } else {
+    (void) memcpy(port, "80", 3);
+  }
+  struct tcp_socket_options options = {
+    hostname,
+    port,
+    opt->family,
+    opt->flags
+  };
+  if(tcp_socket(&socket->tcp, &options) != 0) {
+    goto err_time;
+  }
+  
+  return 0;
+  
+  err_time:
+  if(socket->context.alloc_manager) {
     time_manager_stop(socket->context.manager);
     time_manager_free(socket->context.manager);
     free(socket->context.manager);
   }
-  http_free_requests(socket->context.requests, socket->context.requests_size);
+  err_sock:
+  free(socket);
+  return -1;
 }
 
-#define addr ((struct http_extended_async_address*) ad)
+#define socket ((struct http_socket*) soc)
 
-static void http_async_setup_socket(struct net_async_address* ad, struct addrinfo* info) {
-  if(info == NULL) {
-    addr->socket->callbacks->onclose(addr->socket, http_unreachable);
-    http_free_socket(addr->socket);
-    return;
-  }
-  addr->socket->tcp.info = info;
-  while(1) {
-    if(tcp_create_socket(&addr->socket->tcp) != 0) {
-      if(errno == ENOMEM && addr->socket->callbacks->onnomem(addr->socket) == 0) {
-        continue;
-      }
-      addr->socket->callbacks->onclose(addr->socket, http_async_socket_creation_failed);
-      http_free_socket(addr->socket);
-    }
-    break;
-  }
-  free(ad);
-}
-
-#undef addr
-
-#define socket ((struct http_socket*) data)
-
-static void http_stop_socket(void* data) {
+static void http_stop_socket(void* soc) {
   socket->callbacks->onclose(socket, http_timeouted);
   socket->context.expected = 1;
   tcp_socket_force_close(&socket->tcp);
 }
-
-#undef socket
-
-static int http_setup_socket(struct http_uri* const uri, struct http_options* const opt, struct http_requests* requests) {
-  struct http_socket* const socket = calloc(1, sizeof(struct http_socket));
-  if(socket == NULL) {
-    goto err_req;
-  }
-  http_init();
-  if(opt->tcp_settings == NULL) {
-    socket->tcp.settings = &http_client_settings;
-  } else {
-    socket->tcp.settings = opt->tcp_settings;
-  }
-  socket->tcp.callbacks = &http_client_callbacks;
-  socket->callbacks = opt->http_callbacks;
-  if(opt->timeout_after == 0) {
-    socket->context.timeout_after = 10;
-  } else {
-    socket->context.timeout_after = opt->timeout_after;
-  }
-  socket->context.requests = requests;
-  socket->context.requests_size = opt->requests_len;
-  if(opt->read_buffer_growth == 0) {
-    socket->context.read_buffer_growth = 65536;
-  } else {
-    socket->context.read_buffer_growth = opt->read_buffer_growth;
-  }
-  if(opt->timeout_after != UINT64_MAX) {
-    if(opt->manager != NULL) {
-      socket->context.manager = opt->manager;
-    } else {
-      socket->context.manager = calloc(1, sizeof(struct time_manager));
-      if(socket->context.manager == NULL) {
-        goto err_sock;
-      }
-      if(time_manager(socket->context.manager) != 0) {
-        free(socket->context.manager);
-        goto err_sock;
-      }
-      if(time_manager_start(socket->context.manager) != 0) {
-        time_manager_stop(socket->context.manager);
-        free(socket->context.manager);
-        goto err_sock;
-      }
-      socket->context.allocated_manager = 1;
-    }
-  }
-  if(opt->epoll != NULL) {
-    socket->tcp.epoll = opt->epoll;
-  } else {
-    socket->tcp.epoll = calloc(1, sizeof(struct net_epoll));
-    if(socket->tcp.epoll == NULL) {
-      goto err_time;
-    }
-    if(tcp_epoll(socket->tcp.epoll) != 0) {
-      free(socket->tcp.epoll);
-      goto err_time;
-    }
-    if(net_epoll_start(socket->tcp.epoll) != 0) {
-      net_epoll_free(socket->tcp.epoll);
-      free(socket->tcp.epoll);
-      goto err_time;
-    }
-    socket->context.allocated_epoll = 1;
-  }
-  if(opt->info != NULL) {
-    socket->tcp.info = opt->info;
-    if(tcp_create_socket(&socket->tcp) != 0) {
-      goto err_epoll;
-    }
-  } else {
-    struct http_extended_async_address* addr = malloc(sizeof(struct http_extended_async_address) + sizeof(struct addrinfo) + uri->hostname_len + 7);
-    if(addr == NULL) {
-      goto err_epoll;
-    }
-    struct addrinfo* const hints = (struct addrinfo*)(addr + 1);
-    (void) memset(hints, 0, sizeof(struct addrinfo));
-    char* const hostname = (char*)(addr + 1) + sizeof(struct addrinfo);
-    (void) memcpy(hostname, uri->hostname, uri->hostname_len);
-    hostname[uri->hostname_len] = 0;
-    addr->hostname = hostname;
-    if(uri->port != 0) {
-      char* const port = hostname + uri->hostname_len + 1;
-      if(sprintf(port, "%hu", uri->port) < 0) {
-        free(addr);
-        goto err_epoll;
-      }
-      addr->service = port;
-    } else {
-      addr->service = "80";
-    }
-    *hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags);
-    addr->socket = socket;
-    addr->callback = http_async_setup_socket;
-    addr->hints = hints;
-    if(net_get_address_async((struct net_async_address*) addr) != 0) {
-      free(addr);
-      goto err_epoll;
-    }
-  }
-  
-  return 0;
-  
-  err_epoll:
-  if(socket->context.allocated_epoll) {
-    net_epoll_stop(socket->tcp.epoll);
-    net_epoll_free(socket->tcp.epoll);
-    free(socket->tcp.epoll);
-  }
-  err_time:
-  if(socket->context.allocated_manager) {
-    time_manager_stop(socket->context.manager);
-    time_manager_free(socket->context.manager);
-    free(socket->context.manager);
-  }
-  err_sock:
-  free(socket);
-  err_req:
-  http_free_requests(requests, opt->requests_len);
-  return -1;
-}
-
-static void https_free_socket(struct https_socket* const socket) {
-  if(socket->context.allocated_ctx) {
-    SSL_CTX_free(socket->tls.ctx);
-  }
-  if(socket->context.allocated_epoll) {
-    net_epoll_stop(socket->tls.tcp.epoll);
-    net_epoll_free(socket->tls.tcp.epoll);
-    free(socket->tls.tcp.epoll);
-  }
-  if(socket->context.allocated_manager) {
-    time_manager_stop(socket->context.manager);
-    time_manager_free(socket->context.manager);
-    free(socket->context.manager);
-  }
-  http_free_requests(socket->context.requests, socket->context.requests_size);
-}
-
-#define addr ((struct https_extended_async_address*) ad)
-
-static void https_async_setup_socket(struct net_async_address* ad, struct addrinfo* info) {
-  if(info == NULL) {
-    addr->socket->callbacks->onclose(addr->socket, http_unreachable);
-    https_free_socket(addr->socket);
-    return;
-  }
-  addr->socket->tls.tcp.info = info;
-  while(1) {
-    if(tls_create_socket(&addr->socket->tls) != 0) {
-      if(errno == ENOMEM && addr->socket->callbacks->onnomem(addr->socket) == 0) {
-        continue;
-      }
-      addr->socket->callbacks->onclose(addr->socket, http_async_socket_creation_failed);
-      https_free_socket(addr->socket);
-    }
-    break;
-  }
-  free(ad);
-}
-
-#undef addr
-
-#define socket ((struct https_socket*) data)
-
-static void https_stop_socket(void* data) {
-  socket->callbacks->onclose(socket, http_timeouted);
-  socket->context.expected = 1;
-  tcp_socket_force_close(&socket->tls.tcp);
-}
-
-#undef socket
-
-static int https_setup_socket(struct http_uri* const uri, struct http_options* const opt, struct http_requests* requests) {
-  struct https_socket* const socket = calloc(1, sizeof(struct https_socket));
-  if(socket == NULL) {
-    goto err_req;
-  }
-  http_init();
-  if(opt->tcp_settings == NULL) {
-    socket->tls.tcp.settings = &http_client_settings;
-  } else {
-    socket->tls.tcp.settings = opt->tcp_settings;
-  }
-  if(opt->tls_settings == NULL) {
-    socket->tls.settings = &https_client_settings;
-  } else {
-    socket->tls.settings = opt->tls_settings;
-  }
-  socket->tls.callbacks = &https_client_callbacks;
-  socket->callbacks = opt->https_callbacks;
-  if(opt->timeout_after == 0) {
-    socket->context.timeout_after = 10;
-  } else {
-    socket->context.timeout_after = opt->timeout_after;
-  }
-  socket->context.requests = requests;
-  socket->context.requests_size = opt->requests_len;
-  if(opt->timeout_after != UINT64_MAX) {
-    if(opt->manager != NULL) {
-      socket->context.manager = opt->manager;
-    } else {
-      socket->context.manager = calloc(1, sizeof(struct time_manager));
-      if(socket->context.manager == NULL) {
-        goto err_sock;
-      }
-      if(time_manager(socket->context.manager) != 0) {
-        free(socket->context.manager);
-        goto err_sock;
-      }
-      if(time_manager_start(socket->context.manager) != 0) {
-        time_manager_stop(socket->context.manager);
-        free(socket->context.manager);
-        goto err_sock;
-      }
-      socket->context.allocated_manager = 1;
-    }
-  }
-  if(opt->epoll != NULL) {
-    socket->tls.tcp.epoll = opt->epoll;
-  } else {
-    socket->tls.tcp.epoll = calloc(1, sizeof(struct net_epoll));
-    if(socket->tls.tcp.epoll == NULL) {
-      goto err_time;
-    }
-    if(tls_epoll(socket->tls.tcp.epoll) != 0) {
-      free(socket->tls.tcp.epoll);
-      goto err_time;
-    }
-    if(net_epoll_start(socket->tls.tcp.epoll) != 0) {
-      net_epoll_free(socket->tls.tcp.epoll);
-      free(socket->tls.tcp.epoll);
-      goto err_time;
-    }
-    socket->context.allocated_epoll = 1;
-  }
-  if(opt->ctx != NULL) {
-    socket->tls.ctx = opt->ctx;
-  } else {
-    socket->tls.ctx = SSL_CTX_new(TLS_client_method());
-    if(socket->tls.ctx == NULL) {
-      goto err_epoll;
-    }
-    socket->context.allocated_ctx = 1;
-    if(SSL_CTX_set_min_proto_version(socket->tls.ctx, TLS1_2_VERSION) == 0) {
-      goto err_ctx;
-    }
-  }
-  if(opt->info != NULL) {
-    uint32_t allocated_canonname = 0;
-    socket->tls.tcp.info = opt->info;
-    if(opt->info->ai_canonname == NULL) {
-      opt->info->ai_canonname = malloc(uri->hostname_len + 1);
-      if(opt->info->ai_canonname == NULL) {
-        goto err_ctx;
-      }
-      allocated_canonname = 1;
-      (void) memcpy(opt->info->ai_canonname, uri->hostname, uri->hostname_len);
-      opt->info->ai_canonname[uri->hostname_len] = 0;
-    }
-    if(tls_create_socket(&socket->tls) != 0) {
-      if(allocated_canonname) {
-        free(opt->info->ai_canonname);
-      }
-      goto err_ctx;
-    }
-  } else {
-    struct https_extended_async_address* addr = malloc(sizeof(struct https_extended_async_address) + sizeof(struct addrinfo) + uri->hostname_len + 7);
-    if(addr == NULL) {
-      goto err_ctx;
-    }
-    struct addrinfo* const hints = (struct addrinfo*)(addr + 1);
-    (void) memset(hints, 0, sizeof(struct addrinfo));
-    char* const hostname = (char*)(addr + 1) + sizeof(struct addrinfo);
-    (void) memcpy(hostname, uri->hostname, uri->hostname_len);
-    hostname[uri->hostname_len] = 0;
-    addr->hostname = hostname;
-    if(uri->port != 0) {
-      char* const port = hostname + uri->hostname_len + 1;
-      if(sprintf(port, "%hu", uri->port) < 0) {
-        free(addr);
-        goto err_ctx;
-      }
-      addr->service = port;
-    } else {
-      addr->service = "443";
-    }
-    *hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | AI_CANONNAME);
-    addr->socket = socket;
-    addr->callback = https_async_setup_socket;
-    addr->hints = hints;
-    if(net_get_address_async((struct net_async_address*) addr) != 0) {
-      free(addr);
-      goto err_ctx;
-    }
-  }
-  return 0;
-  
-  err_ctx:
-  if(socket->context.allocated_ctx) {
-    SSL_CTX_free(socket->tls.ctx);
-  }
-  err_epoll:
-  if(socket->context.allocated_epoll) {
-    net_epoll_stop(socket->tls.tcp.epoll);
-    net_epoll_free(socket->tls.tcp.epoll);
-    free(socket->tls.tcp.epoll);
-  }
-  err_time:
-  if(socket->context.allocated_manager) {
-    time_manager_stop(socket->context.manager);
-    time_manager_free(socket->context.manager);
-    free(socket->context.manager);
-  }
-  err_sock:
-  free(socket);
-  err_req:
-  http_free_requests(requests, opt->requests_len);
-  return -1;
-}
-
-
-
-#define socket ((struct http_socket*) soc)
 
 static void http_client_onopen(struct tcp_socket* soc) {
   (void) tcp_socket_keepalive(&socket->tcp);
@@ -811,17 +510,21 @@ static void http_client_onopen(struct tcp_socket* soc) {
       break;
     }
   }
-  (void) tcp_send(&socket->tcp, socket->context.requests[socket->context.requests_used].msg, socket->context.requests[socket->context.requests_used].len);
+  (void) tcp_send(&socket->tcp, socket->context.requests[socket->context.requests_used].msg, socket->context.requests[socket->context.requests_used].len, tcp_read_only | tcp_dont_free);
 }
 
 static void http_client_onmessage(struct tcp_socket* soc) {
+  if(socket->context.expected) {
+    return;
+  }
+  void* const old_ptr = socket->context.read_buffer;
   while(1) {
-    if(socket->context.read_used + socket->context.read_buffer_growth > socket->context.read_size) {
+    if(socket->context.read_used + socket->context.read_growth > socket->context.read_size) {
       while(1) {
-        char* const ptr = realloc(socket->context.read_buffer, socket->context.read_used + socket->context.read_buffer_growth);
+        char* const ptr = realloc(socket->context.read_buffer, socket->context.read_used + socket->context.read_growth);
         if(ptr != NULL) {
           socket->context.read_buffer = ptr;
-          socket->context.read_size = socket->context.read_used + socket->context.read_buffer_growth;
+          socket->context.read_size = socket->context.read_used + socket->context.read_growth;
           break;
         }
         if(socket->callbacks->onnomem(socket) == 0) {
@@ -841,13 +544,17 @@ static void http_client_onmessage(struct tcp_socket* soc) {
       break;
     }
   }
-  struct http_header headers[255];
-  struct http_message response = {0};
-  response.headers = headers;
-  response.headers_len = 255;
+  if(socket->context.read_used == 0) {
+    return;
+  }
+  socket->context.response.headers = socket->context.headers;
+  socket->context.response.headers_len = 255;
+  if(socket->context.read_buffer != old_ptr) {
+    http1_convert_message(old_ptr, socket->context.read_buffer, &socket->context.response);
+  }
   int state;
   while(1) {
-    state = http1_parse_response(socket->context.read_buffer, socket->context.read_used, &socket->context.read_used, &socket->context.session, socket->context.requests[socket->context.requests_used].response_settings, &response);
+    state = http1_parse_response(socket->context.read_buffer, socket->context.read_used, &socket->context.session, socket->context.requests[socket->context.requests_used].response_settings, &socket->context.response);
     if(state == http_out_of_memory) {
       if(socket->callbacks->onnomem(socket) == 0) {
         continue;
@@ -855,7 +562,7 @@ static void http_client_onmessage(struct tcp_socket* soc) {
       (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
       socket->callbacks->onclose(socket, http_no_memory);
       socket->context.expected = 1;
-      goto err_buf;
+      goto err;
     }
     break;
   }
@@ -863,46 +570,37 @@ static void http_client_onmessage(struct tcp_socket* soc) {
     (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
     socket->context.session = (struct http_parser_session){0};
     if(state == http_valid) {
-      socket->callbacks->onresponse(socket, &response);
+      socket->callbacks->onresponse(socket, &socket->context.response);
     } else {
-      errno = EINVAL;
       socket->callbacks->onclose(socket, http_invalid_response);
       socket->context.expected = 1;
-      goto err_res;
+      goto err;
     }
     if(++socket->context.requests_used == socket->context.requests_size) {
-      goto err_res;
+      socket->context.expected = 1;
+      goto err;
     } else {
-      const struct http_header* const connection = http1_seek_header(&response, "connection", 10);
+      const struct http_header* const connection = http1_seek_header(&socket->context.response, "connection", 10);
       const int conn_is_close = connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0;
-      if(response.allocated_body) {
-        free(response.body);
+      if(socket->context.response.alloc_body) {
+        free(socket->context.response.body);
       }
       free(socket->context.read_buffer);
       socket->context.read_buffer = NULL;
+      socket->context.read_used = 0;
+      socket->context.read_size = 0;
+      socket->context.response = (struct http_message){0};
       if(conn_is_close) {
         socket->callbacks->onclose(socket, http_no_keepalive);
         socket->context.expected = 1;
         goto err;
       } else {
-        socket->context.read_used = 0;
-        socket->context.read_size = 0;
         http_client_onopen(&socket->tcp);
       }
     }
-    return;
-    
-    err_res:
-    if(response.allocated_body) {
-      free(response.body);
-    }
-    goto err_buf;
   }
   return;
   
-  err_buf:
-  free(socket->context.read_buffer);
-  socket->context.read_buffer = NULL;
   err:
   tcp_socket_force_close(&socket->tcp);
 }
@@ -922,14 +620,99 @@ static void http_client_onclose(struct tcp_socket* soc) {
 }
 
 static void http_client_onfree(struct tcp_socket* soc) {
-  http_free_socket(socket);
+  if(socket->context.read_buffer != NULL) {
+    free(socket->context.read_buffer);
+  }
+  if(socket->context.response.alloc_body) {
+    free(socket->context.response.body);
+  }
+  if(socket->context.alloc_manager) {
+    time_manager_stop(socket->context.manager);
+    time_manager_free(socket->context.manager);
+    free(socket->context.manager);
+  }
+  http_free_requests(socket->context.requests, socket->context.requests_size);
 }
 
 #undef socket
 
-
+static int https_socket(struct http_uri* const uri, struct http_options* const opt, struct http_requests* requests) {
+  struct https_socket* const socket = calloc(1, sizeof(struct https_socket));
+  if(socket == NULL) {
+    return -1;
+  }
+  socket->tls.tcp.settings = https_client_settings;
+  socket->tls.tcp.info = opt->info;
+  socket->tls.tcp.epoll = opt->epoll;
+  socket->tls.callbacks = &https_client_callbacks;
+  socket->tls.ctx = opt->ctx;
+  socket->tls.read_growth = opt->read_growth ? opt->read_growth : 16384;
+  socket->context.timeout_after = opt->timeout_after ? opt->timeout_after : 10;
+  socket->context.requests = requests;
+  socket->context.requests_size = opt->requests_len;
+  socket->callbacks = opt->https_callbacks;
+  if(opt->timeout_after != UINT64_MAX) {
+    if(opt->manager != NULL) {
+      socket->context.manager = opt->manager;
+    } else {
+      socket->context.manager = calloc(1, sizeof(struct time_manager));
+      if(socket->context.manager == NULL) {
+        goto err_sock;
+      }
+      if(time_manager(socket->context.manager) != 0) {
+        free(socket->context.manager);
+        goto err_sock;
+      }
+      if(time_manager_start(socket->context.manager) != 0) {
+        time_manager_stop(socket->context.manager);
+        free(socket->context.manager);
+        goto err_sock;
+      }
+      socket->context.alloc_manager = 1;
+    }
+  }
+  char hostname[256];
+  (void) memcpy(hostname, uri->hostname, uri->hostname_len);
+  hostname[uri->hostname_len] = 0;
+  char port[6];
+  if(uri->port_ptr != NULL) {
+    (void) memcpy(port, uri->port_ptr, uri->port_len);
+    port[uri->port_len] = 0;
+  } else {
+    (void) memcpy(port, "443", 4);
+  }
+  struct tls_socket_options options = {
+    .tcp = {
+      hostname,
+      port,
+      opt->family,
+      opt->flags
+    }
+  };
+  if(tls_socket(&socket->tls, &options) != 0) {
+    goto err_time;
+  }
+  
+  return 0;
+  
+  err_time:
+  if(socket->context.alloc_manager) {
+    time_manager_stop(socket->context.manager);
+    time_manager_free(socket->context.manager);
+    free(socket->context.manager);
+  }
+  err_sock:
+  free(socket);
+  return -1;
+}
 
 #define socket ((struct https_socket*) soc)
+
+static void https_stop_socket(void* soc) {
+  socket->callbacks->onclose(socket, http_timeouted);
+  socket->context.expected = 1;
+  tcp_socket_force_close(&socket->tls.tcp);
+}
 
 static void https_client_onopen(struct tls_socket* soc) {
   (void) tcp_socket_keepalive(&socket->tls.tcp);
@@ -948,20 +731,24 @@ static void https_client_onopen(struct tls_socket* soc) {
       break;
     }
   }
-  (void) tls_send(&socket->tls, socket->context.requests[socket->context.requests_used].msg, socket->context.requests[socket->context.requests_used].len);
+  (void) tls_send(&socket->tls, socket->context.requests[socket->context.requests_used].msg, socket->context.requests[socket->context.requests_used].len, tls_read_only | tls_dont_free);
 }
 
 static void https_client_onmessage(struct tls_socket* soc) {
-  /* Optimised version of http_client_onmessage here. We don't need to allocate
-  a single piece of memory. The fact that we are in epoll right now also adds up
-  to gained speed, since absolutely no race conditions and lock contention. */
-  struct http_header headers[255];
-  struct http_message response = {0};
-  response.headers = headers;
-  response.headers_len = 255;
+  if(socket->context.expected) {
+    return;
+  }
+  socket->context.response.headers = socket->context.headers;
+  socket->context.response.headers_len = 255;
+  if(socket->context.read_buffer == NULL) {
+    socket->context.read_buffer = socket->tls.read_buffer;
+  } else if(socket->context.read_buffer != socket->tls.read_buffer) {
+    http1_convert_message(socket->context.read_buffer, socket->tls.read_buffer, &socket->context.response);
+    socket->context.read_buffer = socket->tls.read_buffer;
+  }
   int state;
   while(1) {
-    state = http1_parse_response(socket->tls.read_buffer, socket->tls.read_used, &socket->tls.read_used, &socket->context.session, socket->context.requests[socket->context.requests_used].response_settings, &response);
+    state = http1_parse_response(socket->tls.read_buffer, socket->tls.read_used, &socket->context.session, socket->context.requests[socket->context.requests_used].response_settings, &socket->context.response);
     if(state == http_out_of_memory) {
       if(socket->callbacks->onnomem(socket) == 0) {
         continue;
@@ -969,7 +756,7 @@ static void https_client_onmessage(struct tls_socket* soc) {
       (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
       socket->callbacks->onclose(socket, http_no_memory);
       socket->context.expected = 1;
-      goto err_buf;
+      goto err;
     }
     break;
   }
@@ -977,25 +764,26 @@ static void https_client_onmessage(struct tls_socket* soc) {
     (void) time_manager_cancel_timeout(socket->context.manager, &socket->context.timeout);
     socket->context.session = (struct http_parser_session){0};
     if(state == http_valid) {
-      socket->callbacks->onresponse(socket, &response);
+      socket->callbacks->onresponse(socket, &socket->context.response);
     } else {
-      errno = EINVAL;
       socket->callbacks->onclose(socket, http_invalid_response);
       socket->context.expected = 1;
-      goto err_res;
+      goto err;
     }
     if(++socket->context.requests_used == socket->context.requests_size) {
-      goto err_res;
+      socket->context.expected = 1;
+      goto err;
     } else {
-      const struct http_header* const connection = http1_seek_header(&response, "connection", 10);
+      const struct http_header* const connection = http1_seek_header(&socket->context.response, "connection", 10);
       const int conn_is_close = connection != NULL && connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0;
-      if(response.allocated_body) {
-        free(response.body);
+      if(socket->context.response.alloc_body) {
+        free(socket->context.response.body);
       }
       free(socket->tls.read_buffer);
       socket->tls.read_buffer = NULL;
       socket->tls.read_used = 0;
       socket->tls.read_size = 0;
+      socket->context.response = (struct http_message){0};
       if(conn_is_close) {
         socket->callbacks->onclose(socket, http_no_keepalive);
         socket->context.expected = 1;
@@ -1004,21 +792,9 @@ static void https_client_onmessage(struct tls_socket* soc) {
         https_client_onopen(&socket->tls);
       }
     }
-    return;
-    
-    err_res:
-    if(response.allocated_body) {
-      free(response.body);
-    }
-    goto err_buf;
   }
   return;
   
-  err_buf:
-  free(socket->tls.read_buffer);
-  socket->tls.read_buffer = NULL;
-  socket->tls.read_used = 0;
-  socket->tls.read_size = 0;
   err:
   tcp_socket_force_close(&socket->tls.tcp);
 }
@@ -1038,7 +814,15 @@ static void https_client_onclose(struct tls_socket* soc) {
 }
 
 static void https_client_onfree(struct tls_socket* soc) {
-  https_free_socket(socket);
+  if(socket->context.alloc_manager) {
+    time_manager_stop(socket->context.manager);
+    time_manager_free(socket->context.manager);
+    free(socket->context.manager);
+  }
+  if(socket->context.response.alloc_body) {
+    free(socket->context.response.body);
+  }
+  http_free_requests(socket->context.requests, socket->context.requests_size);
 }
 
 #undef socket
@@ -1054,15 +838,19 @@ int http(char* const str, struct http_options* options) {
     return -1;
   }
   if(uri.secure) {
-    if(https_setup_socket(&uri, options, requests) != 0) {
-      return -1;
+    if(https_socket(&uri, options, requests) != 0) {
+      goto err;
     }
   } else {
-    if(http_setup_socket(&uri, options, requests) != 0) {
-      return -1;
+    if(http_socket(&uri, options, requests) != 0) {
+      goto err;
     }
   }
   return 0;
+  
+  err:
+  http_free_requests(requests, options->requests_len);
+  return -1;
 }
 
 
@@ -1072,39 +860,13 @@ static int http_setup_server(struct http_uri* const uri, struct http_server_opti
   if(server == NULL) {
     return -1;
   }
-  http_init();
-  if(opt->tcp_socket_settings == NULL) {
-    server->context.tcp_settings = &http_serversock_settings;
-  } else {
-    server->context.tcp_settings = opt->tcp_socket_settings;
-  }
-  server->callbacks = opt->http_callbacks;
-  if(opt->timeout_after == 0) {
-    server->context.timeout_after = 10;
-  } else {
-    server->context.timeout_after = opt->timeout_after;
-  }
-  if(opt->tcp_server_settings == NULL) {
-    server->tcp.settings = &http_server_settings;
-  } else {
-    server->tcp.settings = opt->tcp_server_settings;
-  }
+  server->tcp.settings = opt->tcp_settings;
   server->tcp.callbacks = &http_server_callbacks;
-  if(opt->socket_size == 0) {
-    server->tcp.socket_size = sizeof(struct http_serversock);
-  } else {
-    server->tcp.socket_size = opt->socket_size;
-  }
-  if(opt->settings == NULL) {
-    server->context.settings = &http_request_parser_settings;
-  } else {
-    server->context.settings = opt->settings;
-  }
-  if(opt->read_buffer_growth == 0) {
-    server->context.read_buffer_growth = 65536;
-  } else {
-    server->context.read_buffer_growth = opt->read_buffer_growth;
-  }
+  server->tcp.socket_size = opt->socket_size ? opt->socket_size : sizeof(struct http_serversock);
+  server->context.default_settings = opt->default_settings ? opt->default_settings : &http_request_parser_settings;
+  server->context.read_growth = opt->read_growth ? opt->read_growth : 16384;
+  server->context.timeout_after = opt->timeout_after ? opt->timeout_after : 10;
+  server->callbacks = opt->http_callbacks;
   if(opt->table != NULL) {
     server->context.table = opt->table;
   } else {
@@ -1118,7 +880,7 @@ static int http_setup_server(struct http_uri* const uri, struct http_server_opti
     for(uint32_t i = 0; i < opt->resources_len; ++i) {
       http_hash_table_insert(server->context.table, opt->resources[i].path, opt->resources[i].settings, (http_hash_table_func_t) opt->resources[i].http_callback);
     }
-    server->context.allocated_table = 1;
+    server->context.alloc_table = 1;
   }
   if(opt->timeout_after != UINT64_MAX) {
     if(opt->manager != NULL) {
@@ -1137,80 +899,40 @@ static int http_setup_server(struct http_uri* const uri, struct http_server_opti
         free(server->context.manager);
         goto err_table;
       }
-      server->context.allocated_manager = 1;
+      server->context.alloc_manager = 1;
     }
   }
-  if(opt->epoll != NULL) {
-    server->tcp.epoll = opt->epoll;
+  char hostname[256];
+  (void) memcpy(hostname, uri->hostname, uri->hostname_len);
+  hostname[uri->hostname_len] = 0;
+  char port[6];
+  if(uri->port_ptr != NULL) {
+    (void) memcpy(port, uri->port_ptr, uri->port_len);
+    port[uri->port_len] = 0;
   } else {
-    server->tcp.epoll = calloc(1, sizeof(struct net_epoll));
-    if(server->tcp.epoll == NULL) {
-      goto err_time;
-    }
-    if(tcp_epoll(server->tcp.epoll) != 0) {
-      free(server->tcp.epoll);
-      goto err_time;
-    }
-    if(net_epoll_start(server->tcp.epoll) != 0) {
-      net_epoll_free(server->tcp.epoll);
-      free(server->tcp.epoll);
-      goto err_time;
-    }
-    server->context.allocated_epoll = 1;
+    (void) memcpy(port, "80", 3);
   }
-  if(opt->info == NULL) {
-    struct addrinfo hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
-    char port[6];
-    if(uri->port != 0) {
-      if(sprintf(port, "%hu", uri->port) < 0) {
-        goto err_epoll;
-      }
-    } else {
-      port[0] = '8';
-      port[1] = '0';
-      port[2] = 0;
-    }
-    char* hostname = malloc(uri->hostname_len + 1);
-    if(hostname == NULL) {
-      goto err_epoll;
-    }
-    (void) memcpy(hostname, uri->hostname, uri->hostname_len);
-    hostname[uri->hostname_len] = 0;
-    struct addrinfo* const info = net_get_address(hostname, port, &hints);
-    free(hostname);
-    if(info == NULL) {
-      goto err_epoll;
-    }
-    opt->info = info;
-    server->context.allocated_info = 1;
-  }
-  if(tcp_create_server(&server->tcp, opt->info) != 0) {
-    goto err_info;
-  }
-  if(server->context.allocated_info) {
-    net_get_address_free(opt->info);
+  struct tcp_server_options options = {
+    opt->info,
+    hostname,
+    port,
+    opt->family,
+    opt->flags
+  };
+  if(tcp_server(&server->tcp, &options) != 0) {
+    goto err_time;
   }
   opt->http_server = server;
   return 0;
   
-  err_info:
-  if(server->context.allocated_info) {
-    net_get_address_free(opt->info);
-  }
-  err_epoll:
-  if(server->context.allocated_epoll) {
-    net_epoll_stop(server->tcp.epoll);
-    net_epoll_free(server->tcp.epoll);
-    free(server->tcp.epoll);
-  }
   err_time:
-  if(server->context.allocated_manager) {
+  if(server->context.alloc_manager) {
     time_manager_stop(server->context.manager);
     time_manager_free(server->context.manager);
     free(server->context.manager);
   }
   err_table:
-  if(server->context.allocated_table) {
+  if(server->context.alloc_table) {
     http_hash_table_free(server->context.table);
     free(server->context.table);
   }
@@ -1219,8 +941,8 @@ static int http_setup_server(struct http_uri* const uri, struct http_server_opti
   return -1;
 }
 
-void http_server_foreach_conn(struct http_server* const server, void (*callback)(struct http_serversock*, void*), void* data, const int write) {
-  tcp_server_foreach_conn(&server->tcp, (void (*)(struct tcp_socket*,void*)) callback, data, write);
+void http_server_foreach_conn(struct http_server* const server, void (*callback)(struct http_serversock*, void*), void* data) {
+  tcp_server_foreach_conn(&server->tcp, (void (*)(struct tcp_socket*,void*)) callback, data);
 }
 
 void http_server_dont_accept_conn(struct http_server* const server) {
@@ -1243,221 +965,10 @@ uint32_t http_server_get_conn_amount(struct http_server* const server) {
   return tcp_server_get_conn_amount(&server->tcp);
 }
 
+#define http_server ((struct http_server*) socket->server)
+#define https_server ((struct https_server*) socket->server)
 
-
-static int https_setup_server(struct http_uri* const uri, struct http_server_options* const opt) {
-  struct https_server* const server = calloc(1, sizeof(struct https_server));
-  if(server == NULL) {
-    return -1;
-  }
-  http_init();
-  if(opt->tcp_socket_settings == NULL) {
-    server->context.tcp_settings = &http_serversock_settings;
-  } else {
-    server->context.tcp_settings = opt->tcp_socket_settings;
-  }
-  if(opt->tls_socket_settings != NULL) {
-    server->context.tls_settings = opt->tls_socket_settings;
-  } /* else default */
-  server->callbacks = opt->https_callbacks;
-  if(opt->timeout_after == 0) {
-    server->context.timeout_after = 10;
-  } else {
-    server->context.timeout_after = opt->timeout_after;
-  }
-  if(opt->tcp_server_settings == NULL) {
-    server->tls.tcp.settings = &https_server_settings;
-  } else {
-    server->tls.tcp.settings = opt->tcp_server_settings;
-  }
-  server->tls.callbacks = &https_server_callbacks;
-  if(opt->socket_size == 0) {
-    server->tls.tcp.socket_size = sizeof(struct https_serversock);
-  } else {
-    server->tls.tcp.socket_size = opt->socket_size;
-  }
-  if(opt->settings == NULL) {
-    server->context.settings = &http_request_parser_settings;
-  } else {
-    server->context.settings = opt->settings;
-  }
-  if(opt->read_buffer_growth == 0) {
-    server->context.read_buffer_growth = 65536;
-  } else {
-    server->context.read_buffer_growth = opt->read_buffer_growth;
-  }
-  if(opt->table != NULL) {
-    server->context.table = opt->table;
-  } else {
-    server->context.table = calloc(1, sizeof(struct http_hash_table));
-    if(server->context.table == NULL) {
-      goto err_serv;
-    }
-    if(http_hash_table_init(server->context.table, opt->resources_len << 1) != 0) {
-      free(server->context.table);
-      goto err_serv;
-    }
-    for(uint32_t i = 0; i < opt->resources_len; ++i) {
-      http_hash_table_insert(server->context.table, opt->resources[i].path, opt->resources[i].settings, (http_hash_table_func_t) opt->resources[i].https_callback);
-    }
-    server->context.allocated_table = 1;
-  }
-  if(opt->timeout_after != UINT64_MAX) {
-    if(opt->manager != NULL) {
-      server->context.manager = opt->manager;
-    } else {
-      server->context.manager = calloc(1, sizeof(struct time_manager));
-      if(server->context.manager == NULL) {
-        goto err_table;
-      }
-      if(time_manager(server->context.manager) != 0) {
-        free(server->context.manager);
-        goto err_table;
-      }
-      if(time_manager_start(server->context.manager) != 0) {
-        time_manager_stop(server->context.manager);
-        free(server->context.manager);
-        goto err_table;
-      }
-      server->context.allocated_manager = 1;
-    }
-  }
-  if(opt->epoll != NULL) {
-    server->tls.tcp.epoll = opt->epoll;
-  } else {
-    server->tls.tcp.epoll = calloc(1, sizeof(struct net_epoll));
-    if(server->tls.tcp.epoll == NULL) {
-      goto err_time;
-    }
-    if(tcp_epoll(server->tls.tcp.epoll) != 0) {
-      free(server->tls.tcp.epoll);
-      goto err_time;
-    }
-    if(net_epoll_start(server->tls.tcp.epoll) != 0) {
-      net_epoll_free(server->tls.tcp.epoll);
-      free(server->tls.tcp.epoll);
-      goto err_time;
-    }
-    server->context.allocated_epoll = 1;
-  }
-  if(opt->ctx != NULL) {
-    server->tls.ctx = opt->ctx;
-  } else {
-    server->tls.ctx = SSL_CTX_new(TLS_server_method());
-    if(server->tls.ctx == NULL) {
-      goto err_epoll;
-    }
-    server->context.allocated_ctx = 1;
-    if(SSL_CTX_use_certificate_chain_file(server->tls.ctx, opt->cert_path) != 1) {
-      goto err_ctx;
-    }
-    if(opt->key == NULL) {
-      if(SSL_CTX_use_PrivateKey_file(server->tls.ctx, opt->key_path, opt->key_type) != 1) {
-        goto err_ctx;
-      }
-    } else if(SSL_CTX_use_PrivateKey(server->tls.ctx, opt->key) != 1) {
-      goto err_ctx;
-    }
-    if(SSL_CTX_set_min_proto_version(server->tls.ctx, TLS1_2_VERSION) == 0) {
-      goto err_ctx;
-    }
-  }
-  if(opt->info == NULL) {
-    struct addrinfo const hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
-    char port[6];
-    if(uri->port != 0) {
-      if(sprintf(port, "%hu", uri->port) < 0) {
-        goto err_ctx;
-      }
-    } else {
-      port[0] = '4';
-      port[1] = '4';
-      port[2] = '3';
-      port[3] = 0;
-    }
-    char* hostname = malloc(uri->hostname_len + 1);
-    if(hostname == NULL) {
-      goto err_epoll;
-    }
-    (void) memcpy(hostname, uri->hostname, uri->hostname_len);
-    hostname[uri->hostname_len] = 0;
-    struct addrinfo* const info = net_get_address(hostname, port, &hints);
-    free(hostname);
-    if(info == NULL) {
-      goto err_ctx;
-    }
-    opt->info = info;
-    server->context.allocated_info = 1;
-  }
-  if(tls_create_server(&server->tls, opt->info) != 0) {
-    goto err_info;
-  }
-  if(server->context.allocated_info) {
-    net_get_address_free(opt->info);
-  }
-  opt->https_server = server;
-  return 0;
-  
-  err_info:
-  if(server->context.allocated_info) {
-    net_get_address_free(opt->info);
-  }
-  err_ctx:
-  if(server->context.allocated_ctx) {
-    SSL_CTX_free(server->tls.ctx);
-  }
-  err_epoll:
-  if(server->context.allocated_epoll) {
-    net_epoll_stop(server->tls.tcp.epoll);
-    net_epoll_free(server->tls.tcp.epoll);
-    free(server->tls.tcp.epoll);
-  }
-  err_time:
-  if(server->context.allocated_manager) {
-    time_manager_stop(server->context.manager);
-    time_manager_free(server->context.manager);
-    free(server->context.manager);
-  }
-  err_table:
-  if(server->context.allocated_table) {
-    http_hash_table_free(server->context.table);
-    free(server->context.table);
-  }
-  err_serv:
-  free(server);
-  return 0;
-}
-
-void https_server_foreach_conn(struct https_server* const server, void (*callback)(struct https_serversock*, void*), void* data, const int write) {
-  tls_server_foreach_conn(&server->tls, (void (*)(struct tls_socket*,void*)) callback, data, write);
-}
-
-void https_server_dont_accept_conn(struct https_server* const server) {
-  tls_server_dont_accept_conn(&server->tls);
-}
-
-void https_server_accept_conn(struct https_server* const server) {
-  tls_server_accept_conn(&server->tls);
-}
-
-int https_server_shutdown(struct https_server* const server) {
-  return tls_server_shutdown(&server->tls);
-}
-
-uint32_t https_server_get_conn_amount_raw(const struct https_server* const server) {
-  return tls_server_get_conn_amount_raw(&server->tls);
-}
-
-uint32_t https_server_get_conn_amount(struct https_server* const server) {
-  return tls_server_get_conn_amount(&server->tls);
-}
-
-
-
-#define http_server ((struct http_server*) socket->tcp.server)
-#define https_server ((struct https_server*) socket->tcp.server)
-
-static int http_serversock_timeout(struct http_serversock* const socket, char** const ret_msg, uint32_t* const ret_len) {
+static void http_serversock_timeout(struct tcp_socket* const socket) {
   struct http_header headers[3];
   struct http_message response = {0};
   response.headers = headers;
@@ -1468,22 +979,29 @@ static int http_serversock_timeout(struct http_serversock* const socket, char** 
   char date_header[30];
   date_header[0] = 0;
   struct tm tms;
-  if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL && strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms) != 0) {
-    headers[0] = (struct http_header) { "Connection", "close", 10, 0, 5, 0 };
-    headers[1] = (struct http_header) { "Date", date_header, 4, 0, 29, 0 };
-    headers[2] = (struct http_header) { "Server", "shnet", 6, 0, 5, 0 };
-    response.headers_len = 3;
+  if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL) {
+    const size_t len = strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms);
+    if(len != 0) {
+      headers[0] = (struct http_header) { "Connection", "close", 5, 10, 0, 0 };
+      headers[1] = (struct http_header) { "Date", date_header, len, 4, 0, 0 };
+      headers[2] = (struct http_header) { "Server", "shnet", 5, 6, 0, 0 };
+      response.headers_len = 3;
+    } else {
+      headers[0] = (struct http_header) { "Connection", "close", 5, 10, 0, 0 };
+      headers[1] = (struct http_header) { "Server", "shnet", 5, 6, 0, 0 };
+      response.headers_len = 2;
+    }
   } else {
-    headers[0] = (struct http_header) { "Connection", "close", 10, 0, 5, 0 };
-    headers[1] = (struct http_header) { "Server", "shnet", 6, 0, 5, 0 };
+    headers[0] = (struct http_header) { "Connection", "close", 5, 10, 0, 0 };
+    headers[1] = (struct http_header) { "Server", "shnet", 5, 6, 0, 0 };
     response.headers_len = 2;
   }
   char* msg;
-  const uint32_t len = http1_message_length(&response);
+  const uint64_t len = http1_message_length(&response);
   while(1) {
     msg = malloc(len);
     if(msg == NULL) {
-      if(((struct net_socket_base*) http_server)->which & net_secure) {
+      if(socket->net.secure) {
         if(https_server->callbacks->onnomem(https_server) == 0) {
           continue;
         }
@@ -1492,14 +1010,16 @@ static int http_serversock_timeout(struct http_serversock* const socket, char** 
           continue;
         }
       }
-      return -1;
+      return;
     }
     break;
   }
   http1_create_message(msg, &response);
-  *ret_msg = msg;
-  *ret_len = len;
-  return 0;
+  if(socket->net.secure) {
+    (void) tls_send((struct tls_socket*) socket, msg, len, tls_read_only);
+  } else {
+    (void) tcp_send(socket, msg, len, tcp_read_only);
+  }
 }
 
 #undef https_server
@@ -1510,14 +1030,8 @@ static int http_serversock_timeout(struct http_serversock* const socket, char** 
 
 static void http_serversock_stop_socket(void* data) {
   socket->context.expected = 1;
-  tcp_socket_stop_receiving_data(&socket->tcp);
-  char* msg;
-  uint32_t len;
-  if(http_serversock_timeout(socket, &msg, &len) == 0) {
-    (void) tcp_send(&socket->tcp, msg, len);
-    free(msg);
-  }
-  tcp_socket_linger(&socket->tcp, 5);
+  tcp_socket_dont_receive_data(&socket->tcp);
+  http_serversock_timeout(&socket->tcp);
   tcp_socket_close(&socket->tcp);
 }
 
@@ -1525,17 +1039,12 @@ static void http_serversock_stop_socket(void* data) {
 #undef socket
 
 static void http_server_free(struct http_server* const server) {
-  if(server->context.allocated_epoll) {
-    net_epoll_stop(server->tcp.epoll);
-    net_epoll_free(server->tcp.epoll);
-    free(server->tcp.epoll);
-  }
-  if(server->context.allocated_manager) {
+  if(server->context.alloc_manager) {
     time_manager_stop(server->context.manager);
     time_manager_free(server->context.manager);
     free(server->context.manager);
   }
-  if(server->context.allocated_table) {
+  if(server->context.alloc_table) {
     http_hash_table_free(server->context.table);
     free(server->context.table);
   }
@@ -1545,6 +1054,12 @@ static void http_server_free(struct http_server* const server) {
 
 static int http_server_onnomem(struct tcp_server* serv) {
   return server->callbacks->onnomem(server);
+}
+
+static void http_server_onerror(struct tcp_server* serv) {
+  if(server->callbacks->onerror != NULL) {
+    server->callbacks->onerror(server);
+  }
 }
 
 static void http_server_onshutdown(struct tcp_server* serv) {
@@ -1560,7 +1075,7 @@ static void http_server_onshutdown(struct tcp_server* serv) {
 
 static void http_serversock_send(struct http_serversock* const socket, struct http_message* const message) {
   char* msg;
-  const uint32_t len = http1_message_length(message);
+  const uint64_t len = http1_message_length(message);
   while(1) {
     msg = malloc(len);
     if(msg == NULL) {
@@ -1568,19 +1083,16 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
         continue;
       }
       (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-      if(message->allocated_body) {
+      if(message->alloc_body) {
         free(message->body);
       }
-      free(socket->context.read_buffer);
-      socket->context.read_buffer = NULL;
       tcp_socket_force_close(&socket->tcp);
       return;
     }
     break;
   }
   http1_create_message(msg, message);
-  (void) tcp_send(&socket->tcp, msg, len);
-  free(msg);
+  (void) tcp_send(&socket->tcp, msg, len, tcp_read_only);
 }
 
 #undef server
@@ -1588,17 +1100,14 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
 #define socket ((struct http_serversock*) soc)
 #define server ((struct http_server*) soc->server)
 
-static int http_server_onconnection(struct tcp_socket* soc) {
-  socket->tcp.settings = server->context.tcp_settings;
+static int http_server_onconnection(struct tcp_socket* soc, const struct sockaddr* addr) {
+  socket->tcp.settings = http_serversock_settings;
   socket->tcp.callbacks = &http_serversock_callbacks;
   return 0;
 }
 
-/* Serversocks are significantly smaller than normal sockets, because we can
-offload some of the needed structures on the server. Since these structures
-never change, that's completely fine and we improve memory usage. */
-
 static void http_serversock_onopen(struct tcp_socket* soc) {
+  (void) tcp_socket_keepalive(&socket->tcp);
   if(server->context.timeout_after != UINT64_MAX) {
     while(1) {
       const int err = time_manager_add_timeout(server->context.manager, time_get_sec(server->context.timeout_after), http_serversock_stop_socket, socket, &socket->context.timeout);
@@ -1615,23 +1124,22 @@ static void http_serversock_onopen(struct tcp_socket* soc) {
 }
 
 static void http_serversock_onmessage(struct tcp_socket* soc) {
+  if(socket->context.expected && socket->context.protocol != http_p_websocket) {
+    return;
+  }
   while(1) {
-    if(socket->context.read_used + server->context.read_buffer_growth > socket->context.read_size) {
+    if(socket->context.read_used + server->context.read_growth > socket->context.read_size) {
       while(1) {
-        char* const ptr = realloc(socket->context.read_buffer, socket->context.read_used + server->context.read_buffer_growth);
+        char* const ptr = realloc(socket->context.read_buffer, socket->context.read_used + server->context.read_growth);
         if(ptr != NULL) {
           socket->context.read_buffer = ptr;
-          socket->context.read_size = socket->context.read_used + server->context.read_buffer_growth;
+          socket->context.read_size = socket->context.read_used + server->context.read_growth;
           break;
         }
         if(server->callbacks->onnomem(server) == 0) {
           continue;
         }
         (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-        if(socket->context.read_buffer != NULL) {
-          free(socket->context.read_buffer);
-          socket->context.read_buffer = NULL;
-        }
         tcp_socket_force_close(&socket->tcp);
         return;
       }
@@ -1644,33 +1152,28 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     }
   }
   if(socket->context.read_used == 0) {
-    free(socket->context.read_buffer);
-    socket->context.read_buffer = NULL;
-    socket->context.read_size = 0;
     return;
   }
   if(socket->context.protocol == http_p_websocket) {
     goto websocket;
   }
-  struct http_header req_headers[255];
-  struct http_message request = {0};
-  request.headers = req_headers;
-  request.headers_len = 255;
+  socket->context.message.headers = socket->context.headers;
+  socket->context.message.headers_len = 255;
   int state;
   if(socket->context.init_parsed == 0) {
-    state = http1_parse_request(socket->context.read_buffer, socket->context.read_used, &socket->context.read_used, &socket->context.session, &http_prerequest_parser_settings, &request);
+    state = http1_parse_request(socket->context.read_buffer, socket->context.read_used, &socket->context.session, &http_prerequest_parser_settings, &socket->context.message);
     switch(state) {
       case http_incomplete: return;
       case http_valid: {
-        const char save = request.path[request.path_len];
-        request.path[request.path_len] = 0;
-        socket->context.entry = http_hash_table_find(server->context.table, request.path);
-        request.path[request.path_len] = save;
+        const char save = socket->context.message.path[socket->context.message.path_len];
+        socket->context.message.path[socket->context.message.path_len] = 0;
+        socket->context.entry = http_hash_table_find(server->context.table, socket->context.message.path);
+        socket->context.message.path[socket->context.message.path_len] = save;
         if(socket->context.entry != NULL) {
           if(socket->context.entry->data != NULL) {
             socket->context.settings = socket->context.entry->data;
           } else {
-            socket->context.settings = server->context.settings;
+            socket->context.settings = server->context.default_settings;
           }
         } else {
           /* We can't reject the request here without having the whole message
@@ -1679,7 +1182,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           we can do though is set a flag that will tell the parser to not process
           the message in any way - if body is compressed, don't decompress it. If
           it's chunked, don't merge chunks together. */
-          socket->context.backup_settings = *server->context.settings;
+          socket->context.backup_settings = *server->context.default_settings;
           socket->context.backup_settings.no_processing = 1;
           socket->context.backup_settings.no_character_validation = 1;
           socket->context.settings = &socket->context.backup_settings;
@@ -1693,7 +1196,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     }
   }
   while(1) {
-    state = http1_parse_request(socket->context.read_buffer, socket->context.read_used, &socket->context.read_used, &socket->context.session, socket->context.settings, &request);
+    state = http1_parse_request(socket->context.read_buffer, socket->context.read_used, &socket->context.session, socket->context.settings, &socket->context.message);
     if(state == http_out_of_memory) {
       if(server->callbacks->onnomem(server) == 0) {
         continue;
@@ -1708,7 +1211,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     const struct http_header* connection = NULL;
     int close_connection = 0;
     if(socket->context.session.parsed_headers) {
-      connection = http1_seek_header(&request, "connection", 10);
+      connection = http1_seek_header(&socket->context.message, "connection", 10);
       if(connection != NULL) {
         connection->value[connection->value_len] = 0;
         if(connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
@@ -1729,14 +1232,11 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct http_server*, struct http_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, socket->context.settings, &request, &response);
+          ((void (*)(struct http_server*, struct http_serversock*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &socket->context.message, &response);
         }
         break;
       }
       case http_body_too_long: {
-        /* If Expect header is after Content-Length, we will never know about it.
-        Well... non-compliant, but that's a little bit dumb. Let's just send
-        http_s_payload_too_large. It means pretty much the same thing. */
         response.status_code = http_s_payload_too_large;
         response.reason_phrase = http1_default_reason_phrase(response.status_code);
         response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
@@ -1803,10 +1303,9 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         break;
       }
     }
-    int freed_headers = 0;
     if(response.status_code != 0) {
       /* We have a response to send. Automatically attach some headers. */
-#define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,b,0,d,0}
+#define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
       if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
@@ -1865,25 +1364,24 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           if(body == NULL) {
             if(errno == EINVAL) {
               /* Application messed up */
-              if(server->context.compression_is_required) {
-                /* Awkward */
-                goto err_res;
+              if(server->context.compression_isnt_required) {
+                goto out;
               }
-              goto out;
+              goto err_res;
             }
             if(server->callbacks->onnomem(server) == 0) {
               continue;
             }
-            if(server->context.compression_is_required) {
-              goto err_res;
+            if(server->context.compression_isnt_required) {
+              goto out;
             }
-            goto out;
+            goto err_res;
           }
         }
-        if(response.allocated_body) {
+        if(response.alloc_body) {
           free(response.body);
         } else {
-          response.allocated_body = 1;
+          response.alloc_body = 1;
         }
         void* const ptr = realloc(body, body_len);
         if(ptr != NULL) {
@@ -1909,13 +1407,13 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         }
       }
       out:
-      server->context.compression_is_required = 0;
+      server->context.compression_isnt_required = 0;
       server->context.quality = 0;
       server->context.window_bits = 0;
       server->context.mem_level = 0;
       server->context.mode = 0;
       
-      char content_length[11];
+      char content_length[21];
       const int len = sprintf(content_length, "%lu", response.body_len);
       if(len < 0) {
         goto err_res;
@@ -1925,18 +1423,20 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       char date_header[30];
       date_header[0] = 0;
       struct tm tms;
-      if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL && strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms) != 0) {
-        add_header("Date", 4, date_header, 29);
+      if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL) {
+        const size_t len = strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms);
+        if(len != 0) {
+          add_header("Date", 4, date_header, len);
+        }
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
       http_serversock_send(socket, &response);
-      freed_headers = 1;
       for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].allocated_name) {
+        if(response.headers[i].alloc_name) {
           free(response.headers[i].name);
         }
-        if(response.headers[i].allocated_value) {
+        if(response.headers[i].alloc_value) {
           free(response.headers[i].value);
         }
       }
@@ -1951,17 +1451,15 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     }
     
     err_res:
-    if(response.allocated_body) {
+    if(response.alloc_body) {
       free(response.body);
     }
-    if(freed_headers == 0) {
-      for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].allocated_name) {
-          free(response.headers[i].name);
-        }
-        if(response.headers[i].allocated_value) {
-          free(response.headers[i].value);
-        }
+    for(uint32_t i = 0; i < response.headers_len; ++i) {
+      if(response.headers[i].alloc_name) {
+        free(response.headers[i].name);
+      }
+      if(response.headers[i].alloc_value) {
+        free(response.headers[i].value);
       }
     }
     goto err;
@@ -1971,19 +1469,13 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  if(socket->context.read_buffer != NULL) {
-    free(socket->context.read_buffer);
-    socket->context.read_buffer = NULL;
-    socket->context.read_used = 0;
-    socket->context.read_size = 0;
-  }
   tcp_socket_force_close(&socket->tcp);
   return;
   
   websocket:
   while(1) {
     while(1) {
-      state = websocket_parse(socket->context.read_buffer, socket->context.read_used, &socket->context.read_used, &socket->context);
+      state = websocket_parse(socket->context.read_buffer, socket->context.read_used, &socket->context);
       if(state == http_out_of_memory) {
         if(server->callbacks->onnomem(server) == 0) {
           continue;
@@ -1993,36 +1485,29 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       break;
     }
     if(state != http_incomplete) {
-      socket->context.session = (struct http_parser_session){0};
       if(state == http_valid) {
+        if(socket->context.closing) {
+          goto errr;
+        }
         if(socket->context.message.opcode < 8) {
-          if(socket->context.message.body_len > 0) {
-            socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
-          }
-          if(socket->context.message.allocated_body) {
+          socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
+          if(socket->context.message.alloc_body) {
             free(socket->context.message.body);
           }
         } else if(socket->context.message.opcode == 8) {
-          if(socket->context.closing) {
-            goto errr;
-          }
           socket->context.closing = 1;
           if(socket->context.close_onreadclose) {
-            (void) ws_send(socket, socket->context.message.body, socket->context.message.body_len > 1 ? 2 : 0, websocket_close, 0);
+            (void) ws_send(socket, socket->context.message.body, socket->context.message.body_len > 1 ? 2 : 0, websocket_close, ws_dont_free);
             tcp_socket_close(&socket->tcp);
           } else if(socket->callbacks->onreadclose != NULL) {
             socket->callbacks->onreadclose(socket, socket->context.message.close_code);
           }
         } else if(socket->context.message.opcode == 9) {
-          (void) ws_send(socket, NULL, 0, websocket_pong, 0);
+          (void) ws_send(socket, NULL, 0, websocket_pong, ws_dont_free);
         }
-        if(!socket->context.message.allocated_body) {
-          socket->context.read_used -= socket->context.message.body_len;
-        }
+        socket->context.read_used -= socket->context.session.chunk_idx + socket->context.session.last_idx;
         if(socket->context.read_used != 0) {
-          if(!socket->context.message.allocated_body) {
-            (void) memmove(socket->context.read_buffer, socket->context.read_buffer + socket->context.message.body_len, socket->context.read_used);
-          }
+          (void) memmove(socket->context.read_buffer, socket->context.read_buffer + socket->context.session.chunk_idx + socket->context.session.last_idx, socket->context.read_used);
           char* const buf = realloc(socket->context.read_buffer, socket->context.read_used);
           if(buf != NULL) {
             socket->context.read_buffer = buf;
@@ -2033,15 +1518,11 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           socket->context.read_buffer = NULL;
           socket->context.read_size = 0;
         }
+        socket->context.session = (struct http_parser_session){0};
         socket->context.message = (struct http_message){0};
       } else {
         errr:
-        free(socket->context.read_buffer);
-        socket->context.read_buffer = NULL;
-        socket->context.read_used = 0;
-        socket->context.read_size = 0;
-        socket->callbacks->onclose(socket, socket->context.message.close_code);
-        socket->context.message = (struct http_message){0};
+        socket->context.expected = 1;
         tcp_socket_force_close(&socket->tcp);
         break;
       }
@@ -2056,8 +1537,11 @@ static int http_serversock_onnomem(struct tcp_socket* soc) {
 }
 
 static void http_serversock_onclose(struct tcp_socket* soc) {
-  if(!socket->context.expected && socket->context.timeout.timeout != NULL) {
+  if(!socket->context.expected) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
+  }
+  if(socket->context.protocol == http_p_websocket) {
+    socket->callbacks->onclose(socket, socket->context.message.close_code);
   }
   tcp_socket_free(&socket->tcp);
 }
@@ -2066,13 +1550,16 @@ static void http_serversock_onfree(struct tcp_socket* soc) {
   if(socket->context.read_buffer != NULL) {
     free(socket->context.read_buffer);
   }
-  if(socket->context.alloc_compressor) {
-    deflater_free(socket->context.compressor);
+  if(socket->context.deflater != NULL) {
+    deflater_free(socket->context.deflater);
   }
-  if(socket->context.alloc_decompressor) {
-    deflater_free(socket->context.decompressor);
+  if(socket->context.deflater_mutex != NULL) {
+    (void) pthread_mutex_destroy(socket->context.deflater_mutex);
+    free(socket->context.deflater_mutex);
   }
-  (void) memset(socket + 1, 0, sizeof(struct http_serversock) - sizeof(struct tcp_socket));
+  if(socket->context.inflater != NULL) {
+    inflater_free(socket->context.inflater);
+  }
 }
 
 #undef server
@@ -2080,19 +1567,128 @@ static void http_serversock_onfree(struct tcp_socket* soc) {
 
 
 
+static int https_setup_server(struct http_uri* const uri, struct http_server_options* const opt) {
+  struct https_server* const server = calloc(1, sizeof(struct https_server));
+  if(server == NULL) {
+    return -1;
+  }
+  server->tls.tcp.settings = opt->tcp_settings;
+  server->tls.tcp.epoll = opt->epoll;
+  server->tls.tcp.socket_size = opt->socket_size ? opt->socket_size : sizeof(struct https_serversock);
+  server->tls.callbacks = &https_server_callbacks;
+  server->tls.ctx = opt->ctx;
+  server->context.default_settings = opt->default_settings ? opt->default_settings : &http_request_parser_settings;
+  server->context.read_growth = opt->read_growth ? opt->read_growth : 16384;
+  server->context.timeout_after = opt->timeout_after ? opt->timeout_after : 10;
+  server->callbacks = opt->https_callbacks;
+  if(opt->table != NULL) {
+    server->context.table = opt->table;
+  } else {
+    server->context.table = calloc(1, sizeof(struct http_hash_table));
+    if(server->context.table == NULL) {
+      goto err_serv;
+    }
+    if(http_hash_table_init(server->context.table, opt->resources_len << 1) != 0) {
+      free(server->context.table);
+      goto err_serv;
+    }
+    for(uint32_t i = 0; i < opt->resources_len; ++i) {
+      http_hash_table_insert(server->context.table, opt->resources[i].path, opt->resources[i].settings, (http_hash_table_func_t) opt->resources[i].https_callback);
+    }
+    server->context.alloc_table = 1;
+  }
+  if(opt->timeout_after != UINT64_MAX) {
+    if(opt->manager != NULL) {
+      server->context.manager = opt->manager;
+    } else {
+      server->context.manager = calloc(1, sizeof(struct time_manager));
+      if(server->context.manager == NULL) {
+        goto err_table;
+      }
+      if(time_manager(server->context.manager) != 0) {
+        free(server->context.manager);
+        goto err_table;
+      }
+      if(time_manager_start(server->context.manager) != 0) {
+        time_manager_stop(server->context.manager);
+        free(server->context.manager);
+        goto err_table;
+      }
+      server->context.alloc_manager = 1;
+    }
+  }
+  char hostname[256];
+  (void) memcpy(hostname, uri->hostname, uri->hostname_len);
+  hostname[uri->hostname_len] = 0;
+  char port[6];
+  if(uri->port_ptr != NULL) {
+    (void) memcpy(port, uri->port_ptr, uri->port_len);
+    port[uri->port_len] = 0;
+  } else {
+    (void) memcpy(port, "443", 4);
+  }
+  struct tls_server_options options = {
+    .tcp = {
+      opt->info,
+      hostname,
+      port,
+      opt->family,
+      opt->flags
+    }
+  };
+  if(tls_server(&server->tls, &options) != 0) {
+    goto err_time;
+  }
+  opt->https_server = server;
+  return 0;
+  
+  err_time:
+  if(server->context.alloc_manager) {
+    time_manager_stop(server->context.manager);
+    time_manager_free(server->context.manager);
+    free(server->context.manager);
+  }
+  err_table:
+  if(server->context.alloc_table) {
+    http_hash_table_free(server->context.table);
+    free(server->context.table);
+  }
+  err_serv:
+  free(server);
+  return -1;
+}
+
+void https_server_foreach_conn(struct https_server* const server, void (*callback)(struct https_serversock*, void*), void* data) {
+  tls_server_foreach_conn(&server->tls, (void (*)(struct tls_socket*,void*)) callback, data);
+}
+
+void https_server_dont_accept_conn(struct https_server* const server) {
+  tls_server_dont_accept_conn(&server->tls);
+}
+
+void https_server_accept_conn(struct https_server* const server) {
+  tls_server_accept_conn(&server->tls);
+}
+
+int https_server_shutdown(struct https_server* const server) {
+  return tls_server_shutdown(&server->tls);
+}
+
+uint32_t https_server_get_conn_amount_raw(const struct https_server* const server) {
+  return tls_server_get_conn_amount_raw(&server->tls);
+}
+
+uint32_t https_server_get_conn_amount(struct https_server* const server) {
+  return tls_server_get_conn_amount(&server->tls);
+}
+
 #define socket ((struct https_serversock*) data)
 #define server ((struct http_server*) socket->tls.tcp.server)
 
 static void https_serversock_stop_socket(void* data) {
   socket->context.expected = 1;
-  tls_socket_stop_receiving_data(&socket->tls);
-  char* msg;
-  uint32_t len;
-  if(http_serversock_timeout((struct http_serversock*) socket, &msg, &len) == 0) {
-    (void) tls_send(&socket->tls, msg, len);
-    free(msg);
-  }
-  tcp_socket_linger(&socket->tls.tcp, 5);
+  tls_socket_dont_receive_data(&socket->tls);
+  http_serversock_timeout(&socket->tls.tcp);
   tls_socket_close(&socket->tls);
 }
 
@@ -2100,20 +1696,12 @@ static void https_serversock_stop_socket(void* data) {
 #undef socket
 
 static void https_server_free(struct https_server* const server) {
-  if(server->context.allocated_epoll) {
-    net_epoll_stop(server->tls.tcp.epoll);
-    net_epoll_free(server->tls.tcp.epoll);
-    free(server->tls.tcp.epoll);
-  }
-  if(server->context.allocated_manager) {
+  if(server->context.alloc_manager) {
     time_manager_stop(server->context.manager);
     time_manager_free(server->context.manager);
     free(server->context.manager);
   }
-  if(server->context.allocated_ctx) {
-    SSL_CTX_free(server->tls.ctx);
-  }
-  if(server->context.allocated_table) {
+  if(server->context.alloc_table) {
     http_hash_table_free(server->context.table);
     free(server->context.table);
   }
@@ -2123,6 +1711,12 @@ static void https_server_free(struct https_server* const server) {
 
 static int https_server_onnomem(struct tls_server* serv) {
   return server->callbacks->onnomem(server);
+}
+
+static void https_server_onerror(struct tls_server* serv) {
+  if(server->callbacks->onerror != NULL) {
+    server->callbacks->onerror(server);
+  }
 }
 
 static void https_server_onshutdown(struct tls_server* serv) {
@@ -2138,7 +1732,7 @@ static void https_server_onshutdown(struct tls_server* serv) {
 
 static void https_serversock_send(struct https_serversock* const socket, struct http_message* const message) {
   char* msg;
-  const uint32_t len = http1_message_length(message);
+  const uint64_t len = http1_message_length(message);
   while(1) {
     msg = malloc(len);
     if(msg == NULL) {
@@ -2146,19 +1740,16 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
         continue;
       }
       (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-      if(message->allocated_body) {
+      if(message->alloc_body) {
         free(message->body);
       }
-      free(socket->tls.read_buffer);
-      socket->tls.read_buffer = NULL;
       tcp_socket_force_close(&socket->tls.tcp);
       return;
     }
     break;
   }
   http1_create_message(msg, message);
-  (void) tls_send(&socket->tls, msg, len);
-  free(msg);
+  (void) tls_send(&socket->tls, msg, len, tls_read_only);
 }
 
 #undef server
@@ -2166,13 +1757,14 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
 #define socket ((struct https_serversock*) soc)
 #define server ((struct https_server*) soc->tcp.server)
 
-static int https_server_onconnection(struct tls_socket* soc) {
-  socket->tls.tcp.settings = server->context.tcp_settings;
+static int https_server_onconnection(struct tls_socket* soc, const struct sockaddr* addr) {
+  socket->tls.tcp.settings = https_serversock_settings;
   socket->tls.callbacks = &https_serversock_callbacks;
   return 0;
 }
 
 static void https_serversock_onopen(struct tls_socket* soc) {
+  (void) tcp_socket_keepalive(&socket->tls.tcp);
   if(server->context.timeout_after != UINT64_MAX) {
     while(1) {
       const int err = time_manager_add_timeout(server->context.manager, time_get_sec(server->context.timeout_after), https_serversock_stop_socket, socket, &socket->context.timeout);
@@ -2189,31 +1781,32 @@ static void https_serversock_onopen(struct tls_socket* soc) {
 }
 
 static void https_serversock_onmessage(struct tls_socket* soc) {
+  if(socket->context.expected && socket->context.protocol != http_p_websocket) {
+    return;
+  }
   if(socket->context.protocol == http_p_websocket) {
     goto websocket;
   }
-  struct http_header req_headers[255];
-  struct http_message request = {0};
-  request.headers = req_headers;
-  request.headers_len = 255;
+  socket->context.message.headers = socket->context.headers;
+  socket->context.message.headers_len = 255;
   int state;
   if(socket->context.init_parsed == 0) {
-    state = http1_parse_request(socket->tls.read_buffer, socket->tls.read_used, &socket->tls.read_used, &socket->context.session, &http_prerequest_parser_settings, &request);
+    state = http1_parse_request(socket->tls.read_buffer, socket->tls.read_used, &socket->context.session, &http_prerequest_parser_settings, &socket->context.message);
     switch(state) {
       case http_incomplete: return;
       case http_valid: {
-        const char save = request.path[request.path_len];
-        request.path[request.path_len] = 0;
-        socket->context.entry = http_hash_table_find(server->context.table, request.path);
-        request.path[request.path_len] = save;
+        const char save = socket->context.message.path[socket->context.message.path_len];
+        socket->context.message.path[socket->context.message.path_len] = 0;
+        socket->context.entry = http_hash_table_find(server->context.table, socket->context.message.path);
+        socket->context.message.path[socket->context.message.path_len] = save;
         if(socket->context.entry != NULL) {
           if(socket->context.entry->data != NULL) {
             socket->context.settings = socket->context.entry->data;
           } else {
-            socket->context.settings = server->context.settings;
+            socket->context.settings = server->context.default_settings;
           }
         } else {
-          socket->context.backup_settings = *server->context.settings;
+          socket->context.backup_settings = *server->context.default_settings;
           socket->context.backup_settings.no_processing = 1;
           socket->context.backup_settings.no_character_validation = 1;
           socket->context.settings = &socket->context.backup_settings;
@@ -2226,7 +1819,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
     }
   }
   while(1) {
-    state = http1_parse_request(socket->tls.read_buffer, socket->tls.read_used, &socket->tls.read_used, &socket->context.session, socket->context.settings, &request);
+    state = http1_parse_request(socket->tls.read_buffer, socket->tls.read_used, &socket->context.session, socket->context.settings, &socket->context.message);
     if(state == http_out_of_memory) {
       if(server->callbacks->onnomem(server) == 0) {
         continue;
@@ -2241,7 +1834,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
     const struct http_header* connection = NULL;
     int close_connection = 0;
     if(socket->context.session.parsed_headers) {
-      connection = http1_seek_header(&request, "connection", 10);
+      connection = http1_seek_header(&socket->context.message, "connection", 10);
       if(connection != NULL) {
         connection->value[connection->value_len] = 0;
         if(connection->value_len == 5 && strncasecmp(connection->value, "close", 5) == 0) {
@@ -2262,7 +1855,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
           response.reason_phrase = http1_default_reason_phrase(response.status_code);
           response.reason_phrase_len = http1_default_reason_phrase_len(response.status_code);
         } else {
-          ((void (*)(struct https_server*, struct https_serversock*, struct http_parser_settings*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, socket->context.settings, &request, &response);
+          ((void (*)(struct https_server*, struct https_serversock*, struct http_message*, struct http_message*)) socket->context.entry->func)(server, socket, &socket->context.message, &response);
         }
         break;
       }
@@ -2333,9 +1926,8 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         break;
       }
     }
-    int freed_headers = 0;
     if(response.status_code != 0) {
-#define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,b,0,d,0}
+#define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
       if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
@@ -2393,24 +1985,24 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
 #undef pick
           if(body == NULL) {
             if(errno == EINVAL) {
-              if(server->context.compression_is_required) {
-                goto err_res;
+              if(server->context.compression_isnt_required) {
+                goto out;
               }
-              goto out;
+              goto err_res;
             }
             if(server->callbacks->onnomem(server) == 0) {
               continue;
             }
-            if(server->context.compression_is_required) {
-              goto err_res;
+            if(server->context.compression_isnt_required) {
+              goto out;
             }
-            goto out;
+            goto err_res;
           }
         }
-        if(response.allocated_body) {
+        if(response.alloc_body) {
           free(response.body);
         } else {
-          response.allocated_body = 1;
+          response.alloc_body = 1;
         }
         void* const ptr = realloc(body, body_len);
         if(ptr != NULL) {
@@ -2436,13 +2028,13 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         }
       }
       out:
-      server->context.compression_is_required = 0;
+      server->context.compression_isnt_required = 0;
       server->context.quality = 0;
       server->context.window_bits = 0;
       server->context.mem_level = 0;
       server->context.mode = 0;
       
-      char content_length[11];
+      char content_length[21];
       const int len = sprintf(content_length, "%lu", response.body_len);
       if(len < 0) {
         goto err_res;
@@ -2452,18 +2044,20 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       char date_header[30];
       date_header[0] = 0;
       struct tm tms;
-      if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL && strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms) != 0) {
-        add_header("Date", 4, date_header, 29);
+      if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL) {
+        const size_t len = strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms);
+        if(len != 0) {
+          add_header("Date", 4, date_header, len);
+        }
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
       https_serversock_send(socket, &response);
-      freed_headers = 1;
       for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].allocated_name) {
+        if(response.headers[i].alloc_name) {
           free(response.headers[i].name);
         }
-        if(response.headers[i].allocated_value) {
+        if(response.headers[i].alloc_value) {
           free(response.headers[i].value);
         }
       }
@@ -2478,17 +2072,15 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
     }
     
     err_res:
-    if(response.allocated_body) {
+    if(response.alloc_body) {
       free(response.body);
     }
-    if(freed_headers == 0) {
-      for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].allocated_name) {
-          free(response.headers[i].name);
-        }
-        if(response.headers[i].allocated_value) {
-          free(response.headers[i].value);
-        }
+    for(uint32_t i = 0; i < response.headers_len; ++i) {
+      if(response.headers[i].alloc_name) {
+        free(response.headers[i].name);
+      }
+      if(response.headers[i].alloc_value) {
+        free(response.headers[i].value);
       }
     }
     goto err;
@@ -2498,12 +2090,6 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
   err:
   socket->context.expected = 1;
   (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-  if(socket->tls.read_buffer != NULL) {
-    free(socket->tls.read_buffer);
-    socket->tls.read_buffer = NULL;
-    socket->tls.read_used = 0;
-    socket->tls.read_size = 0;
-  }
   tcp_socket_force_close(&socket->tls.tcp);
   return;
   
@@ -2511,7 +2097,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
   websocket:
   while(1) {
     while(1) {
-      state = websocket_parse(socket->tls.read_buffer, socket->tls.read_used, &socket->tls.read_used, &socket->context);
+      state = websocket_parse(socket->tls.read_buffer, socket->tls.read_used, &socket->context);
       if(state == http_out_of_memory) {
         if(server->callbacks->onnomem(server) == 0) {
           continue;
@@ -2521,36 +2107,29 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       break;
     }
     if(state != http_incomplete) {
-      socket->context.session = (struct http_parser_session){0};
       if(state == http_valid) {
+        if(socket->context.closing) {
+          goto errr;
+        }
         if(socket->context.message.opcode < 8) {
-          if(socket->context.message.body_len > 0) {
-            socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
-          }
-          if(socket->context.message.allocated_body) {
+          socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
+          if(socket->context.message.alloc_body) {
             free(socket->context.message.body);
           }
         } else if(socket->context.message.opcode == 8) {
-          if(socket->context.closing) {
-            goto errr;
-          }
           socket->context.closing = 1;
           if(socket->context.close_onreadclose) {
-            (void) ws_send(socket, socket->context.message.body, socket->context.message.body_len > 1 ? 2 : 0, websocket_close, 0);
+            (void) ws_send(socket, socket->context.message.body, socket->context.message.body_len > 1 ? 2 : 0, websocket_close, ws_dont_free);
             tcp_socket_close(&socket->tls.tcp);
           } else if(socket->callbacks->onreadclose != NULL) {
             socket->callbacks->onreadclose(socket, socket->context.message.close_code);
           }
         } else if(socket->context.message.opcode == 9) {
-          (void) ws_send(socket, NULL, 0, websocket_pong, 0);
+          (void) ws_send(socket, NULL, 0, websocket_pong, ws_dont_free);
         }
-        if(!socket->context.message.allocated_body) {
-          socket->tls.read_used -= socket->context.message.body_len;
-        }
+        socket->tls.read_used -= socket->context.session.chunk_idx + socket->context.session.last_idx;
         if(socket->tls.read_used != 0) {
-          if(!socket->context.message.allocated_body) {
-            (void) memmove(socket->tls.read_buffer, socket->tls.read_buffer + socket->context.message.body_len, socket->tls.read_used);
-          }
+          (void) memmove(socket->tls.read_buffer, socket->tls.read_buffer + socket->context.session.chunk_idx + socket->context.session.last_idx, socket->tls.read_used);
           char* const buf = realloc(socket->tls.read_buffer, socket->tls.read_used);
           if(buf != NULL) {
             socket->tls.read_buffer = buf;
@@ -2561,15 +2140,11 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
           socket->tls.read_buffer = NULL;
           socket->tls.read_size = 0;
         }
+        socket->context.session = (struct http_parser_session){0};
         socket->context.message = (struct http_message){0};
       } else {
         errr:
-        free(socket->tls.read_buffer);
-        socket->tls.read_buffer = NULL;
-        socket->tls.read_used = 0;
-        socket->tls.read_size = 0;
-        socket->callbacks->onclose(socket, socket->context.message.close_code);
-        socket->context.message = (struct http_message){0};
+        socket->context.expected = 1;
         tcp_socket_force_close(&socket->tls.tcp);
         break;
       }
@@ -2584,8 +2159,11 @@ static int https_serversock_onnomem(struct tls_socket* soc) {
 }
 
 static void https_serversock_onclose(struct tls_socket* soc) {
-  if(!socket->context.expected && socket->context.timeout.timeout != NULL) {
+  if(!socket->context.expected) {
     (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
+  }
+  if(socket->context.protocol == http_p_websocket) {
+    socket->callbacks->onclose(socket, socket->context.message.close_code);
   }
   tls_socket_free(&socket->tls);
 }
@@ -2594,13 +2172,16 @@ static void https_serversock_onfree(struct tls_socket* soc) {
   if(socket->context.read_buffer != NULL) {
     free(socket->context.read_buffer);
   }
-  if(socket->context.alloc_compressor) {
-    deflater_free(socket->context.compressor);
+  if(socket->context.deflater != NULL) {
+    deflater_free(socket->context.deflater);
   }
-  if(socket->context.alloc_decompressor) {
-    deflater_free(socket->context.decompressor);
+  if(socket->context.deflater_mutex != NULL) {
+    (void) pthread_mutex_destroy(socket->context.deflater_mutex);
+    free(socket->context.deflater_mutex);
   }
-  (void) memset(socket + 1, 0, sizeof(struct https_serversock) - sizeof(struct tls_socket));
+  if(socket->context.inflater != NULL) {
+    inflater_free(socket->context.inflater);
+  }
 }
 
 #undef server
@@ -2628,12 +2209,12 @@ int http_server(char* const str, struct http_server_options* options) {
 
 
 
-int ws(void* const _base, const struct http_parser_settings* const settings, const struct http_message* const request, struct http_message* const response, const int up) {
+int ws(void* const _net, const struct http_message* const request, struct http_message* const response, const int up) {
   struct http_serversock_context* context;
-  if(((struct net_socket_base*) _base)->which & net_secure) {
-    context = (struct http_serversock_context*)((char*) _base + sizeof(struct tls_socket));
+  if(((struct net_socket*) _net)->secure) {
+    context = (struct http_serversock_context*)((char*) _net + sizeof(struct tls_socket));
   } else {
-    context = (struct http_serversock_context*)((char*) _base + sizeof(struct tcp_socket));
+    context = (struct http_serversock_context*)((char*) _net + sizeof(struct tcp_socket));
   }
   const struct http_header* const connection = http1_seek_header(request, "connection", 10);
   if(connection == NULL || strstr(connection->value, "pgrade") == NULL) {
@@ -2652,24 +2233,35 @@ int ws(void* const _base, const struct http_parser_settings* const settings, con
     return 0;
   }
   if(up) {
+    context->deflater_mutex = malloc(sizeof(pthread_mutex_t));
+    if(context->deflater_mutex == NULL) {
+      return -1;
+    }
+    const int err = pthread_mutex_init(context->deflater_mutex, NULL);
+    if(err != 0) {
+      errno = err;
+      free(context->deflater_mutex);
+      context->deflater_mutex = NULL;
+      return -1;
+    }
     unsigned char result[SHA_DIGEST_LENGTH];
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     if(ctx == NULL) {
-      return -1;
+      goto err;
     }
     if(EVP_DigestInit_ex(ctx, EVP_sha1(), NULL) == 0 ||
        EVP_DigestUpdate(ctx, sec_key->value, 24) == 0 ||
        EVP_DigestUpdate(ctx, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", 36) == 0 ||
        EVP_DigestFinal_ex(ctx, result, NULL) == 0) {
       EVP_MD_CTX_free(ctx);
-      return -1;
+      goto err;
     }
     EVP_MD_CTX_free(ctx);
     char* const h = base64_encode(result, NULL, SHA_DIGEST_LENGTH);
     if(h == NULL) {
-      return -1;
+      goto err;
     }
-    if(!settings->no_permessage_deflate) {
+    if(!context->settings->no_permessage_deflate) {
       const struct http_header* const deflate = http1_seek_header(request, "sec-websocket-extensions", 24);
       if(deflate != NULL) {
         const char save = deflate->value[deflate->value_len];
@@ -2678,24 +2270,31 @@ int ws(void* const _base, const struct http_parser_settings* const settings, con
         deflate->value[deflate->value_len] = save;
       }
     }
-    response->headers[response->headers_len++] = (struct http_header){"Connection","Upgrade",10,0,7,0};
-    response->headers[response->headers_len++] = (struct http_header){"Upgrade","websocket",7,0,9,0};
-    response->headers[response->headers_len++] = (struct http_header){"Sec-WebSocket-Accept",h,20,0,28,1};
+    response->headers[response->headers_len++] = (struct http_header){"Connection","Upgrade",7,10,0,0};
+    response->headers[response->headers_len++] = (struct http_header){"Upgrade","websocket",9,7,0,0};
+    response->headers[response->headers_len++] = (struct http_header){"Sec-WebSocket-Accept",h,28,20,0,1};
     if(context->permessage_deflate) {
-      response->headers[response->headers_len++] = (struct http_header){"Sec-WebSocket-Extensions","permessage-deflate",24,0,18,0};
+      response->headers[response->headers_len++] = (struct http_header){"Sec-WebSocket-Extensions","permessage-deflate",18,24,0,0};
     }
+    response->headers[response->headers_len++] = (struct http_header){"Sec-WebSocket-Version","13",2,21,0,0};
     response->status_code = http_s_switching_protocols;
     response->reason_phrase = http1_default_reason_phrase(response->status_code);
     response->reason_phrase_len = http1_default_reason_phrase_len(response->status_code);
     context->session = (struct http_parser_session){0};
     context->protocol = http_p_websocket;
-    if(((struct net_socket_base*) _base)->which & net_secure) {
-      (void) time_manager_cancel_timeout(((struct https_server*)((struct https_serversock*) _base)->tls.tcp.server)->context.manager, &context->timeout);
+    if(((struct net_socket*) _net)->secure) {
+      (void) time_manager_cancel_timeout(((struct https_server*)((struct https_serversock*) _net)->tls.tcp.server)->context.manager, &context->timeout);
     } else {
-      (void) time_manager_cancel_timeout(((struct http_server*)((struct http_serversock*) _base)->tcp.server)->context.manager, &context->timeout);
+      (void) time_manager_cancel_timeout(((struct http_server*)((struct http_serversock*) _net)->tcp.server)->context.manager, &context->timeout);
     }
   }
   return 1;
+  
+  err:
+  (void) pthread_mutex_destroy(context->deflater_mutex);
+  free(context->deflater_mutex);
+  context->deflater_mutex = NULL;
+  return -1;
 }
 
 #define ATLEAST(a) \
@@ -2703,7 +2302,7 @@ do { \
   if((a) > size) return http_incomplete; \
 } while(0)
 
-int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct http_serversock_context* const context) {
+int websocket_parse(void* _buffer, uint64_t size, struct http_serversock_context* const context) {
   unsigned char* buffer = _buffer;
   ATLEAST(2);
   const uint32_t fin = buffer[0] & 128;
@@ -2730,7 +2329,12 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
   if((opcode & 8) && !context->message.transfer) {
     return http_invalid;
   }
-  context->message.opcode = opcode;
+  if(opcode != 0) {
+    context->message.opcode = opcode;
+    if((opcode == 0 || (opcode & 8)) && context->message.encoding) {
+      return http_invalid;
+    }
+  }
   ++buffer;
   const uint32_t has_mask = (buffer[0] & 128) != 0;
   if(!context->settings->client) {
@@ -2756,7 +2360,7 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
     buffer += 8;
     size -= 10;
   }
-  if((opcode & 8) && payload_len > 125) {
+  if((context->message.opcode & 8) && payload_len > 125) {
     return http_invalid;
   }
   context->message.body_len += payload_len;
@@ -2770,9 +2374,12 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
     size -= 4;
   }
   ATLEAST(payload_len);
-  buffer -= header_len;
-  *used -= header_len;
-  (void) memmove(buffer, buffer + header_len, *used);
+  context->session.chunk_idx += header_len;
+  (void) memmove(buffer - context->session.chunk_idx, buffer, payload_len);
+  buffer -= context->session.chunk_idx;
+  if(context->message.body == NULL) {
+    context->message.body = (char*) buffer;
+  }
   if(has_mask) {
     const uint64_t full_unmask = payload_len & ~3;
     uint64_t i = 0;
@@ -2786,17 +2393,18 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
       buffer[i] ^= mask[i % 4];
     }
   }
-  if(context->message.body == NULL) {
-    context->message.body = (char*) buffer;
-  }
   if(context->message.transfer) {
+    if(context->message.opcode == 8 && context->message.body_len > 1) {
+      context->message.close_code = ((unsigned char) context->message.body[0] << 8) | (unsigned char) context->message.body[1];
+      return http_closed;
+    }
+    context->session.last_idx = context->message.body_len;
     if(context->message.encoding && context->message.body_len != 0) {
-      if(context->decompressor == NULL) {
-        context->decompressor = inflater(NULL, -Z_DEFLATE_DEFAULT_WINDOW_BITS);
-        if(context->decompressor == NULL) {
+      if(context->inflater == NULL) {
+        context->inflater = inflater(NULL, -Z_DEFLATE_DEFAULT_WINDOW_BITS);
+        if(context->inflater == NULL) {
           return http_out_of_memory;
         }
-        context->alloc_decompressor = 1;
       }
       const char saves[4] = {
         context->message.body[context->message.body_len + 0],
@@ -2809,7 +2417,7 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
       context->message.body[context->message.body_len + 2] = (char) 255;
       context->message.body[context->message.body_len + 3] = (char) 255;
       size_t len = 0;
-      char* ptr = inflate_(context->decompressor, context->message.body, context->message.body_len + 4, NULL, &len, context->settings->max_body_len, Z_SYNC_FLUSH);
+      char* ptr = inflate_(context->inflater, context->message.body, context->message.body_len + 4, NULL, &len, context->settings->max_body_len, Z_SYNC_FLUSH);
       context->message.body[context->message.body_len + 0] = saves[0];
       context->message.body[context->message.body_len + 1] = saves[1];
       context->message.body[context->message.body_len + 2] = saves[2];
@@ -2823,21 +2431,13 @@ int websocket_parse(void* _buffer, uint64_t size, uint64_t* const used, struct h
           return http_corrupted_body_compression;
         }
       }
-      *used -= context->message.body_len;
-      if(*used != 0) {
-        (void) memmove(context->message.body, context->message.body + context->message.body_len, *used);
-      }
       context->message.body = ptr;
       ptr = realloc(context->message.body, len);
       if(ptr != NULL) {
         context->message.body = ptr;
       }
       context->message.body_len = len;
-      context->message.allocated_body = 1;
-    }
-    if(opcode == 8 && context->message.body_len > 1) {
-      context->message.close_code = ((unsigned char) context->message.body[0] << 8) | (unsigned char) context->message.body[1];
-      return http_closed;
+      context->message.alloc_body = 1;
     }
     return http_valid;
   }
@@ -2860,7 +2460,6 @@ static uint64_t websocket_create_message_base(void* _buffer, const struct http_m
   }
   buffer[0] |= message->opcode;
   ++buffer;
-  /* if(message->client), generate and apply a mask */
   if(message->body_len > UINT16_MAX) {
     buffer[0] |= 127;
     buffer[1] =  message->body_len >> 56       ;
@@ -2891,55 +2490,73 @@ void websocket_create_message(void* _buffer, const struct http_message* const me
   }
 }
 
-int ws_send(void* const _base, void* _buffer, uint64_t size, const uint8_t opcode, const uint8_t is_not_last) {
+int ws_send(void* const _net, void* _buffer, uint64_t size, const uint8_t opcode, const uint8_t flags) {
   struct http_serversock_context* context;
-  if(((struct net_socket_base*) _base)->which & net_secure) {
-    context = (struct http_serversock_context*)((char*) _base + sizeof(struct tls_socket));
+  if(((struct net_socket*) _net)->secure) {
+    context = (struct http_serversock_context*)((char*) _net + sizeof(struct tls_socket));
   } else {
-    context = (struct http_serversock_context*)((char*) _base + sizeof(struct tcp_socket));
-  }
-  if(context->permessage_deflate && context->compressor == NULL) {
-    context->compressor = deflater(NULL, Z_DEFAULT_COMPRESSION, -Z_DEFLATE_DEFAULT_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
-    if(context->compressor == NULL) {
-      return -1;
-    }
-    context->alloc_compressor = 1;
+    context = (struct http_serversock_context*)((char*) _net + sizeof(struct tcp_socket));
   }
   unsigned char* buffer = _buffer;
   unsigned char base[10] = {0};
   uint8_t alloc = 0;
-  if(context->permessage_deflate) {
+  if(size > 0 && context->permessage_deflate) {
     size_t len = 0;
     alloc = 1;
-    buffer = deflate_(context->compressor, buffer, size, NULL, &len, Z_SYNC_FLUSH);
+    (void) pthread_mutex_lock(context->deflater_mutex);
+    if(context->deflater == NULL) {
+      context->deflater = deflater(NULL, Z_DEFAULT_COMPRESSION, -Z_DEFLATE_DEFAULT_WINDOW_BITS, Z_DEFAULT_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+      if(context->deflater == NULL) {
+        (void) pthread_mutex_unlock(context->deflater_mutex);
+        if(!(flags & ws_dont_free)) {
+          free(_buffer);
+        }
+        return -1;
+      }
+    }
+    buffer = deflate_(context->deflater, buffer, size, NULL, &len, Z_SYNC_FLUSH);
+    (void) pthread_mutex_unlock(context->deflater_mutex);
     if(buffer == NULL) {
+      if(!(flags & ws_dont_free)) {
+        free(_buffer);
+      }
       return -1;
+    }
+    if(!(flags & ws_dont_free)) {
+      free(_buffer);
     }
     size = len - 4;
     len -= 4;
   }
   const uint64_t len = websocket_create_message_base(base, &((struct http_message) {
-    .transfer = is_not_last ? 0 : 1,
-    .encoding = context->permessage_deflate,
+    .transfer = (flags & ws_not_last_frame) ? 0 : 1,
+    .encoding = alloc ? 1 : 0,
     .opcode = opcode,
     .body_len = size
   }));
-  int ret;
-  if(((struct net_socket_base*) _base)->which & net_secure) {
-    struct https_serversock* const socket = (struct https_serversock*) _base;
-    if(!tls_send(&socket->tls, base, len)) {
+  if(((struct net_socket*) _net)->secure) {
+    struct https_serversock* const socket = (struct https_serversock*) _net;
+    if(tls_send(&socket->tls, base, len, tls_dont_free) != 0) {
+      if(alloc) {
+        free(buffer);
+      }
       return -1;
     }
-    ret = tls_send(&socket->tls, buffer, size) - 1;
+    if(size == 0) {
+      return 0;
+    }
+    return tls_send(&socket->tls, buffer, size, alloc ? tcp_read_only : (flags & (ws_read_only | ws_dont_free)));
   } else {
-    struct http_serversock* const socket = (struct http_serversock*) _base;
-    if(tcp_send(&socket->tcp, base, len) != len) {
+    struct http_serversock* const socket = (struct http_serversock*) _net;
+    if(tcp_send(&socket->tcp, base, len, tls_dont_free) != 0) {
+      if(alloc) {
+        free(buffer);
+      }
       return -1;
     }
-    ret = (tcp_send(&socket->tcp, buffer, size) == size) - 1;
+    if(size == 0) {
+      return 0;
+    }
+    return tcp_send(&socket->tcp, buffer, size, alloc ? tcp_read_only : (flags & (ws_read_only | ws_dont_free)));
   }
-  if(alloc) {
-    free(buffer);
-  }
-  return ret;
 }

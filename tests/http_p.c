@@ -26,7 +26,7 @@ void cleanup(void) {
   
   offset = 0;
   
-  if(message.allocated_body) {
+  if(message.alloc_body) {
     free(message.body);
   }
   memset(&message, 0, sizeof(message));
@@ -56,9 +56,9 @@ void test_explicit(char* const name, char* const buf, const int expected, const 
   b[offset] = 0;
   int res;
   if(which == 0) {
-    res = http1_parse_request(b, offset, &offset, &session, &settings, &message);
+    res = http1_parse_request(b, offset, &session, &settings, &message);
   } else {
-    res = http1_parse_response(b, offset, &offset, &session, &settings, &message);
+    res = http1_parse_response(b, offset, &session, &settings, &message);
   }
   if(res != expected) {
     _debug("Test suite %s yielded unexpected value: %s", 1, name, http1_parser_strerror(res));
@@ -325,7 +325,7 @@ int main() {
   memset(buff, 0, sizeof(buff));
   size_t size;
   void* compressed = deflate_(NULL, "Some text I wrote.", 18, NULL, &size, 0);
-  not_check(compressed, NULL);
+  not_check(compressed, NULL); // TODO this fails like every 3 tests
   int len = sprintf(buff, "GET / HTTP/1.1\r\n"
   "Content-Length: %lu\r\n"
   "Content-Encoding: deflate\r\n"

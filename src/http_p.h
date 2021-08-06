@@ -20,7 +20,7 @@ It does support:
 4. Various parsing settings
 */
 
-enum http_p_sconsts {
+enum http_p_consts {
   /* ERROR CODES */
   http_success,
   http_failure,
@@ -130,10 +130,10 @@ extern uint32_t http1_default_reason_phrase_len(const int);
 struct http_header {
   char* name;
   char* value;
-  uint32_t name_len:31;
-  uint32_t allocated_name:1;
-  uint32_t value_len:31;
-  uint32_t allocated_value:1;
+  uint16_t value_len;
+  uint8_t name_len;
+  uint8_t alloc_name:1;
+  uint8_t alloc_value:1;
 };
 
 enum http_parser_consts {
@@ -156,7 +156,6 @@ enum http_parser_consts {
   http_no_path,
   http_path_too_long,
   http_invalid_version,
-  http_has_headers_but_max_is_0,
   http_too_many_headers,
   http_header_name_too_long,
   http_no_header_name,
@@ -176,102 +175,105 @@ enum http_parser_consts {
 extern const char* http1_parser_strerror(const int);
 
 struct http_message {
+  uint64_t body_len;
+  
   char* method;
+  char* body;
   union {
     char* reason_phrase;
     char* path;
   };
   struct http_header* headers;
-  char* body;
-  uint64_t body_len;
   
   union {
-    uint32_t method_len:8;
-    uint32_t reason_phrase_len:8;
+    uint8_t method_len;
+    uint8_t reason_phrase_len;
   };
-  uint32_t headers_len:8;
+  uint8_t headers_len;
+  
   union {
-    uint32_t path_len:16;
-    uint32_t status_code:16;
+    uint16_t path_len;
+    uint16_t status_code;
   };
-  uint32_t version:2;
-  uint32_t transfer:1;
-  uint32_t encoding:2;
-  uint32_t allocated_body:1;
-  uint32_t _unused1:2;
-  uint32_t close_code:16;
-  uint32_t opcode:4;
-  uint32_t client:1;
-  uint32_t _unused2:3;
+  uint16_t close_code;
+  uint8_t opcode:4;
+  uint8_t version:2;
+  uint8_t encoding:2;
+  uint8_t transfer:1;
+  uint8_t alloc_body:1;
+  uint8_t client:1;
 };
 
 struct http_parser_session {
-  union {
-    uint32_t parsed_method:1;
-    uint32_t parsed_status_code:1;
-  };
-  union {
-    uint32_t parsed_path:1;
-    uint32_t parsed_reason_phrase:1;
-  };
-  uint32_t parsed_version:1;
-  uint32_t parsed_headers:1;
-  uint32_t parsed_body:1;
-  uint32_t last_at:3;
-  uint32_t last_header_idx:8;
-  uint32_t _unused1:16;
-  uint32_t _unused2:32;
   uint64_t last_idx;
+  uint64_t chunk_idx;
+  
+  union {
+    uint8_t parsed_method:1;
+    uint8_t parsed_status_code:1;
+  };
+  union {
+    uint8_t parsed_path:1;
+    uint8_t parsed_reason_phrase:1;
+  };
+  uint8_t parsed_version:1;
+  uint8_t parsed_headers:1;
+  uint8_t parsed_body:1;
+  uint8_t last_at:3;
+  uint8_t last_header_idx;
 };
 
 struct http_parser_settings {
-  union {
-    uint32_t stop_at_method:1;
-    uint32_t stop_at_status_code:1;
-  };
-  union {
-    uint32_t stop_at_path:1;
-    uint32_t stop_at_reason_phrase:1;
-  };
-  uint32_t stop_at_version:1;
-  uint32_t stop_at_headers:1;
-  uint32_t stop_at_every_header:1;
-  
-  uint32_t no_character_validation:1;
-  /* No body parsing means it will ignore content-length, content-encoding,
-  and other body-related headers. It MUST NOT be used if a body might appear. */
-  uint32_t no_body_parsing:1;
-  
-  uint32_t no_permessage_deflate:1;
-  
-  union {
-    uint32_t max_method_len:8;
-    uint32_t max_reason_phrase_len:8;
-  };
-  uint32_t max_headers:8;
-  uint32_t max_path_len:16;
-  
-  uint32_t max_header_value_len:16;
-  uint32_t max_header_name_len:8;
-  
-  uint32_t dont_accept_encoding:3;
-  uint32_t client:1;
-  uint32_t no_processing:1;
-  uint32_t _unused:3;
-  
   uint64_t max_body_len;
+  
+  union {
+    uint8_t stop_at_method:1;
+    uint8_t stop_at_status_code:1;
+  };
+  union {
+    uint8_t stop_at_path:1;
+    uint8_t stop_at_reason_phrase:1;
+  };
+  uint8_t stop_at_version:1;
+  uint8_t stop_at_headers:1;
+  uint8_t stop_at_every_header:1;
+  uint8_t no_character_validation:1;
+  /* No body parsing means it will ignore content-length, content-encoding,
+  and other body-related headers. It MUST NOT be used if a body might appear.
+  It will improve parsing performance slightly when there are a lot of
+  headers. */
+  uint8_t no_body_parsing:1;
+  uint8_t no_permessage_deflate:1;
+  
+  union {
+    uint8_t max_method_len;
+    uint8_t max_reason_phrase_len;
+  };
+  uint8_t max_headers;
+  uint8_t max_header_name_len;
+  uint16_t max_path_len;
+  uint16_t max_header_value_len;
+  
+  uint8_t dont_accept_encoding:3;
+  uint8_t client:1;
+  /* Chunked body will not be brought together, compressed body will not be
+  decompressed. Used by HTTP server to quickly gather entire message to reject
+  it if it tries to access a non-existing resource. */
+  uint8_t no_processing:1;
 };
 
 extern uint64_t http1_message_length(const struct http_message* const);
 
 extern void http1_create_message(char*, const struct http_message* const);
 
-extern int http1_parse_request(char*, uint64_t, uint64_t* const, struct http_parser_session* const,
+extern int http1_parse_request(char*, uint64_t, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);
 
-extern int http1_parse_response(char*, uint64_t, uint64_t* const, struct http_parser_session* const,
+extern int http1_parse_response(char*, uint64_t, struct http_parser_session* const,
 const struct http_parser_settings* const, struct http_message* const);
 
 extern struct http_header* http1_seek_header(const struct http_message* const, const char* const, const uint32_t);
+
+extern void http1_convert_message(const void* const, const void* const, struct http_message* const);
 
 #endif // sKfWRTuG___9H8Dcb_vfV_0___tcQl_u

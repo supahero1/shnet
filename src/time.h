@@ -9,11 +9,6 @@
 #include <stdatomic.h>
 #include <semaphore.h>
 
-enum time_consts {
-  time_instant = 0,
-  time_not_instant
-};
-
 extern uint64_t time_sec_to_ns(const uint64_t);
 
 extern uint64_t time_sec_to_us(const uint64_t);
@@ -54,9 +49,10 @@ struct time_timeout {
   void* data;
 };
 
-struct time_timeout_ref {
-  struct time_timeout* timeout;
-  uintptr_t executed;
+struct time_reference {
+  uint64_t timer;
+  uint64_t last_time;
+  uint64_t executed;
 };
 
 struct time_interval {
@@ -67,15 +63,10 @@ struct time_interval {
   void* data;
 };
 
-struct time_interval_ref {
-  struct time_interval* interval;
-  uintptr_t executed;
-};
-
 struct time_manager {
   struct heap timeouts;
   struct heap intervals;
-  struct threads thread;
+  struct thread thread;
   pthread_mutex_t mutex;
   _Atomic uint64_t latest;
   sem_t work;
@@ -86,16 +77,26 @@ extern int time_manager(struct time_manager* const);
 
 extern int time_manager_start(struct time_manager* const);
 
-extern int time_manager_add_timeout(struct time_manager* const, const uint64_t, void (*)(void*), void* const, struct time_timeout_ref* const);
-
-extern int time_manager_add_interval(struct time_manager* const, const uint64_t, const uint64_t, void (*)(void*), void* const, struct time_interval_ref* const, const int);
-
-extern int time_manager_cancel_timeout(struct time_manager* const, struct time_timeout_ref* const);
-
-extern int time_manager_cancel_interval(struct time_manager* const, struct time_interval_ref* const);
-
 extern void time_manager_stop(struct time_manager* const);
 
 extern void time_manager_free(struct time_manager* const);
+
+
+extern int time_manager_add_timeout(struct time_manager* const, const uint64_t, void (*)(void*), void* const, struct time_reference* const);
+
+extern struct time_timeout* time_manager_begin_modifying_timeout(struct time_manager* const, struct time_reference* const);
+
+extern void time_manager_end_modifying_timeout(struct time_manager* const, struct time_reference* const);
+
+extern int time_manager_cancel_timeout(struct time_manager* const, struct time_reference* const);
+
+
+extern int time_manager_add_interval(struct time_manager* const, const uint64_t, const uint64_t, void (*)(void*), void* const, struct time_reference* const);
+
+extern int time_manager_cancel_interval(struct time_manager* const, struct time_reference* const);
+
+extern struct time_interval* time_manager_begin_modifying_interval(struct time_manager* const, struct time_reference* const);
+
+extern void time_manager_end_modifying_interval(struct time_manager* const, struct time_reference* const);
 
 #endif // __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z
