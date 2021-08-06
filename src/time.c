@@ -234,10 +234,6 @@ void time_manager_free(struct time_manager* const manager) {
   refheap_free(&manager->intervals);
 }
 
-// when inserting and refheap is resized and realloc moves the memory, we need to update all the references, which would be kinda fucking dumb
-// better solution is to make the references indexes instead of pointers, then problem solved easily
-// the same goes for http too ig, the http_message thing that i needed to fix with http1_convert_message()
-
 int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_reference* const ref) {
   (void) pthread_mutex_lock(&manager->mutex);
   if(refheap_insert(&manager->timeouts, &(struct time_timeout){ time, func, data }, ref == NULL ? NULL : &ref->timer) == -1) {
