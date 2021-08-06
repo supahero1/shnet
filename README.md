@@ -28,6 +28,7 @@ The `http` module implements http and https 1.1 client and server, and the webso
 
 * [Linux](https://www.kernel.org/)
 * [GCC](https://gcc.gnu.org/) or [Clang](https://clang.llvm.org/)
+* [Make](https://www.gnu.org/software/make/)
 * [Zlib](https://www.zlib.net/)
 * [Brotli](https://brotli.org/)
 
@@ -36,7 +37,7 @@ My personal preference is on GCC, added clang because it tries to be compatible 
 To install the dependencies, one can do (debian):
 ```bash
 sudo apt update -y
-sudo apt install libgcc-11-dev zlib1g-dev libbrotli-dev -y
+sudo apt install gcc zlib1g-dev libbrotli-dev libssl-dev make -y
 ```
 
 ..., or (fedora):

@@ -69,6 +69,7 @@ copy-headers:
 
 build-static: build
 	ar rcsv $(DIR_OUT)/libshnet.a $(OBJECTS)
+	ldconfig
 
 static: build-static include
 	cp $(DIR_OUT)/libshnet.a $(DIR_LIB)
@@ -81,6 +82,7 @@ build-dynamic: build
 
 dynamic: build-dynamic include
 	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
+	ldconfig
 
 strip-dynamic: build-dynamic copy-headers
 	cp $(DIR_OUT)/libshnet.so shnet
