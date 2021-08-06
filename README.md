@@ -484,7 +484,7 @@ current position of the timer. Canceling
 a timer is thread-safe. It can be done
 after the timer has been already executed
 or cancelled. */
-struct time_timeout_ref timeout_ref = {0};
+struct time_reference timeout_ref = {0};
 
 /* The application can resize the available
 space for timeouts and intervals once it
@@ -503,20 +503,24 @@ with the use of the reference. 1 is returned
 if the timer was successfully cancelled before
 execution, 0 otherwise. Note that 0 will be
 returned if the timer was already cancelled.
-Currently, there is no method of distinguishing. */
+Currently, there is no way of distinguishing. */
 int cancelled = time_manager_cancel_timeout(&manager, &timeout_ref);
 
-/* Intervals are the same, except one more
-value to supply to the insertion call: */
-err = time_manager_add_interval(..., (time_instant || time_not_instant));
-/* It controls how the interval will behave.
-If the application wants the interval to start
-it's execution instantly, it should pick time_instant.
-Otherwise, to wait the interval's time interval,
-time_not_instant should be supplied.
-Intervals will never drive too far off their
-scheduled execution time, since their time is
-counted with: base_time + count * interval_time */
+/* Intervals work the same way timeouts do. */
+
+/* There is also support for modifying timers
+after they have been inserted: */
+struct time_timeout* timer = time_manager_begin_modifying_timeout(&manager, &timeout_ref);
+/* Modify the timer */
+time_manager_end_modifying_timeout(&manager, &timeout_ref);
+/* This allows for changing any properties of
+the timer: expiration time, function to be
+executed, data, and more for intervals.
+It must be noted though that this locks the
+internal mutex of the time manager, and so
+if it is locked for a very long time, any
+pending timers will not be executed until
+it is unlocked. */
 ```
 
 Fetching current time and converting it:
