@@ -1308,7 +1308,10 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     if(response.status_code != 0) {
       /* We have a response to send. Automatically attach some headers. */
 #define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
-      if(connection != NULL) {
+      if(response.close_conn) {
+        close_connection = 1;
+        add_header("Connection", 10, "close", 5);
+      } else if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
         } else if(connection->value_len == 10 && strncasecmp(connection->value, "keep-alive", 10) == 0) {
@@ -1930,7 +1933,10 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
     }
     if(response.status_code != 0) {
 #define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
-      if(connection != NULL) {
+      if(response.close_conn) {
+        close_connection = 1;
+        add_header("Connection", 10, "close", 5);
+      } else if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
         } else if(connection->value_len == 10 && strncasecmp(connection->value, "keep-alive", 10) == 0) {

@@ -205,6 +205,7 @@ struct http_message {
   uint8_t transfer:1;
   uint8_t alloc_body:1;
   uint8_t client:1;
+  uint8_t close_conn:1;
 };
 
 struct http_parser_session {
