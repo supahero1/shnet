@@ -407,9 +407,9 @@ int tls_socket(struct tls_socket* const socket, const struct tls_socket_options*
   }
   if(socket->ctx == NULL) {
     if(opt == NULL) {
-      socket->ctx = tls_ctx(NULL, NULL, tls_client);
+      socket->ctx = tls_ctx(NULL, NULL, NULL, tls_client);
     } else {
-      socket->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->flags | tls_client);
+      socket->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->verification_file, opt->flags | tls_client);
     }
     if(socket->ctx == NULL) {
       return -1;
@@ -703,7 +703,7 @@ int tls_server(struct tls_server* const server, struct tls_server_options* const
   }
   server->tcp.callbacks = &tls_server_callbacks;
   if(server->ctx == NULL) {
-    server->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->flags);
+    server->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->verification_file, opt->flags);
     if(server->ctx == NULL) {
       goto err_sock;
     }

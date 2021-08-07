@@ -80,6 +80,7 @@ struct tls_socket_options {
   struct tcp_socket_options tcp;
   const char* cert_path;
   const char* key_path;
+  const char* verification_file;
   uintptr_t flags;
 };
 
@@ -130,6 +131,7 @@ struct tls_server_options {
   struct tcp_server_options tcp;
   const char* cert_path;
   const char* key_path;
+  const char* verification_file;
   uintptr_t flags;
 };
 
