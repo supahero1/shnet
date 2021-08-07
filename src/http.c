@@ -4,11 +4,7 @@
 
 #include <errno.h>
 #include <string.h>
-/* So here is the todo list:
-1. go through the code from top to bottom. dont care about performance or anything. generally serversocks require the most attention. make sure the code is CLEAN! and that there are no mem leaks. (high prio, needs this for the code to work)
-2. make a test with a POST request
-3. write a function like "try_compress(request, response)", it shall compare request and response available encodings and pick one. prio is: brotli, deflate, gzip. in the future maybe let the app choose custom prio, but not for now. MAKE THE CODE CLEAN!
-*/
+
 static void http_client_onopen(struct tcp_socket*);
 
 static void http_client_onmessage(struct tcp_socket*);
