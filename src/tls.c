@@ -284,7 +284,7 @@ static void tls_onfree(struct tcp_socket* soc) {
 
 
 
-SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const uintptr_t flags) {
+SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const char* const verification_file, const uintptr_t flags) {
   SSL_CTX* const ctx = SSL_CTX_new((flags & tls_client) ? TLS_client_method() : TLS_server_method());
   if(ctx == NULL) {
     return NULL;
@@ -327,6 +327,9 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
       if(SSL_CTX_use_PrivateKey_file(ctx, path, SSL_FILETYPE_PEM) != 1) {
         goto err_ctx;
       }
+    }
+    if(verification_file != NULL && SSL_CTX_load_verify_locations(ctx, verification_file, NULL) == 0) {
+      goto err_ctx;
     }
     if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK) == 0) {
       goto err_ctx;
