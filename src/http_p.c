@@ -677,7 +677,7 @@ int http1_parse_request(char* buffer, uint64_t size, struct http_parser_session*
   That's because some filesystems have reserved characters for filenames, others
   don't. */
   const uint64_t smaller = size < settings->max_path_len + 1 ? size : settings->max_path_len + 1;
-  const char* space = memchr(buffer, ' ', smaller);
+  char* space = memchr(buffer, ' ', smaller);
   if(space == NULL) {
     if(size > settings->max_path_len) {
       return http_path_too_long;
