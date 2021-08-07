@@ -580,11 +580,14 @@ uint64_t tcp_read(struct tcp_socket* const socket, void* data, uint64_t size) {
 
 static void tcp_socket_onevent(int events, struct net_socket* net) {
   if(events & EPOLLOUT) {
+    _debug("1", 1);
     if(!tcp_socket_test_flag(socket, tcp_opened)) {
+      _debug("3", 1);
       tcp_socket_set_flag(socket, tcp_opened);
       if(socket->callbacks->onopen != NULL) {
         socket->callbacks->onopen(socket);
       }
+      _debug("4", 1);
     } else if(socket->reconnecting) {
       tcp_socket_clear_flag(socket, ~tcp_opened);
       if(socket->settings.onopen_when_reconnect) {
@@ -593,6 +596,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
       socket->reconnecting = 0;
       socket->reprobed = 0;
     }
+    _debug("2", 1);
   }
   if((events & EPOLLIN) && socket->callbacks->onmessage != NULL) {
     socket->callbacks->onmessage(socket);
