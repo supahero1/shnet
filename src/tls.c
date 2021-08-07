@@ -328,8 +328,22 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
         goto err_ctx;
       }
     }
-    if(verification_file != NULL && SSL_CTX_load_verify_locations(ctx, verification_file, NULL) == 0) {
-      goto err_ctx;
+    if(verification_file != NULL) {
+      if(verification_file[0] == '.') {
+        if(len == 0) {
+          if(getcwd(cwd, PATH_MAX) == NULL) {
+            goto err_ctx;
+          }
+          len = strlen(cwd);
+        }
+        (void) memcpy(cwd + len, verification_file + 1, strlen(verification_file));
+        path = cwd;
+      } else {
+        path = verification_file;
+      }
+      if(SSL_CTX_load_verify_locations(ctx, path, NULL) == 0) {
+        goto err_ctx;
+      }
     }
     if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK) == 0) {
       goto err_ctx;
