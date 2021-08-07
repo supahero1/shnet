@@ -296,7 +296,6 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
     if(cert_path[0] == '.') {
       /* Transform relative into absolute path */
       if(getcwd(cwd, PATH_MAX) == NULL) {
-        puts("1");
         goto err_ctx;
       }
       len = strlen(cwd);
@@ -306,13 +305,11 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
       path = cert_path;
     }
     if(SSL_CTX_use_certificate_chain_file(ctx, path) != 1) {
-      puts("2");
       goto err_ctx;
     }
     if(key_path[0] == '.') {
       if(len == 0) {
         if(getcwd(cwd, PATH_MAX) == NULL) {
-          puts("3");
           goto err_ctx;
         }
         len = strlen(cwd);
@@ -324,7 +321,6 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
     }
     if(flags & tls_rsa_key) {
       if(SSL_CTX_use_RSAPrivateKey_file(ctx, path, SSL_FILETYPE_PEM) != 1) {
-        puts("4");
         goto err_ctx;
       }
     } else {
@@ -333,7 +329,6 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
       }
     }
     if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK) == 0) {
-      puts("5");
       goto err_ctx;
     }
   }
