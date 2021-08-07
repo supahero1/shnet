@@ -173,13 +173,13 @@ struct http_serversock_context {
 struct http_serversock {
   struct tcp_socket tcp;
   struct http_serversock_context context;
-  struct ws_serversock_callbacks* callbacks;
+  const struct ws_serversock_callbacks* callbacks;
 };
 
 struct https_serversock {
   struct tls_socket tls;
   struct http_serversock_context context;
-  struct wss_serversock_callbacks* callbacks;
+  const struct wss_serversock_callbacks* callbacks;
 };
 
 
