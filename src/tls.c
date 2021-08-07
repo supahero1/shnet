@@ -284,7 +284,7 @@ static void tls_onfree(struct tcp_socket* soc) {
 
 
 
-SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const char* const verification_file, const uintptr_t flags) {
+SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const uintptr_t flags) {
   SSL_CTX* const ctx = SSL_CTX_new((flags & tls_client) ? TLS_client_method() : TLS_server_method());
   if(ctx == NULL) {
     return NULL;
@@ -328,24 +328,7 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
         goto err_ctx;
       }
     }
-    if(verification_file != NULL) {
-      if(verification_file[0] == '.') {
-        if(len == 0) {
-          if(getcwd(cwd, PATH_MAX) == NULL) {
-            goto err_ctx;
-          }
-          len = strlen(cwd);
-        }
-        (void) memcpy(cwd + len, verification_file + 1, strlen(verification_file));
-        path = cwd;
-      } else {
-        path = verification_file;
-      }
-      if(SSL_CTX_load_verify_locations(ctx, path, NULL) == 0) {
-        goto err_ctx;
-      }
-    }
-    if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK) == 0) {
+    if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK | SSL_BUILD_CHAIN_FLAG_IGNORE_ERROR | SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR) == 0) {
       goto err_ctx;
     }
   }
@@ -421,9 +404,9 @@ int tls_socket(struct tls_socket* const socket, const struct tls_socket_options*
   }
   if(socket->ctx == NULL) {
     if(opt == NULL) {
-      socket->ctx = tls_ctx(NULL, NULL, NULL, tls_client);
+      socket->ctx = tls_ctx(NULL, NULL, tls_client);
     } else {
-      socket->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->verification_file, opt->flags | tls_client);
+      socket->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->flags | tls_client);
     }
     if(socket->ctx == NULL) {
       return -1;
@@ -717,7 +700,7 @@ int tls_server(struct tls_server* const server, struct tls_server_options* const
   }
   server->tcp.callbacks = &tls_server_callbacks;
   if(server->ctx == NULL) {
-    server->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->verification_file, opt->flags);
+    server->ctx = tls_ctx(opt->cert_path, opt->key_path, opt->flags);
     if(server->ctx == NULL) {
       goto err_sock;
     }

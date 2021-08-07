@@ -72,7 +72,7 @@ extern void tls_socket_dont_receive_data(struct tls_socket* const);
 extern void tls_socket_receive_data(struct tls_socket* const);
 
 
-extern SSL_CTX* tls_ctx(const char* const, const char* const, const char* const, const uintptr_t);
+extern SSL_CTX* tls_ctx(const char* const, const char* const, const uintptr_t);
 
 extern int  tls_socket_init(struct tls_socket* const);
 
@@ -80,7 +80,6 @@ struct tls_socket_options {
   struct tcp_socket_options tcp;
   const char* cert_path;
   const char* key_path;
-  const char* verification_file;
   uintptr_t flags;
 };
 
@@ -131,7 +130,6 @@ struct tls_server_options {
   struct tcp_server_options tcp;
   const char* cert_path;
   const char* key_path;
-  const char* verification_file;
   uintptr_t flags;
 };
 
