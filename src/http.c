@@ -142,12 +142,14 @@ static struct http_parser_settings http_request_parser_settings = {
   .max_headers = 32,
   .max_header_name_len = 32,
   .max_header_value_len = 1024,
+  .max_query_len = 64,
   .max_body_len = 1024000 /* ~1MB */
 };
 
 static struct http_parser_settings http_prerequest_parser_settings = {
   .max_method_len = 255,
   .max_path_len = 255,
+  .max_query_len = 255,
   .stop_at_path = 1,
   .no_character_validation = 1
 };
