@@ -198,6 +198,7 @@ const char* http1_parser_strerror(const int err) {
     case http_invalid_character: return "http_invalid_character";
     case http_no_path: return "http_no_path";
     case http_path_too_long: return "http_path_too_long";
+    case http_query_too_long: return "http_query_too_long";
     case http_invalid_version: return "http_invalid_version";
     case http_too_many_headers: return "http_too_many_headers";
     case http_header_name_too_long: return "http_header_name_too_long";

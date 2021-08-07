@@ -155,6 +155,7 @@ enum http_parser_consts {
   http_invalid_character,
   http_no_path,
   http_path_too_long,
+  http_query_too_long,
   http_invalid_version,
   http_too_many_headers,
   http_header_name_too_long,
