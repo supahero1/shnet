@@ -2,7 +2,7 @@
 empty: ;
 
 CC := gcc
-CFLAGS += -pthread -Wall -pedantic -O3
+CFLAGS += -pthread -Wall -pedantic -O0
 LDLIBS += -lshnet
 LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
 TESTLIBS += $(LIBS) -lm
