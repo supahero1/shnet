@@ -198,9 +198,15 @@ static int tls_oncreation(struct tcp_socket* soc) {
     (void) memcpy(socket->tcp.info->ai_canonname, socket->tcp.addr->hostname, len);
   }
   _debug("oncreation %p %p", 1, (void*) socket->ssl, (void*) socket->ctx);
+  char buf[512] = {0};
+  tls_get_OpenSSL_error(buf, 512);
+  _debug("err %s", 1, buf);
   if(tls_socket_init(socket) != 0) {
     return -1;
   }
+  char buf[512] = {0};
+  tls_get_OpenSSL_error(buf, 512);
+  _debug("err %s", 1, buf);
   if((socket->tcp.reconnecting && socket->settings.oncreation_when_reconnect) || (!socket->tcp.reconnecting && socket->callbacks->oncreation != NULL)) {
     return socket->callbacks->oncreation(socket);
   }
@@ -209,9 +215,6 @@ static int tls_oncreation(struct tcp_socket* soc) {
 
 static void tls_onopen(struct tcp_socket* soc) {
   tcp_socket_nodelay_on(&socket->tcp);
-  char buf[512] = {0};
-  tls_get_OpenSSL_error(buf, 512);
-  _debug("err %s", 1, buf);
   ERR_clear_error();
   switch(SSL_get_error(socket->ssl, SSL_do_handshake(socket->ssl))) {
     case SSL_ERROR_WANT_WRITE: {
@@ -221,9 +224,6 @@ static void tls_onopen(struct tcp_socket* soc) {
     }
     case SSL_ERROR_SYSCALL:
     case SSL_ERROR_SSL: {
-      char buf[512] = {0};
-      tls_get_OpenSSL_error(buf, 512);
-      _debug("err %s", 1, buf);
       tcp_socket_force_close(&socket->tcp);
     }
     default: break;
