@@ -215,12 +215,10 @@ static int tls_oncreation(struct tcp_socket* soc) {
 
 static void tls_onopen(struct tcp_socket* soc) {
   tcp_socket_nodelay_on(&socket->tcp);
-  _debug("oncreation %p %p", 1, (void*) socket->ssl, (void*) socket->ctx);
   char buf[512] = {0};
   tls_get_OpenSSL_error(buf, 512);
   _debug("err %s", 1, buf);
   ERR_clear_error();
-  _debug("oncreation %p %p", 1, (void*) socket->ssl, (void*) socket->ctx);
   memset(buf, 0, 512);
   tls_get_OpenSSL_error(buf, 512);
   _debug("err %s", 1, buf);
@@ -232,7 +230,6 @@ static void tls_onopen(struct tcp_socket* soc) {
     }
     case SSL_ERROR_SYSCALL:
     case SSL_ERROR_SSL: {
-      _debug("oncreation %p %p", 1, (void*) socket->ssl, (void*) socket->ctx);
       memset(buf, 0, 512);
       tls_get_OpenSSL_error(buf, 512);
       _debug("err %s", 1, buf);
