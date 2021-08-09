@@ -150,10 +150,10 @@ static void tls_check(struct tls_socket* const socket) {
     const int is_init_fin = SSL_is_init_finished(socket->ssl);
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
+      _debug("real onopen", 1);
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tcp_can_send);
       (void) tls_send_buffered(socket);
-      _debug("real onopen", 1);
       if(socket->opened == 0) {
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
@@ -254,6 +254,9 @@ static int tls_socket_onnomem(struct tcp_socket* soc) {
 }
 
 static void tls_onclose(struct tcp_socket* soc) {
+  /* TODO this solution is not near perfect. OpenSSL is going to drop packets if
+  it receives EPIPE from send(), so better to hook this into tls_send_internal()
+  as well to not lose data when reconnecting. */
   tls_socket_clear_flag(socket, tcp_can_send);
   socket->callbacks->onclose(socket);
 }

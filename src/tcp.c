@@ -582,6 +582,7 @@ uint64_t tcp_read(struct tcp_socket* const socket, void* data, uint64_t size) {
 
 static void tcp_socket_onevent(int events, struct net_socket* net) {
   if(events & EPOLLOUT) {
+    _debug("epollout", 1);
     if(!tcp_socket_test_flag(socket, tcp_opened)) {
       tcp_socket_set_flag(socket, tcp_opened);
       if(socket->callbacks->onopen != NULL) {
@@ -597,6 +598,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
     }
   }
   if((events & EPOLLIN) && socket->callbacks->onmessage != NULL) {
+    _debug("epollin", 1);
     socket->callbacks->onmessage(socket);
   }
   int code = 0;
@@ -606,6 +608,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
     if(code == EPIPE) {
       goto epollhup;
     }
+    _debug("epollerr", 1);
     if(socket->settings.automatically_reconnect) {
       if(!socket->reconnecting && socket->settings.onclose_when_reconnect) {
         errno = EAGAIN;
@@ -673,6 +676,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
   }
   if(events & EPOLLHUP) {
     epollhup:
+    _debug("epollhup", 1);
     if(socket->settings.automatically_reconnect) {
       if(socket->settings.onclose_when_reconnect) {
         errno = EAGAIN;
