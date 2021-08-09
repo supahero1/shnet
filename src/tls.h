@@ -11,7 +11,7 @@ enum tls_consts {
   /* TLS socket flags */
   
   tls_wants_send = 16U,
-  tls_shutdown_rd = 32U
+  tls_shutdown_rd = 32U,
   
   tls_read_only = tcp_read_only,
   tls_dont_free = tcp_dont_free,
