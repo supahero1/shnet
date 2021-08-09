@@ -242,9 +242,7 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
-  _debug("yes", 1);
   if(tls_socket_test_flag(socket, tls_can_send | tcp_can_send) == (tls_can_send | tcp_can_send)) {
-    _debug("tls sending buffered", 1);
     (void) tls_send_buffered(socket);
   }
 }
@@ -480,19 +478,13 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
 
 static int tls_send_buffered(struct tls_socket* const socket) {
   if(!tls_socket_test_flag(socket, tls_can_send | tcp_can_send)) {
-    _debug("C", 1);
     return -1;
   }
-  _debug("D", 1);
   (void) pthread_mutex_lock(&socket->tcp.lock);
-  _debug("E", 1);
   if(socket->tcp.send_len != 0) {
-    _debug("F", 1);
     while(1) {
-      _debug("FF", 1);
       const int sent = tls_send_internal(socket, socket->tcp.send_queue->data, socket->tcp.send_queue->len);
       if(sent == 0) {
-        _debug("FFF", 1);
         if(!socket->tcp.send_queue->dont_free) {
           free((void*) socket->tcp.send_queue->data);
         }
@@ -502,16 +494,12 @@ static int tls_send_buffered(struct tls_socket* const socket) {
           break;
         }
       } else {
-        _debug("FFFF", 1);
         return sent;
       }
     }
   }
-  _debug("G", 1);
   (void) pthread_mutex_unlock(&socket->tcp.lock);
-  _debug("H", 1);
   if(tls_socket_test_flag(socket, tcp_closing)) {
-    _debug("I", 1);
     tls_socket_force_close(socket);
   }
   return 0;
