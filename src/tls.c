@@ -500,9 +500,12 @@ If errno is -1, a fatal OpenSSL error occured and the connection is closing.
 Most applications can ignore the return value and errno. */
 
 int tls_send(struct tls_socket* const socket, const void* data, uint64_t size, const int flags) {
-  if(!socket->tcp.settings.automatically_reconnect && tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr)) {
-    errno = EPIPE;
-    goto err0;
+  if(tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr)) {
+    if(!socket->tcp.settings.automatically_reconnect) {
+      errno = EPIPE;
+      goto err0;
+    }
+    return tcp_buffer(&socket->tcp, data, size, 0, flags);
   }
   int err = tls_send_buffered(socket);
   if(err == -2) {
