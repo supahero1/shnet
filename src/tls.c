@@ -155,11 +155,14 @@ static void tls_check(struct tls_socket* const socket) {
       tls_socket_set_flag(socket, tls_can_send);
       (void) tls_send_buffered(socket);
       if(socket->opened == 0) {
+        _debug("a", 1);
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
+          _debug("b", 1);
           socket->callbacks->onopen(socket);
         }
       } else if(socket->settings.onopen_when_reconnect) {
+        _debug("c", 1);
         socket->callbacks->onopen(socket);
       }
     }
