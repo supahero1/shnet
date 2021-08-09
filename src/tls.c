@@ -491,8 +491,10 @@ static int tls_send_buffered(struct tls_socket* const socket) {
   if(socket->tcp.send_len != 0) {
     _debug("F", 1);
     while(1) {
+      _debug("FF", 1);
       const int sent = tls_send_internal(socket, socket->tcp.send_queue->data, socket->tcp.send_queue->len);
       if(sent == 0) {
+        _debug("FFF", 1);
         if(!socket->tcp.send_queue->dont_free) {
           free((void*) socket->tcp.send_queue->data);
         }
@@ -502,6 +504,7 @@ static int tls_send_buffered(struct tls_socket* const socket) {
           break;
         }
       } else {
+        _debug("FFFF", 1);
         return sent;
       }
     }
