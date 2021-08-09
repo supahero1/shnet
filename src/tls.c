@@ -197,6 +197,7 @@ static int tls_oncreation(struct tcp_socket* soc) {
     }
     (void) memcpy(socket->tcp.info->ai_canonname, socket->tcp.addr->hostname, len);
   }
+  _debug("oncreation %p %p", 1, (void*) socket->ssl, (void*) socket->ctx);
   if(tls_socket_init(socket) != 0) {
     return -1;
   }
@@ -208,6 +209,9 @@ static int tls_oncreation(struct tcp_socket* soc) {
 
 static void tls_onopen(struct tcp_socket* soc) {
   tcp_socket_nodelay_on(&socket->tcp);
+  char buf[512] = {0};
+  tls_get_OpenSSL_error(buf, 512);
+  _debug("err %s", 1, buf);
   ERR_clear_error();
   switch(SSL_get_error(socket->ssl, SSL_do_handshake(socket->ssl))) {
     case SSL_ERROR_WANT_WRITE: {
@@ -219,7 +223,7 @@ static void tls_onopen(struct tcp_socket* soc) {
     case SSL_ERROR_SSL: {
       char buf[512] = {0};
       tls_get_OpenSSL_error(buf, 512);
-      _debug("err %s", 0, buf);
+      _debug("err %s", 1, buf);
       tcp_socket_force_close(&socket->tcp);
     }
     default: break;
@@ -266,6 +270,9 @@ static void tls_onfree(struct tcp_socket* soc) {
   if(socket->alloc_ssl) {
     SSL_free(socket->ssl);
   }
+  if(socket->alloc_ctx && !socket->tcp.reconnecting) {
+    SSL_CTX_free(socket->ctx);
+  }
   if(socket->read_buffer != NULL) {
     free(socket->read_buffer);
   }
@@ -273,6 +280,10 @@ static void tls_onfree(struct tcp_socket* soc) {
     if(socket->alloc_ssl) {
       socket->ssl = NULL;
       socket->alloc_ssl = 0;
+    }
+    if(socket->alloc_ctx && !socket->tcp.reconnecting) {
+      socket->ctx = NULL;
+      socket->alloc_ctx = 0;
     }
     socket->read_buffer = NULL;
     socket->read_used = 0;
