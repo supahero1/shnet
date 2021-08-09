@@ -736,6 +736,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
     return;
   }
   if(events & EPOLLOUT) {
+    _debug("epollout", 1);
     tcp_socket_set_flag(socket, tcp_can_send);
     if(socket->callbacks->onsend != NULL) {
       socket->callbacks->onsend(socket);
@@ -745,6 +746,7 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
     }
   }
   if(events & EPOLLRDHUP) {
+    _debug("epollrdhup", 1);
     if(socket->callbacks->onreadclose != NULL) {
       socket->callbacks->onreadclose(socket);
     }
