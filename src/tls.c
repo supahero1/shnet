@@ -150,7 +150,7 @@ static void tls_check(struct tls_socket* const socket) {
     const int is_init_fin = SSL_is_init_finished(socket->ssl);
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
-      _debug("real onopen", 1);
+      _debug("tls onopen %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tls_can_send);
       (void) tls_send_buffered(socket);
@@ -243,6 +243,7 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
+  _debug("yes", 1);
   if(tls_socket_test_flag(socket, tls_can_send | tcp_can_send) == (tls_can_send | tcp_can_send)) {
     _debug("tls sending buffered", 1);
     (void) tls_send_buffered(socket);
