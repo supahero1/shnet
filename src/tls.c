@@ -162,7 +162,27 @@ static void tls_check(struct tls_socket* const socket) {
       }
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tls_can_send);
+      _debug("tls onopen 2 %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
+      if(socket->opened == 0) {
+        _debug("1", 1);
+      }
+      if(!socket->opened) {
+        _debug("2", 1);
+      }
+      if(socket->opened) {
+        _debug("3", 1);
+      }
       (void) tls_send_buffered(socket);
+      _debug("tls onopen 3 %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
+      if(socket->opened == 0) {
+        _debug("1", 1);
+      }
+      if(!socket->opened) {
+        _debug("2", 1);
+      }
+      if(socket->opened) {
+        _debug("3", 1);
+      }
       if(socket->opened == 0) {
         _debug("a", 1);
         socket->opened = 1;
