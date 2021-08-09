@@ -243,6 +243,7 @@ static void tls_onsend(struct tcp_socket* soc) {
     (void) tls_send_internal(socket, NULL, 0);
   }
   if(tls_socket_test_flag(socket, tcp_can_send)) {
+    _debug("tls sending buffered", 1);
     (void) tls_send_buffered(socket);
   }
 }
