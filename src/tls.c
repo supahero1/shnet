@@ -150,48 +150,17 @@ static void tls_check(struct tls_socket* const socket) {
     const int is_init_fin = SSL_is_init_finished(socket->ssl);
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
-      _debug("tls onopen %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
-      if(socket->opened == 0) {
-        _debug("1", 1);
-      }
-      if(!socket->opened) {
-        _debug("2", 1);
-      }
-      if(socket->opened) {
-        _debug("3", 1);
-      }
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tls_can_send);
-      _debug("tls onopen 2 %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
-      if(socket->opened == 0) {
-        _debug("1", 1);
-      }
-      if(!socket->opened) {
-        _debug("2", 1);
-      }
-      if(socket->opened) {
-        _debug("3", 1);
-      }
+      _debug("A", 1);
       (void) tls_send_buffered(socket);
-      _debug("tls onopen 3 %hhu %hhu", 1, socket->opened, socket->tcp.reconnecting);
+      _debug("B", 1);
       if(socket->opened == 0) {
-        _debug("1", 1);
-      }
-      if(!socket->opened) {
-        _debug("2", 1);
-      }
-      if(socket->opened) {
-        _debug("3", 1);
-      }
-      if(socket->opened == 0) {
-        _debug("a", 1);
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
-          _debug("b", 1);
           socket->callbacks->onopen(socket);
         }
       } else if(socket->settings.onopen_when_reconnect) {
-        _debug("c", 1);
         socket->callbacks->onopen(socket);
       }
     }
@@ -513,10 +482,14 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
 
 static int tls_send_buffered(struct tls_socket* const socket) {
   if(!tls_socket_test_flag(socket, tls_can_send | tcp_can_send)) {
+    _debug("C", 1);
     return -1;
   }
+  _debug("D", 1);
   (void) pthread_mutex_lock(&socket->tcp.lock);
+  _debug("E", 1);
   if(socket->tcp.send_len != 0) {
+    _debug("F", 1);
     while(1) {
       const int sent = tls_send_internal(socket, socket->tcp.send_queue->data, socket->tcp.send_queue->len);
       if(sent == 0) {
@@ -533,8 +506,11 @@ static int tls_send_buffered(struct tls_socket* const socket) {
       }
     }
   }
+  _debug("G", 1);
   (void) pthread_mutex_unlock(&socket->tcp.lock);
+  _debug("H", 1);
   if(tls_socket_test_flag(socket, tcp_closing)) {
+    _debug("I", 1);
     tls_socket_force_close(socket);
   }
   return 0;
