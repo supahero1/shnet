@@ -153,6 +153,7 @@ static void tls_check(struct tls_socket* const socket) {
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tcp_can_send);
       (void) tls_send_buffered(socket);
+      _debug("real onopen", 1);
       if(socket->opened == 0) {
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
