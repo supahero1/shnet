@@ -217,6 +217,9 @@ static void tls_onopen(struct tcp_socket* soc) {
     }
     case SSL_ERROR_SYSCALL:
     case SSL_ERROR_SSL: {
+      char buf[512] = {0};
+      tls_get_OpenSSL_error(buf, 512);
+      _debug("err %s", 0, buf);
       tcp_socket_force_close(&socket->tcp);
     }
     default: break;
