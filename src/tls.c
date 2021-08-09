@@ -152,7 +152,7 @@ static void tls_check(struct tls_socket* const socket) {
     if(is_init_fin) {
       _debug("real onopen", 1);
       tcp_socket_nodelay_off(&socket->tcp);
-      tls_socket_set_flag(socket, tcp_can_send);
+      tls_socket_set_flag(socket, tls_can_send);
       (void) tls_send_buffered(socket);
       if(socket->opened == 0) {
         socket->opened = 1;
@@ -243,7 +243,7 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
-  if(tls_socket_test_flag(socket, tcp_can_send)) {
+  if(tls_socket_test_flag(socket, tls_can_send | tcp_can_send)) {
     _debug("tls sending buffered", 1);
     (void) tls_send_buffered(socket);
   }
@@ -254,10 +254,7 @@ static int tls_socket_onnomem(struct tcp_socket* soc) {
 }
 
 static void tls_onclose(struct tcp_socket* soc) {
-  /* TODO this solution is not near perfect. OpenSSL is going to drop packets if
-  it receives EPIPE from send(), so better to hook this into tls_send_internal()
-  as well to not lose data when reconnecting. */
-  tls_socket_clear_flag(socket, tcp_can_send);
+  tls_socket_clear_flag(socket, tls_can_send | tcp_can_send);
   socket->callbacks->onclose(socket);
 }
 
@@ -453,6 +450,7 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
         return 0;
       }
       case SSL_ERROR_ZERO_RETURN: {
+        tls_socket_clear_flag(socket, tls_can_send | tcp_can_send);
         errno = EPIPE;
         return -2;
       }
@@ -481,7 +479,7 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
 }
 
 static int tls_send_buffered(struct tls_socket* const socket) {
-  if(!tls_socket_test_flag(socket, tcp_can_send)) {
+  if(!tls_socket_test_flag(socket, tls_can_send | tcp_can_send)) {
     return -1;
   }
   (void) pthread_mutex_lock(&socket->tcp.lock);
@@ -517,7 +515,7 @@ If errno is -1, a fatal OpenSSL error occured and the connection is closing.
 Most applications can ignore the return value and errno. */
 
 int tls_send(struct tls_socket* const socket, const void* data, uint64_t size, const int flags) {
-  if(tls_socket_test_flag(socket, tcp_shutdown_wr) || !tls_socket_test_flag(socket, tcp_can_send)) {
+  if(tls_socket_test_flag(socket, tcp_shutdown_wr) || tls_socket_test_flag(socket, tls_can_send | tcp_can_send) != (tls_can_send | tcp_can_send)) {
     if(!socket->tcp.settings.automatically_reconnect) {
       errno = EPIPE;
       goto err0;

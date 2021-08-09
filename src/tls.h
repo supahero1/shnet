@@ -12,6 +12,7 @@ enum tls_consts {
   
   tls_wants_send = 16U,
   tls_shutdown_rd = 32U,
+  tls_can_send = 64U,
   
   tls_read_only = tcp_read_only,
   tls_dont_free = tcp_dont_free,
