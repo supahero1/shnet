@@ -242,7 +242,9 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
-  (void) tls_send_buffered(socket);
+  if(tls_socket_test_flag(socket, tcp_can_send)) {
+    (void) tls_send_buffered(socket);
+  }
 }
 
 static int tls_socket_onnomem(struct tcp_socket* soc) {
