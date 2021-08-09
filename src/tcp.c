@@ -584,11 +584,13 @@ static void tcp_socket_onevent(int events, struct net_socket* net) {
     if(!tcp_socket_test_flag(socket, tcp_opened)) {
       tcp_socket_set_flag(socket, tcp_opened);
       if(socket->callbacks->onopen != NULL) {
+        _debug("onopen", 1);
         socket->callbacks->onopen(socket);
       }
     } else if(socket->reconnecting) {
       tcp_socket_clear_flag(socket, ~tcp_opened);
       if(socket->settings.onopen_when_reconnect) {
+        _debug("onopen", 1);
         socket->callbacks->onopen(socket);
       }
       socket->reconnecting = 0;
