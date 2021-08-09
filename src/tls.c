@@ -204,7 +204,7 @@ static int tls_oncreation(struct tcp_socket* soc) {
   if(tls_socket_init(socket) != 0) {
     return -1;
   }
-  char buf[512] = {0};
+  memset(buf, 0, 512);
   tls_get_OpenSSL_error(buf, 512);
   _debug("err %s", 1, buf);
   if((socket->tcp.reconnecting && socket->settings.oncreation_when_reconnect) || (!socket->tcp.reconnecting && socket->callbacks->oncreation != NULL)) {
