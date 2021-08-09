@@ -152,9 +152,6 @@ static void tls_check(struct tls_socket* const socket) {
     if(is_init_fin) {
       tcp_socket_nodelay_off(&socket->tcp);
       tls_socket_set_flag(socket, tls_can_send);
-      _debug("A", 1);
-      (void) tls_send_buffered(socket);
-      _debug("B", 1);
       if(socket->opened == 0) {
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
@@ -163,6 +160,7 @@ static void tls_check(struct tls_socket* const socket) {
       } else if(socket->settings.onopen_when_reconnect) {
         socket->callbacks->onopen(socket);
       }
+      (void) tls_send_buffered(socket);
     }
   }
   if(socket->close_once == 0) {
