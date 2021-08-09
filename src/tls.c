@@ -503,7 +503,7 @@ If errno is -1, a fatal OpenSSL error occured and the connection is closing.
 Most applications can ignore the return value and errno. */
 
 int tls_send(struct tls_socket* const socket, const void* data, uint64_t size, const int flags) {
-  if(tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr) || !tls_socket_test_flag(socket, tls_can_send)) {
+  if(tls_socket_test_flag(socket, tcp_shutdown_wr) || !tls_socket_test_flag(socket, tcp_can_send)) {
     if(!socket->tcp.settings.automatically_reconnect) {
       errno = EPIPE;
       goto err0;
