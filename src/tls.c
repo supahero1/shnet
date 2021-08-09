@@ -108,8 +108,7 @@ void tls_socket_close(struct tls_socket* const socket) {
 }
 
 void tls_socket_force_close(struct tls_socket* const socket) {
-  tls_socket_set_flag(socket, tls_shutdown_wr);
-  tls_socket_clear_flag(socket, tls_wants_send);
+  tls_socket_clear_flag(socket, tls_wants_send | tcp_can_send);
   (void) pthread_mutex_lock(&socket->ssl_lock);
   ERR_clear_error();
   const int status = SSL_shutdown(socket->ssl);
@@ -152,6 +151,8 @@ static void tls_check(struct tls_socket* const socket) {
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
       tcp_socket_nodelay_off(&socket->tcp);
+      tls_socket_set_flag(socket, tcp_can_send);
+      (void) tls_send_buffered(socket);
       if(socket->opened == 0) {
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
@@ -241,9 +242,7 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
-  if(tls_socket_test_flag(socket, tcp_can_send)) {
-    (void) tls_send_buffered(socket);
-  }
+  (void) tls_send_buffered(socket);
 }
 
 static int tls_socket_onnomem(struct tcp_socket* soc) {
@@ -251,6 +250,7 @@ static int tls_socket_onnomem(struct tcp_socket* soc) {
 }
 
 static void tls_onclose(struct tcp_socket* soc) {
+  tls_socket_clear_flag(socket, tcp_can_send);
   socket->callbacks->onclose(socket);
 }
 
@@ -467,6 +467,9 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
 }
 
 static int tls_send_buffered(struct tls_socket* const socket) {
+  if(!tls_socket_test_flag(socket, tcp_can_send)) {
+    return -1;
+  }
   (void) pthread_mutex_lock(&socket->tcp.lock);
   if(socket->tcp.send_len != 0) {
     while(1) {
@@ -500,7 +503,7 @@ If errno is -1, a fatal OpenSSL error occured and the connection is closing.
 Most applications can ignore the return value and errno. */
 
 int tls_send(struct tls_socket* const socket, const void* data, uint64_t size, const int flags) {
-  if(tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr)) {
+  if(tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr) || !tls_socket_test_flag(socket, tls_can_send)) {
     if(!socket->tcp.settings.automatically_reconnect) {
       errno = EPIPE;
       goto err0;
