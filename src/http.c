@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <inttypes.h>
 
 static void http_client_onopen(struct tcp_socket*);
 
@@ -368,7 +369,7 @@ do { \
       };
     }
     char content_length[21];
-    const int len = sprintf(content_length, "%llu", request.body_len);
+    const int len = sprintf(content_length, "%" PRIu64, request.body_len);
     if(len < 0) {
       goto err;
     }
@@ -1415,7 +1416,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      int len = sprintf(content_length, "%llu", response.body_len);
+      int len = sprintf(content_length, "%" PRIu64, response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -1433,7 +1434,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       
       char keepalive[30];
       if(!close_connection) {
-        len = sprintf(keepalive, "timeout=%llu", server->context.timeout_after);
+        len = sprintf(keepalive, "timeout=%" PRIu64, server->context.timeout_after);
         if(len < 0) {
           goto err_res;
         }
@@ -2048,7 +2049,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      const int len = sprintf(content_length, "%llu", response.body_len);
+      int len = sprintf(content_length, "%" PRIu64, response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -2066,7 +2067,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       
       char keepalive[30];
       if(!close_connection) {
-        len = sprintf(keepalive, "timeout=%llu", server->context.timeout_after);
+        len = sprintf(keepalive, "timeout=%" PRIu64, server->context.timeout_after);
         if(len < 0) {
           goto err_res;
         }
