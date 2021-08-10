@@ -368,7 +368,7 @@ do { \
       };
     }
     char content_length[21];
-    const int len = sprintf(content_length, "%lu", request.body_len);
+    const int len = sprintf(content_length, "%llu", request.body_len);
     if(len < 0) {
       goto err;
     }
@@ -1415,7 +1415,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      const int len = sprintf(content_length, "%lu", response.body_len);
+      int len = sprintf(content_length, "%llu", response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -1429,6 +1429,15 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         if(len != 0) {
           add_header("Date", 4, date_header, len);
         }
+      }
+      
+      char keepalive[30];
+      if(!close_connection) {
+        len = sprintf(keepalive, "timeout=%llu", server->context.timeout_after);
+        if(len < 0) {
+          goto err_res;
+        }
+        add_header("Keep-Alive", 10, keepalive, len);
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
@@ -2039,7 +2048,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      const int len = sprintf(content_length, "%lu", response.body_len);
+      const int len = sprintf(content_length, "%llu", response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -2053,6 +2062,15 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         if(len != 0) {
           add_header("Date", 4, date_header, len);
         }
+      }
+      
+      char keepalive[30];
+      if(!close_connection) {
+        len = sprintf(keepalive, "timeout=%llu", server->context.timeout_after);
+        if(len < 0) {
+          goto err_res;
+        }
+        add_header("Keep-Alive", 10, keepalive, len);
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
