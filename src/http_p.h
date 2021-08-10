@@ -155,6 +155,7 @@ enum http_parser_consts {
   http_invalid_character,
   http_no_path,
   http_path_too_long,
+  http_query_too_long,
   http_invalid_version,
   http_too_many_headers,
   http_header_name_too_long,
@@ -183,6 +184,7 @@ struct http_message {
     char* reason_phrase;
     char* path;
   };
+  char* query;
   struct http_header* headers;
   
   union {
@@ -195,6 +197,7 @@ struct http_message {
     uint16_t path_len;
     uint16_t status_code;
   };
+  uint16_t query_len;
   uint16_t close_code;
   uint8_t opcode:4;
   uint8_t version:2;
@@ -202,6 +205,7 @@ struct http_message {
   uint8_t transfer:1;
   uint8_t alloc_body:1;
   uint8_t client:1;
+  uint8_t close_conn:1;
 };
 
 struct http_parser_session {
@@ -253,6 +257,7 @@ struct http_parser_settings {
   uint8_t max_header_name_len;
   uint16_t max_path_len;
   uint16_t max_header_value_len;
+  uint16_t max_query_len;
   
   uint8_t dont_accept_encoding:3;
   uint8_t client:1;

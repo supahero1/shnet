@@ -155,8 +155,7 @@ int main() {
   server_options.resources = resources;
   server_options.resources_len = sizeof(resources) / sizeof(struct http_resource);
   
-  //server_options.ctx = tls_ctx("./tests/cert.pem", "./tests/key.pem", tls_rsa_key);
-  server_options.ctx = tls_ctx("/home/franek/c/game/website/cert.pem", "/home/franek/c/game/website/key.pem", tls_rsa_key);
+  server_options.ctx = tls_ctx("./tests/cert.pem", "./tests/key.pem", tls_rsa_key);
   
   server_options.timeout_after = 5;
   

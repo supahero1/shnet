@@ -4,11 +4,8 @@
 
 #include <errno.h>
 #include <string.h>
-/* So here is the todo list:
-1. go through the code from top to bottom. dont care about performance or anything. generally serversocks require the most attention. make sure the code is CLEAN! and that there are no mem leaks. (high prio, needs this for the code to work)
-2. make a test with a POST request
-3. write a function like "try_compress(request, response)", it shall compare request and response available encodings and pick one. prio is: brotli, deflate, gzip. in the future maybe let the app choose custom prio, but not for now. MAKE THE CODE CLEAN!
-*/
+#include <inttypes.h>
+
 static void http_client_onopen(struct tcp_socket*);
 
 static void http_client_onmessage(struct tcp_socket*);
@@ -142,12 +139,14 @@ static struct http_parser_settings http_request_parser_settings = {
   .max_headers = 32,
   .max_header_name_len = 32,
   .max_header_value_len = 1024,
+  .max_query_len = 64,
   .max_body_len = 1024000 /* ~1MB */
 };
 
 static struct http_parser_settings http_prerequest_parser_settings = {
   .max_method_len = 255,
   .max_path_len = 255,
+  .max_query_len = 255,
   .stop_at_path = 1,
   .no_character_validation = 1
 };
@@ -370,7 +369,7 @@ do { \
       };
     }
     char content_length[21];
-    const int len = sprintf(content_length, "%lu", request.body_len);
+    const int len = sprintf(content_length, "%" PRIu64, request.body_len);
     if(len < 0) {
       goto err;
     }
@@ -1306,7 +1305,10 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
     if(response.status_code != 0) {
       /* We have a response to send. Automatically attach some headers. */
 #define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
-      if(connection != NULL) {
+      if(response.close_conn) {
+        close_connection = 1;
+        add_header("Connection", 10, "close", 5);
+      } else if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
         } else if(connection->value_len == 10 && strncasecmp(connection->value, "keep-alive", 10) == 0) {
@@ -1414,7 +1416,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      const int len = sprintf(content_length, "%lu", response.body_len);
+      int len = sprintf(content_length, "%" PRIu64, response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -1428,6 +1430,15 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         if(len != 0) {
           add_header("Date", 4, date_header, len);
         }
+      }
+      
+      char keepalive[30];
+      if(!close_connection) {
+        len = sprintf(keepalive, "timeout=%" PRIu64, server->context.timeout_after);
+        if(len < 0) {
+          goto err_res;
+        }
+        add_header("Keep-Alive", 10, keepalive, len);
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
@@ -1928,7 +1939,10 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
     }
     if(response.status_code != 0) {
 #define add_header(a,b,c,d) response.headers[response.headers_len++]=(struct http_header){a,c,d,b,0,0}
-      if(connection != NULL) {
+      if(response.close_conn) {
+        close_connection = 1;
+        add_header("Connection", 10, "close", 5);
+      } else if(connection != NULL) {
         if(close_connection == 1) {
           add_header("Connection", 10, "close", 5);
         } else if(connection->value_len == 10 && strncasecmp(connection->value, "keep-alive", 10) == 0) {
@@ -2035,7 +2049,7 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       server->context.mode = 0;
       
       char content_length[21];
-      const int len = sprintf(content_length, "%lu", response.body_len);
+      int len = sprintf(content_length, "%" PRIu64, response.body_len);
       if(len < 0) {
         goto err_res;
       }
@@ -2049,6 +2063,15 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         if(len != 0) {
           add_header("Date", 4, date_header, len);
         }
+      }
+      
+      char keepalive[30];
+      if(!close_connection) {
+        len = sprintf(keepalive, "timeout=%" PRIu64, server->context.timeout_after);
+        if(len < 0) {
+          goto err_res;
+        }
+        add_header("Keep-Alive", 10, keepalive, len);
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
