@@ -302,7 +302,7 @@ void http1_create_message(char* buffer, const struct http_message* const message
         (void) memcpy(buffer, message->bodies[i].data, message->bodies[i].len);
         buffer += message->bodies[i].len;
         if(!message->bodies[i].dont_free) {
-          free(message->bodies[i].data);
+          free((void*) message->bodies[i].data);
         }
       }
     }

@@ -1105,7 +1105,7 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
       if(tcp_send(&socket->tcp, message->bodies[i].data, message->bodies[i].len, (message->bodies[i].read_only ? tcp_read_only : 0) | (message->bodies[i].dont_free ? tcp_dont_free : 0)) != 0) {
         for(uint64_t j = i + 1; j < message->body_len; ++j) {
           if(!message->bodies[j].dont_free) {
-            free(message->bodies[j].data);
+            free((void*) message->bodies[j].data);
           }
         }
         goto err;
@@ -1803,7 +1803,7 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
       if(tls_send(&socket->tls, message->bodies[i].data, message->bodies[i].len, (message->bodies[i].read_only ? tls_read_only : 0) | (message->bodies[i].dont_free ? tls_dont_free : 0)) != 0) {
         for(uint64_t j = i + 1; j < message->body_len; ++j) {
           if(!message->bodies[j].dont_free) {
-            free(message->bodies[j].data);
+            free((void*) message->bodies[j].data);
           }
         }
         goto err;
