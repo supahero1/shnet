@@ -297,7 +297,7 @@ void http1_create_message(char* buffer, const struct http_message* const message
   if(!message->no_body) {
     if(message->body != NULL) {
       (void) memcpy(buffer, message->body, message->body_len);
-    } else {
+    } else if(message->bodies != NULL) {
       for(uint64_t i = 0; i < message->body_len; ++i) {
         (void) memcpy(buffer, message->bodies[i].data, message->bodies[i].len);
         buffer += message->bodies[i].len;
