@@ -1074,6 +1074,9 @@ static void http_server_onshutdown(struct tcp_server* serv) {
 
 static void http_serversock_send(struct http_serversock* const socket, struct http_message* const message) {
   char* msg;
+  if(message->bodies != NULL || message->read_only) {
+    message->no_body = 1;
+  }
   const uint64_t len = http1_message_length(message);
   while(1) {
     msg = malloc(len);
@@ -1091,7 +1094,33 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
     break;
   }
   http1_create_message(msg, message);
-  (void) tcp_send(&socket->tcp, msg, len, tcp_read_only);
+  if(tcp_send(&socket->tcp, msg, len, tcp_read_only) != 0) {
+    goto err;
+  }
+  if(message->read_only && tcp_send(&socket->tcp, message->body, message->body_len, tcp_read_only | (message->dont_free ? tcp_dont_free : 0)) != 0) {
+    goto err;
+  }
+  if(message->bodies != NULL) {
+    for(uint64_t i = 0; i < message->body_len; ++i) {
+      if(tcp_send(&socket->tcp, message->bodies[i].data, message->bodies[i].len, (message->bodies[i].read_only ? tcp_read_only : 0) | (message->bodies[i].dont_free ? tcp_dont_free : 0)) != 0) {
+        for(uint64_t j = i + 1; j < message->body_len; ++j) {
+          if(!message->bodies[j].dont_free) {
+            free(message->bodies[j].data);
+          }
+        }
+        goto err;
+      }
+    }
+  }
+  
+  err:
+  if(message->alloc_body) {
+    if(message->bodies != NULL) {
+      free(message->bodies);
+    } else {
+      free(message->body);
+    }
+  }
 }
 
 #undef server
@@ -1743,6 +1772,9 @@ static void https_server_onshutdown(struct tls_server* serv) {
 
 static void https_serversock_send(struct https_serversock* const socket, struct http_message* const message) {
   char* msg;
+  if(message->bodies != NULL || message->read_only) {
+    message->no_body = 1;
+  }
   const uint64_t len = http1_message_length(message);
   while(1) {
     msg = malloc(len);
@@ -1760,7 +1792,33 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
     break;
   }
   http1_create_message(msg, message);
-  (void) tls_send(&socket->tls, msg, len, tls_read_only);
+  if(tls_send(&socket->tls, msg, len, tls_read_only) != 0) {
+    goto err;
+  }
+  if(message->read_only && tls_send(&socket->tls, message->body, message->body_len, tls_read_only | (message->dont_free ? tls_dont_free : 0)) != 0) {
+    goto err;
+  }
+  if(message->bodies != NULL) {
+    for(uint64_t i = 0; i < message->body_len; ++i) {
+      if(tls_send(&socket->tls, message->bodies[i].data, message->bodies[i].len, (message->bodies[i].read_only ? tls_read_only : 0) | (message->bodies[i].dont_free ? tls_dont_free : 0)) != 0) {
+        for(uint64_t j = i + 1; j < message->body_len; ++j) {
+          if(!message->bodies[j].dont_free) {
+            free(message->bodies[j].data);
+          }
+        }
+        goto err;
+      }
+    }
+  }
+  
+  err:
+  if(message->alloc_body) {
+    if(message->bodies != NULL) {
+      free(message->bodies);
+    } else {
+      free(message->body);
+    }
+  }
 }
 
 #undef server

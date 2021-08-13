@@ -175,11 +175,19 @@ enum http_parser_consts {
 
 extern const char* http1_parser_strerror(const int);
 
+struct http_data_frame {
+  const char* data;
+  uint64_t len:62;
+  uint64_t read_only:1;
+  uint64_t dont_free:1;
+};
+
 struct http_message {
   uint64_t body_len;
   
   char* method;
   char* body;
+  struct http_data_frame* bodies;
   union {
     char* reason_phrase;
     char* path;
@@ -206,6 +214,9 @@ struct http_message {
   uint8_t alloc_body:1;
   uint8_t client:1;
   uint8_t close_conn:1;
+  uint8_t no_body:1;
+  uint8_t read_only:1;
+  uint8_t dont_free:1;
 };
 
 struct http_parser_session {
