@@ -1091,6 +1091,9 @@ static void http_serversock_send(struct http_serversock* const socket, struct ht
     break;
   }
   http1_create_message(msg, message);
+  if(message->alloc_body) {
+    free(message->body);
+  }
   (void) tcp_send(&socket->tcp, msg, len, tcp_read_only);
 }
 
@@ -1760,6 +1763,9 @@ static void https_serversock_send(struct https_serversock* const socket, struct 
     break;
   }
   http1_create_message(msg, message);
+  if(message->alloc_body) {
+    free(message->body);
+  }
   (void) tls_send(&socket->tls, msg, len, tls_read_only);
 }
 
