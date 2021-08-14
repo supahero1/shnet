@@ -219,25 +219,21 @@ const char* http1_parser_strerror(const int err) {
 }
 
 uint64_t http1_message_length(const struct http_message* const message) {
-  uint64_t length;
   if(message->method != NULL) { /* Request */
-    length = message->method_len + 14 + message->path_len + message->headers_len * 4;
-  } else { /* Response */
-    length = message->reason_phrase_len + 17 + message->headers_len * 4;
-  }
-  for(uint32_t i = 0; i < message->headers_len; ++i) {
-    length += message->headers[i].name_len + message->headers[i].value_len;
-  }
-  if(!message->no_body) {
-    if(message->bodies == NULL) {
-      length += message->body_len;
-    } else {
-      for(uint64_t i = 0; i < message->body_len; ++i) {
-        length += message->bodies[i].len;
-      }
+    /* 2 spaces, 2 CRLF, sizeof HTTP/1.1  = 14 */
+    uint64_t length = message->method_len + 14 + message->path_len + message->body_len + message->headers_len * 4;
+    for(uint32_t i = 0; i < message->headers_len; ++i) {
+      length += message->headers[i].name_len + message->headers[i].value_len;
     }
+    return length;
+  } else { /* Response */
+    /* sizeof HTTP/1.1, 2 SP, 3 numbers, 2 CLRF  = 17 */
+    uint64_t length = message->reason_phrase_len + 17 + message->body_len + message->headers_len * 4;
+    for(uint32_t i = 0; i < message->headers_len; ++i) {
+      length += message->headers[i].name_len + message->headers[i].value_len;
+    }
+    return length;
   }
-  return length;
 }
 
 /* Buffer must be at least http1_message_length(message) bytes long */
@@ -294,18 +290,8 @@ void http1_create_message(char* buffer, const struct http_message* const message
   ++buffer;
   *buffer = '\n';
   ++buffer;
-  if(!message->no_body) {
-    if(message->body != NULL) {
-      (void) memcpy(buffer, message->body, message->body_len);
-    } else {
-      for(uint64_t i = 0; i < message->body_len; ++i) {
-        (void) memcpy(buffer, message->bodies[i].data, message->bodies[i].len);
-        buffer += message->bodies[i].len;
-        if(!message->bodies[i].dont_free) {
-          free(message->bodies[i].data);
-        }
-      }
-    }
+  if(message->body != NULL) {
+    (void) memcpy(buffer, message->body, message->body_len);
   }
 }
 
