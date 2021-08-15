@@ -1070,35 +1070,6 @@ static void http_server_onshutdown(struct tcp_server* serv) {
 
 #undef server
 
-#define server ((struct http_server*) socket->tcp.server)
-
-static void http_serversock_send(struct http_serversock* const socket, struct http_message* const message) {
-  char* msg;
-  const uint64_t len = http1_message_length(message);
-  while(1) {
-    msg = malloc(len);
-    if(msg == NULL) {
-      if(server->callbacks->onnomem(server) == 0) {
-        continue;
-      }
-      (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-      if(message->alloc_body) {
-        free(message->body);
-      }
-      tcp_socket_force_close(&socket->tcp);
-      return;
-    }
-    break;
-  }
-  http1_create_message(msg, message);
-  if(message->alloc_body) {
-    free(message->body);
-  }
-  (void) tcp_send(&socket->tcp, msg, len, tcp_read_only);
-}
-
-#undef server
-
 #define socket ((struct http_serversock*) soc)
 #define server ((struct http_server*) soc->server)
 
@@ -1429,7 +1400,7 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       date_header[0] = 0;
       struct tm tms;
       if(gmtime_r(&(time_t){time(NULL)}, &tms) != NULL) {
-        const size_t len = strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms);
+        len = strftime(date_header, 30, "%a, %d %b %Y %H:%M:%S GMT", &tms);
         if(len != 0) {
           add_header("Date", 4, date_header, len);
         }
@@ -1445,14 +1416,30 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
-      http_serversock_send(socket, &response);
-      for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].alloc_name) {
-          free(response.headers[i].name);
+      char* msg;
+      const uint64_t length = http1_message_length(&response);
+      while(1) {
+        msg = malloc(length);
+        if(msg == NULL) {
+          if(server->callbacks->onnomem(server) == 0) {
+            continue;
+          }
+          goto err_res;
         }
-        if(response.headers[i].alloc_value) {
-          free(response.headers[i].value);
-        }
+        break;
+      }
+      http1_create_message(msg, &response);
+      (void) tcp_send(&socket->tcp, msg, length, tcp_read_only);
+    }
+    if(response.alloc_body) {
+      free(response.body);
+    }
+    for(uint32_t i = 0; i < response.headers_len; ++i) {
+      if(response.headers[i].alloc_name) {
+        free(response.headers[i].name);
+      }
+      if(response.headers[i].alloc_value) {
+        free(response.headers[i].value);
       }
     }
     free(socket->context.read_buffer);
@@ -1505,9 +1492,6 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
         }
         if(socket->context.message.opcode < 8) {
           socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
-          if(socket->context.message.alloc_body) {
-            free(socket->context.message.body);
-          }
         } else if(socket->context.message.opcode == 8) {
           socket->context.closing = 1;
           if(socket->context.close_onreadclose) {
@@ -1518,6 +1502,9 @@ static void http_serversock_onmessage(struct tcp_socket* soc) {
           }
         } else if(socket->context.message.opcode == 9) {
           (void) ws_send(socket, NULL, 0, websocket_pong, ws_dont_free);
+        }
+        if(socket->context.message.alloc_body) {
+          free(socket->context.message.body);
         }
         socket->context.read_used -= socket->context.session.chunk_idx + socket->context.session.last_idx;
         if(socket->context.read_used != 0) {
@@ -1738,35 +1725,6 @@ static void https_server_onshutdown(struct tls_server* serv) {
   https_server_free(server);
   tls_server_free(&server->tls);
   free(server);
-}
-
-#undef server
-
-#define server ((struct https_server*) socket->tls.tcp.server)
-
-static void https_serversock_send(struct https_serversock* const socket, struct http_message* const message) {
-  char* msg;
-  const uint64_t len = http1_message_length(message);
-  while(1) {
-    msg = malloc(len);
-    if(msg == NULL) {
-      if(server->callbacks->onnomem(server) == 0) {
-        continue;
-      }
-      (void) time_manager_cancel_timeout(server->context.manager, &socket->context.timeout);
-      if(message->alloc_body) {
-        free(message->body);
-      }
-      tcp_socket_force_close(&socket->tls.tcp);
-      return;
-    }
-    break;
-  }
-  http1_create_message(msg, message);
-  if(message->alloc_body) {
-    free(message->body);
-  }
-  (void) tls_send(&socket->tls, msg, len, tls_read_only);
 }
 
 #undef server
@@ -2081,14 +2039,30 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
       }
       add_header("Server", 6, "shnet", 5);
 #undef add_header
-      https_serversock_send(socket, &response);
-      for(uint32_t i = 0; i < response.headers_len; ++i) {
-        if(response.headers[i].alloc_name) {
-          free(response.headers[i].name);
+      char* msg;
+      const uint64_t length = http1_message_length(&response);
+      while(1) {
+        msg = malloc(length);
+        if(msg == NULL) {
+          if(server->callbacks->onnomem(server) == 0) {
+            continue;
+          }
+          goto err_res;
         }
-        if(response.headers[i].alloc_value) {
-          free(response.headers[i].value);
-        }
+        break;
+      }
+      http1_create_message(msg, &response);
+      (void) tls_send(&socket->tls, msg, length, tls_read_only);
+    }
+    if(response.alloc_body) {
+      free(response.body);
+    }
+    for(uint32_t i = 0; i < response.headers_len; ++i) {
+      if(response.headers[i].alloc_name) {
+        free(response.headers[i].name);
+      }
+      if(response.headers[i].alloc_value) {
+        free(response.headers[i].value);
       }
     }
     free(socket->tls.read_buffer);
@@ -2142,9 +2116,6 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
         }
         if(socket->context.message.opcode < 8) {
           socket->callbacks->onmessage(socket, socket->context.message.body, socket->context.message.body_len);
-          if(socket->context.message.alloc_body) {
-            free(socket->context.message.body);
-          }
         } else if(socket->context.message.opcode == 8) {
           socket->context.closing = 1;
           if(socket->context.close_onreadclose) {
@@ -2155,6 +2126,9 @@ static void https_serversock_onmessage(struct tls_socket* soc) {
           }
         } else if(socket->context.message.opcode == 9) {
           (void) ws_send(socket, NULL, 0, websocket_pong, ws_dont_free);
+        }
+        if(socket->context.message.alloc_body) {
+          free(socket->context.message.body);
         }
         socket->tls.read_used -= socket->context.session.chunk_idx + socket->context.session.last_idx;
         if(socket->tls.read_used != 0) {
