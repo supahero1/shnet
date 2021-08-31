@@ -148,10 +148,10 @@ static int time_manager_set_latest(struct time_manager* const manager) {
       if(timeout->time > time) {
         atomic_store(&manager->latest, time | 1);
       } else {
-        atomic_store(&manager->latest, timeout->time & 18446744073709551614U);
+        atomic_store(&manager->latest, timeout->time & (UINT64_MAX - 1));
       }
     } else {
-      atomic_store(&manager->latest, ((struct time_timeout*) refheap_peak(&manager->timeouts, 0))->time & 18446744073709551614U);
+      atomic_store(&manager->latest, ((struct time_timeout*) refheap_peak(&manager->timeouts, 0))->time & (UINT64_MAX - 1));
     }
   } else {
     if(!refheap_is_empty(&manager->intervals)) {
@@ -204,7 +204,7 @@ static void* time_manager_thread(void* time_manager_thread_data) {
         struct time_interval* latest = refheap_peak(&manager->intervals, 0);
         struct time_interval interval = *latest;
         ++latest->count;
-        refheap_down(&manager->intervals, manager->intervals.item_size + sizeof(uint64_t**));
+        refheap_down(&manager->intervals, manager->intervals.item_size);
         (void) sem_post(&manager->amount);
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
