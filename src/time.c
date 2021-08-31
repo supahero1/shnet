@@ -204,7 +204,7 @@ static void* time_manager_thread(void* time_manager_thread_data) {
         struct time_interval* latest = refheap_peak(&manager->intervals, 0);
         struct time_interval interval = *latest;
         ++latest->count;
-        refheap_down(&manager->intervals, manager->intervals.item_size + sizeof(uint64_t**));
+        refheap_down(&manager->intervals, manager->intervals.item_size);
         (void) sem_post(&manager->amount);
         (void) time_manager_set_latest(manager);
         (void) pthread_mutex_unlock(&manager->mutex);
