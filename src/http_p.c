@@ -198,6 +198,7 @@ const char* http1_parser_strerror(const int err) {
     case http_invalid_character: return "http_invalid_character";
     case http_no_path: return "http_no_path";
     case http_path_too_long: return "http_path_too_long";
+    case http_query_too_long: return "http_query_too_long";
     case http_invalid_version: return "http_invalid_version";
     case http_too_many_headers: return "http_too_many_headers";
     case http_header_name_too_long: return "http_header_name_too_long";
@@ -245,6 +246,10 @@ void http1_create_message(char* buffer, const struct http_message* const message
     ++buffer;
     (void) memcpy(buffer, message->path, message->path_len);
     buffer += message->path_len;
+    if(message->query != NULL) {
+      (void) memcpy(buffer, message->query, message->query_len);
+      buffer += message->query_len;
+    }
     (void) memcpy(buffer, " HTTP/1.1\r\n", 11);
     buffer += 11;
   } else {
@@ -667,30 +672,39 @@ int http1_parse_request(char* buffer, uint64_t size, struct http_parser_session*
   }
   buffer += idx;
   size -= idx;
-  pla_path:
+  pla_path:;
   /* Don't validate the path here, let the user choose what to do with it.
   That's because some filesystems have reserved characters for filenames, others
   don't. */
-  {
-    const uint64_t smaller = size < settings->max_path_len + 1 ? size : settings->max_path_len + 1;
-    const char* const space = memchr(buffer, ' ', smaller);
-    if(space == NULL) {
-      if(size > settings->max_path_len) {
-        return http_path_too_long;
-      }
-      return http_incomplete;
-    }
-    const uint32_t path_len = (uintptr_t) space - (uintptr_t) buffer;
-    if(path_len > settings->max_path_len) {
+  const uint64_t smaller = size < settings->max_path_len + 1 ? size : settings->max_path_len + 1;
+  char* space = memchr(buffer, ' ', smaller);
+  if(space == NULL) {
+    if(size > settings->max_path_len) {
       return http_path_too_long;
     }
-    if(path_len == 0) {
-      return http_no_path;
-    }
-    message->path = buffer;
-    message->path_len = path_len;
-    idx = path_len + 1;
+    return http_incomplete;
   }
+  const uint32_t path_len = (uintptr_t) space - (uintptr_t) buffer;
+  if(path_len > settings->max_path_len) {
+    return http_path_too_long;
+  }
+  if(path_len == 0) {
+    return http_no_path;
+  }
+  message->path = buffer;
+  message->path_len = path_len;
+  idx = path_len + 1;
+  space = memchr(message->path, '?', message->path_len);
+  if(space != NULL) {
+    const uint32_t query_len = (uintptr_t) space - (uintptr_t) buffer;
+    message->query_len = message->path_len - query_len - 1;
+    message->path_len = query_len;
+    if(message->query_len > settings->max_query_len) {
+      return http_query_too_long;
+    }
+    message->query = space + 1;
+  }
+  
   session->last_at = http_pla_version;
   session->parsed_path = 1;
   session->last_idx += idx;

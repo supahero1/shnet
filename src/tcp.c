@@ -243,6 +243,7 @@ static int tcp_socket_connect(struct tcp_socket* const sock) {
 
 static void tcp_socket_async_connect(struct net_async_address* addr, struct addrinfo* info) {
   if(info == NULL) {
+    socket->reconnecting = 0;
     socket->callbacks->onclose(socket);
   } else {
     if(socket->alloc_addr) {
@@ -257,6 +258,7 @@ static void tcp_socket_async_connect(struct net_async_address* addr, struct addr
         if(errno == ENOMEM && socket->callbacks->onnomem(socket) == 0) {
           continue;
         }
+        socket->reconnecting = 0;
         socket->callbacks->onclose(socket);
       }
       break;

@@ -30,8 +30,8 @@ void _debug(const char* fmt, const int console_log, ...) {
   struct timespec tp = { .tv_sec = 0, .tv_nsec = 0 };
   (void) clock_gettime(CLOCK_REALTIME, &tp);
   const uint64_t t = tp.tv_sec * 1000000000 + tp.tv_nsec - start_time;
-  const uint64_t secs = t / 1000000000;
-  fprintf(log_file, "[%4lud %4luh %4lus %5lums %5luus] ", secs / 86400, (secs / 3600) % 24, secs % 3600, (t / 1000000) % 1000, (t / 1000) % 1000);
+  const uint64_t secs = t / 1000000000; /* days, hours, minutes, seconds, milliseconds, microseconds */
+  fprintf(log_file, "[%3lu/%2lu/%2lu/%2lu/%3lu/%3lu] ", secs / 86400, (secs / 3600) % 24, (secs / 60) % 60, secs % 60, (t / 1000000) % 1000, (t / 1000) % 1000);
   va_list args;
   va_start(args, console_log);
   vfprintf(log_file, fmt, args);

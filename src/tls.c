@@ -108,8 +108,7 @@ void tls_socket_close(struct tls_socket* const socket) {
 }
 
 void tls_socket_force_close(struct tls_socket* const socket) {
-  tls_socket_set_flag(socket, tls_shutdown_wr);
-  tls_socket_clear_flag(socket, tls_wants_send);
+  tls_socket_clear_flag(socket, tls_wants_send | tcp_can_send);
   (void) pthread_mutex_lock(&socket->ssl_lock);
   ERR_clear_error();
   const int status = SSL_shutdown(socket->ssl);
@@ -152,6 +151,7 @@ static void tls_check(struct tls_socket* const socket) {
     (void) pthread_mutex_unlock(&socket->ssl_lock);
     if(is_init_fin) {
       tcp_socket_nodelay_off(&socket->tcp);
+      tls_socket_set_flag(socket, tls_can_send);
       if(socket->opened == 0) {
         socket->opened = 1;
         if(socket->callbacks->onopen != NULL) {
@@ -160,6 +160,7 @@ static void tls_check(struct tls_socket* const socket) {
       } else if(socket->settings.onopen_when_reconnect) {
         socket->callbacks->onopen(socket);
       }
+      (void) tls_send_buffered(socket);
     }
   }
   if(socket->close_once == 0) {
@@ -241,7 +242,7 @@ static void tls_onsend(struct tcp_socket* soc) {
   if(tls_socket_test_flag(socket, tls_wants_send)) {
     (void) tls_send_internal(socket, NULL, 0);
   }
-  if(tls_socket_test_flag(socket, tcp_can_send)) {
+  if(tls_socket_test_flag(socket, tls_can_send | tcp_can_send) == (tls_can_send | tcp_can_send)) {
     (void) tls_send_buffered(socket);
   }
 }
@@ -251,6 +252,7 @@ static int tls_socket_onnomem(struct tcp_socket* soc) {
 }
 
 static void tls_onclose(struct tcp_socket* soc) {
+  tls_socket_clear_flag(socket, tls_can_send | tcp_can_send);
   socket->callbacks->onclose(socket);
 }
 
@@ -263,6 +265,9 @@ static void tls_onfree(struct tcp_socket* soc) {
   if(socket->alloc_ssl) {
     SSL_free(socket->ssl);
   }
+  if(socket->alloc_ctx && !socket->tcp.reconnecting) {
+    SSL_CTX_free(socket->ctx);
+  }
   if(socket->read_buffer != NULL) {
     free(socket->read_buffer);
   }
@@ -270,6 +275,10 @@ static void tls_onfree(struct tcp_socket* soc) {
     if(socket->alloc_ssl) {
       socket->ssl = NULL;
       socket->alloc_ssl = 0;
+    }
+    if(socket->alloc_ctx && !socket->tcp.reconnecting) {
+      socket->ctx = NULL;
+      socket->alloc_ctx = 0;
     }
     socket->read_buffer = NULL;
     socket->read_used = 0;
@@ -328,7 +337,7 @@ SSL_CTX* tls_ctx(const char* const cert_path, const char* const key_path, const 
         goto err_ctx;
       }
     }
-    if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK) == 0) {
+    if(SSL_CTX_build_cert_chain(ctx, SSL_BUILD_CHAIN_FLAG_CHECK | SSL_BUILD_CHAIN_FLAG_IGNORE_ERROR | SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR) == 0) {
       goto err_ctx;
     }
   }
@@ -439,6 +448,7 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
         return 0;
       }
       case SSL_ERROR_ZERO_RETURN: {
+        tls_socket_clear_flag(socket, tls_can_send | tcp_can_send);
         errno = EPIPE;
         return -2;
       }
@@ -467,6 +477,9 @@ static int tls_send_internal(struct tls_socket* const socket, const void* data, 
 }
 
 static int tls_send_buffered(struct tls_socket* const socket) {
+  if(!tls_socket_test_flag(socket, tls_can_send | tcp_can_send)) {
+    return -1;
+  }
   (void) pthread_mutex_lock(&socket->tcp.lock);
   if(socket->tcp.send_len != 0) {
     while(1) {
@@ -500,9 +513,12 @@ If errno is -1, a fatal OpenSSL error occured and the connection is closing.
 Most applications can ignore the return value and errno. */
 
 int tls_send(struct tls_socket* const socket, const void* data, uint64_t size, const int flags) {
-  if(!socket->tcp.settings.automatically_reconnect && tls_socket_test_flag(socket, tls_shutdown_wr | tcp_shutdown_wr)) {
-    errno = EPIPE;
-    goto err0;
+  if(tls_socket_test_flag(socket, tcp_shutdown_wr) || tls_socket_test_flag(socket, tls_can_send | tcp_can_send) != (tls_can_send | tcp_can_send)) {
+    if(!socket->tcp.settings.automatically_reconnect) {
+      errno = EPIPE;
+      goto err0;
+    }
+    return tcp_buffer(&socket->tcp, data, size, 0, flags);
   }
   int err = tls_send_buffered(socket);
   if(err == -2) {
