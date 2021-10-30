@@ -388,6 +388,9 @@ int main(int argc, char **argv) {
   /* Close the epolls */
   threads_shutdown(&epoll_manager);
   threads_free(&epoll_manager);
+  for(int i = 0; i < epolls_num; ++i) {
+    net_epoll_free(&epolls[i]);
+  }
   /* Free the rest */
   pthread_mutex_unlock(&mutex);
   pthread_mutex_destroy(&mutex);
