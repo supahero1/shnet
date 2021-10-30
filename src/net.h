@@ -47,7 +47,9 @@ enum net_consts {
   
   ip_max_strlen = INET6_ADDRSTRLEN,
   ipv4_strlen = INET_ADDRSTRLEN,
-  ipv6_strlen = INET6_ADDRSTRLEN
+  ipv6_strlen = INET6_ADDRSTRLEN,
+  ipv4_size = sizeof(struct sockaddr_in),
+  ipv6_size = sizeof(struct sockaddr_in6)
 };
 
 extern struct addrinfo  net_get_addr_struct(const int, const int, const int, const int);
@@ -75,79 +77,81 @@ struct net_socket {
   int sfd;
 };
 
-struct net_server {
-  struct net_socket net;
-  void (*on_event)(void*);
-};
+extern int  net_socket_get(const struct addrinfo* const);
 
-extern int net_get_ipv4_addrlen(void);
+extern int  net_socket_bind(const struct net_socket* const, const struct addrinfo* const);
 
-extern int net_get_ipv6_addrlen(void);
+extern int  net_socket_connect(const struct net_socket* const, const struct addrinfo* const);
 
-extern int net_socket_get(const struct addrinfo* const);
+extern int  net_socket_setopt_true(const struct net_socket* const, const int, const int);
 
-extern int net_socket_bind(const void* const, const struct addrinfo* const);
+extern int  net_socket_setopt_false(const struct net_socket* const, const int, const int);
 
-extern int net_socket_connect(const void* const, const struct addrinfo* const);
+extern void net_socket_reuse_addr(const struct net_socket* const);
 
-extern int net_socket_setopt_true(const void* const, const int, const int);
+extern void net_socket_dont_reuse_addr(const struct net_socket* const);
 
-extern int net_socket_setopt_false(const void* const, const int, const int);
+extern void net_socket_reuse_port(const struct net_socket* const);
 
-extern int net_socket_reuse_addr(const void* const);
+extern void net_socket_dont_reuse_port(const struct net_socket* const);
 
-extern int net_socket_dont_reuse_addr(const void* const);
+extern void net_socket_get_family(const struct net_socket* const, int* const);
 
-extern int net_socket_reuse_port(const void* const);
+extern void net_socket_get_socktype(const struct net_socket* const, int* const);
 
-extern int net_socket_dont_reuse_port(const void* const);
+extern void net_socket_get_protocol(const struct net_socket* const, int* const);
 
-extern int net_socket_get_family(const void* const, int* const);
+extern void net_socket_get_address(const struct net_socket* const, void* const);
 
-extern int net_socket_get_socktype(const void* const, int* const);
+extern void net_socket_dont_block(const struct net_socket* const);
 
-extern int net_socket_get_protocol(const void* const, int* const);
+extern void net_socket_block(const struct net_socket* const);
 
-extern int net_socket_get_address(const void* const, void* const);
+extern void net_socket_default_options(const struct net_socket* const);
 
-extern int net_socket_dont_block(const void* const);
 
-extern int net_socket_block(const void* const);
+extern void* net_epoll_thread(void*);
 
-extern int net_socket_default_options(const void* const);
+extern void* net_epoll_thread_eventless(void*);
+
+/* A quick note: no, we can't use INTR signal to notify an epoll thread of OOB
+events. It will be super messy - need to check an atomic variable in 3 places,
+prevent the signal from terminating the program, and there will be one signal
+per event, compared to one event with efd and easier usage. */
 
 struct net_epoll {
-  struct net_server** nets;
+  struct net_socket** nets;
   struct epoll_event* events;
-  void (*on_event)(struct net_epoll*, int, struct net_socket*);
+  void (*on_event)(struct net_epoll*, uint32_t, struct net_socket*);
   
   struct thread thread;
   struct net_socket net;
   pthread_mutex_t lock;
   
-  uint32_t nets_used:31;
-  uint32_t close:1;
-  uint32_t nets_size:31;
-  uint32_t free:1;
+  uint32_t nets_len;
   int events_size;
   int fd;
 };
 
-extern int  net_epoll(struct net_epoll* const, const int);
+extern int  net_socket_epoll(struct net_epoll* const);
+
+extern int  net_server_epoll(struct net_epoll* const);
 
 extern int  net_epoll_start(struct net_epoll* const);
 
 extern void net_epoll_stop(struct net_epoll* const);
 
+extern void net_epoll_stop_async(struct net_epoll* const);
+
 extern void net_epoll_free(struct net_epoll* const);
 
-extern int  net_epoll_add(struct net_epoll* const, void* const, const int);
+extern void net_epoll_shutdown(struct net_epoll* const, const int);
 
-extern int  net_epoll_mod(struct net_epoll* const, void* const, const int);
+extern int  net_epoll_add(struct net_epoll* const, void* const, const uint32_t);
+
+extern int  net_epoll_mod(struct net_epoll* const, void* const, const uint32_t);
 
 extern int  net_epoll_remove(struct net_epoll* const, void* const);
-
-extern int  net_epoll_resize(struct net_epoll* const, const uint32_t);
 
 extern int  net_epoll_create_event(struct net_epoll* const, void* const);
 

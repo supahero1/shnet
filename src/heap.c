@@ -1,10 +1,13 @@
 #include "heap.h"
+#include "error.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
 int heap_resize(struct heap* const heap, const uint64_t new_size) {
-  void* const ptr = realloc(heap->array, new_size);
+  void* ptr;
+  safe_execute(ptr = realloc(heap->array, new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
     return -1;
   }

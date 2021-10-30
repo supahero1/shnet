@@ -1,5 +1,7 @@
 #include "refheap.h"
+#include "error.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -10,7 +12,8 @@ uint64_t refheap_ref_to_idx(const struct heap* const heap, const void* const ref
 
 int refheap_resize(struct heap* const heap, uint64_t new_size) {
   new_size = (new_size / (heap->item_size - sizeof(uint64_t**))) * heap->item_size;
-  void* const ptr = realloc(heap->array, new_size);
+  void* ptr;
+  safe_execute(ptr = realloc(heap->array, new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
     return -1;
   }

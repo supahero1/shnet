@@ -1,4 +1,5 @@
 #include "time.h"
+#include "error.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -114,22 +115,22 @@ int time_manager(struct time_manager* const manager) {
   manager->intervals.used = manager->intervals.item_size;
   manager->intervals.size = manager->intervals.item_size;
   
-  int err = sem_init(&manager->work, 0, 0);
+  int err;
+  safe_execute(err = sem_init(&manager->work, 0, 0), err != 0, err);
   if(err != 0) {
     errno = err;
     return -1;
   }
-  err = sem_init(&manager->amount, 0, 0);
+  safe_execute(err = sem_init(&manager->amount, 0, 0), err != 0, err);
   if(err != 0) {
     errno = err;
     goto err_sem;
   }
-  err = pthread_mutex_init(&manager->mutex, NULL);
+  safe_execute(err = pthread_mutex_init(&manager->mutex, NULL), err != 0, err);
   if(err != 0) {
     errno = err;
     goto err_sem2;
   }
-  atomic_store(&manager->latest, 0);
   return 0;
   
   err_sem2:

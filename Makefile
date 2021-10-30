@@ -2,7 +2,7 @@
 empty: ;
 
 CC := gcc
-CFLAGS += -pthread -Wall -pedantic -O3
+CFLAGS += -pthread -Wall -pedantic -O3 -g -ggdb -fno-omit-frame-pointer
 LDLIBS += -lshnet
 LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
 TESTLIBS += $(LIBS) -lm
@@ -34,25 +34,21 @@ ${DIR_INCLUDE}:
 build: $(OBJECTS)
 
 test: $(TEST_EXECS) | $(DIR_TEST)
-	$(DIR_OUT)/test_heap
-	$(DIR_OUT)/test_avl
-	$(DIR_OUT)/test_threads
-	$(DIR_OUT)/test_time
+	#$(DIR_OUT)/test_heap
+	#$(DIR_OUT)/test_threads
+	#$(DIR_OUT)/test_time
 	
-	$(DIR_OUT)/test_compression
-	$(DIR_OUT)/test_http_p
+	#$(DIR_OUT)/test_compression
+	#$(DIR_OUT)/test_http_p
 	
-	$(DIR_OUT)/test_tcp 1
-	$(DIR_OUT)/test_tcp 4
+	#$(DIR_OUT)/test_tcp 1
+	#$(DIR_OUT)/test_tcp 4
 	
-	$(DIR_OUT)/test_tcp_stress 1
-	$(DIR_OUT)/test_tcp_stress 4
+	#$(DIR_OUT)/test_tls 1
+	#$(DIR_OUT)/test_tls 4
 	
-	$(DIR_OUT)/test_tls 1
-	$(DIR_OUT)/test_tls 4
-	
-	$(DIR_OUT)/test_tls_stress 1
-	$(DIR_OUT)/test_tls_stress 4
+	#$(DIR_OUT)/test_tls_stress 1
+	#$(DIR_OUT)/test_tls_stress 4
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
@@ -97,10 +93,6 @@ ${DIR_OUT}/refheap.o: $(DIR_OUT)/heap.o
 ${DIR_OUT}/time.o: $(DIR_OUT)/threads.o
 
 ${DIR_OUT}/net.o: $(DIR_OUT)/threads.o
-
-${DIR_OUT}/udp.o: $(DIR_OUT)/net.o
-
-${DIR_OUT}/udplite.o: $(DIR_OUT)/udp.o
 
 ${DIR_OUT}/tcp.o: $(DIR_OUT)/net.o
 
