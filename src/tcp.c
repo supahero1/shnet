@@ -301,6 +301,9 @@ static void tcp_socket_async_connect(struct net_async_address* addr, struct addr
 int tcp_socket(struct tcp_socket* const sock, const struct tcp_socket_options* const opt) {
   if(!sock->settings.init) {
     sock->settings = tcp_socket_settings;
+  } else if((sock->settings.onopen_when_reconnect || sock->settings.onclose_when_reconnect || sock->settings.oncreation_when_reconnect) && sock->on_event == NULL) {
+    errno = EINVAL;
+    return -1;
   }
   sock->net.sfd = -1;
   sock->net.socket = 1;
@@ -370,7 +373,7 @@ int tcp_socket(struct tcp_socket* const sock, const struct tcp_socket_options* c
       }
     }
   }
-  if(sock->addr == NULL && sock->settings.init && sock->settings.automatically_reconnect) {
+  if(sock->addr == NULL && sock->settings.automatically_reconnect) {
     errno = EINVAL;
     return -1;
   }
