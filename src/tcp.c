@@ -9,8 +9,6 @@
 #include <string.h>
 #include <netinet/tcp.h>
 
-#include <stdio.h>
-
 static struct tcp_socket_settings tcp_socket_settings = { 1, 0, 0, 0, 0, 1, 0 };
 
 static struct tcp_server_settings tcp_server_settings = { 100, 64 };
@@ -894,10 +892,6 @@ void tcp_server_onevent(uint32_t events, struct net_socket* net) {
         /* No more connections to accept */
         return;
       }
-      if(errno != EINTR) {
-        printf("unknown server accept() errno %d\n", errno);
-        abort();
-      }
       continue;
     }
     /* First check if we hit the connection limit for the server, or if we don't
@@ -919,10 +913,6 @@ void tcp_server_onevent(uint32_t events, struct net_socket* net) {
     } else {
       socket = (struct tcp_socket*)(_server->sockets + _server->sockets_used * _server->socket_size);
       ++_server->sockets_used;
-    }
-    if(socket->settings.init == 1) {
-      printf("socket %p inited at the time we acquire it\n", (void*) socket);
-      abort();
     }
     /* Now we proceed to initialise required members of the socket. We don't
     have to zero it - it should already be zeroed. */
