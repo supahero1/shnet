@@ -32,7 +32,7 @@ int heap_insert(struct heap* const heap, const void* const item) {
   return 0;
 }
 
-void heap_pop(struct heap* const heap) {
+void* heap_pop(struct heap* const heap) {
   (void) memcpy(heap->array, heap->array + heap->item_size, heap->item_size);
   heap->used -= heap->item_size;
   if(!heap_is_empty(heap)) {
@@ -40,6 +40,15 @@ void heap_pop(struct heap* const heap) {
     (void) memcpy(heap->array + heap->used, heap->array, heap->item_size);
     heap_down(heap, heap->item_size);
     (void) memcpy(heap->array, heap->array + heap->used, heap->item_size);
+  }
+  return heap->array;
+}
+
+void heap_pop_(struct heap* const heap) {
+  heap->used -= heap->item_size;
+  if(!heap_is_empty(heap)) {
+    (void) memcpy(heap->array + heap->item_size, heap->array + heap->used, heap->item_size);
+    heap_down(heap, heap->item_size);
   }
 }
 
@@ -114,5 +123,13 @@ int heap_is_empty(const struct heap* const heap) {
 }
 
 void* heap_peak(const struct heap* const heap, const uint64_t idx) {
-  return heap->array + heap->item_size * (idx + 1);
+  return heap->array + idx;
+}
+
+void* heap_peak_rel(const struct heap* const heap, const uint64_t idx) {
+  return heap->array + heap->item_size * idx;
+}
+
+uint64_t heap_abs_idx(const struct heap* const heap, const void* const item) {
+  return (uintptr_t) item - (uintptr_t) heap->array;
 }

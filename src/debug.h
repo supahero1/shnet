@@ -3,9 +3,11 @@
 
 #include <stdarg.h>
 
-void _debug(const char* const, const int, ...);
+extern void _debug(const char* const, const int, ...);
 
-void debug(const char* const, const int, ...);
+extern void debug(const char* const, const int, ...);
+
+extern void debug_free(void);
 
 #define die(reason) _debug("failed at line %d file %s errno %d with reason: %s", 1, __LINE__, __FILE__, errno, (reason));abort();
 

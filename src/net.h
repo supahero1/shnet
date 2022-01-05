@@ -110,9 +110,9 @@ extern void net_socket_block(const struct net_socket* const);
 extern void net_socket_default_options(const struct net_socket* const);
 
 
-extern void* net_epoll_thread(void*);
+extern void net_epoll_thread(void*);
 
-extern void* net_epoll_thread_eventless(void*);
+extern void net_epoll_thread_eventless(void*);
 
 /* A quick note: no, we can't use INTR signal to notify an epoll thread of OOB
 events. It will be super messy - need to check an atomic variable in 3 places,
@@ -146,6 +146,8 @@ extern void net_epoll_stop_async(struct net_epoll* const);
 extern void net_epoll_free(struct net_epoll* const);
 
 extern void net_epoll_shutdown(struct net_epoll* const, const int);
+
+extern void net_epoll_shutdown_async(struct net_epoll* const, const int);
 
 extern int  net_epoll_add(struct net_epoll* const, void* const, const uint32_t);
 

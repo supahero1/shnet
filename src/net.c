@@ -159,7 +159,7 @@ void net_socket_default_options(const struct net_socket* const socket) {
 #define epoll ((struct net_epoll*) net_epoll_thread_data)
 #define event_net ((struct net_socket*) events[i].data.ptr)
 
-void* net_epoll_thread(void* net_epoll_thread_data) {
+void net_epoll_thread(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   struct epoll_event events[NET_EPOLL_DEFAULT_MAX_EVENTS];
   while(1) {
@@ -188,14 +188,13 @@ void* net_epoll_thread(void* net_epoll_thread_data) {
       (void) pthread_mutex_unlock(&epoll->lock);
     }
   }
-  return NULL;
 }
 
 #undef event_net
 
 #define event_net ((struct net_socket*) epoll->events[i].data.ptr)
 
-void* net_epoll_thread_eventless(void* net_epoll_thread_data) {
+void net_epoll_thread_eventless(void* net_epoll_thread_data) {
   (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   while(1) {
     const int count = epoll_wait(epoll->fd, epoll->events, epoll->events_size, -1);
@@ -223,7 +222,6 @@ void* net_epoll_thread_eventless(void* net_epoll_thread_data) {
       (void) pthread_mutex_unlock(&epoll->lock);
     }
   }
-  return NULL;
 }
 
 #undef event_net
@@ -296,13 +294,13 @@ void net_epoll_stop_async(struct net_epoll* const epoll) {
 
 void net_epoll_free(struct net_epoll* const epoll) {
   (void) close(epoll->fd);
-  (void) close(epoll->net.sfd);
   if(epoll->net.wakeup) {
+    (void) close(epoll->net.sfd);
     (void) pthread_mutex_destroy(&epoll->lock);
   }
   if(epoll->nets != NULL) {
     free(epoll->nets);
-    epoll->nets = 0;
+    epoll->nets = NULL;
     epoll->nets_len = 0;
   }
 }
@@ -310,6 +308,16 @@ void net_epoll_free(struct net_epoll* const epoll) {
 void net_epoll_shutdown(struct net_epoll* const epoll, const int _free) {
   (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
   net_epoll_stop(epoll);
+  net_epoll_free(epoll);
+  if(_free) {
+    free(epoll);
+  }
+  (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+}
+
+void net_epoll_shutdown_async(struct net_epoll* const epoll, const int _free) {
+  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+  net_epoll_stop_async(epoll);
   net_epoll_free(epoll);
   if(_free) {
     free(epoll);

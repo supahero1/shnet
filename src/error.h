@@ -17,9 +17,9 @@ extern error_callback_t handle_error;
   void* ptr;
   safe_execute(ptr = malloc(size), ptr == NULL, ENOMEM);
 */
-#define safe_execute(what, error_condition, error) \
+#define safe_execute(expression, error_condition, error) \
 do { \
-  what; \
+  expression; \
   if((error_condition) && handle_error(error) == 0) { \
     continue; \
   } \

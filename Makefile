@@ -4,7 +4,7 @@ empty: ;
 CC := gcc
 CFLAGS += -pthread -Wall -pedantic -O3 -g -ggdb -fno-omit-frame-pointer
 LDLIBS += -lshnet
-LIBS += -lssl -lcrypto -lz -lbrotlienc -lbrotlidec
+LIBS += -lssl -lcrypto#-lz -lbrotlienc -lbrotlidec
 TESTLIBS += $(LIBS) -lm
 DIR_IN  := src
 DIR_OUT := bin
@@ -33,22 +33,15 @@ ${DIR_INCLUDE}:
 
 build: $(OBJECTS)
 
+build_tests: $(TEST_EXECS) | $(DIR_TEST)
+
 test: $(TEST_EXECS) | $(DIR_TEST)
-	#$(DIR_OUT)/test_heap
-	#$(DIR_OUT)/test_threads
-	#$(DIR_OUT)/test_time
+	$(DIR_OUT)/test_heap
+	$(DIR_OUT)/test_refheap
+	$(DIR_OUT)/test_threads
+	$(DIR_OUT)/test_time
 	
-	#$(DIR_OUT)/test_compression
-	#$(DIR_OUT)/test_http_p
-	
-	#$(DIR_OUT)/test_tcp 1
-	#$(DIR_OUT)/test_tcp 4
-	
-	#$(DIR_OUT)/test_tls 1
-	#$(DIR_OUT)/test_tls 4
-	
-	#$(DIR_OUT)/test_tls_stress 1
-	#$(DIR_OUT)/test_tls_stress 4
+	$(DIR_OUT)/test_tcp_full_async
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
@@ -96,9 +89,9 @@ ${DIR_OUT}/net.o: $(DIR_OUT)/threads.o
 
 ${DIR_OUT}/tcp.o: $(DIR_OUT)/net.o
 
-${DIR_OUT}/tls.o: $(DIR_OUT)/tcp.o
+#${DIR_OUT}/tls.o: $(DIR_OUT)/tcp.o
 
-${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o $(DIR_OUT)/base64.o
+#${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o $(DIR_OUT)/base64.o
 
 ${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_IN)/%.h | $(DIR_OUT)
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@

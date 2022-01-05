@@ -11,7 +11,7 @@
 
 static struct tcp_socket_settings tcp_socket_settings = { 1, 0, 0, 0, 0, 1, 0 };
 
-static struct tcp_server_settings tcp_server_settings = { 100, 64 };
+static struct tcp_server_settings tcp_server_settings = { 32, 32 };
 
 static void tcp_socket_set_flag(struct tcp_socket* const socket, const uint8_t flag) {
   aflag_add2(&socket->flags, flag);
@@ -231,8 +231,11 @@ static int tcp_socket_connect(struct tcp_socket* const sock) {
       return -1;
     }
     net_socket_default_options(&sock->net);
-    if(((sock->reconnecting && sock->settings.oncreation_when_reconnect) || (!sock->reconnecting && sock->on_event != NULL)) && sock->on_event(sock, tcp_creation) == -1) {
-      goto err;
+    if(((sock->reconnecting && sock->settings.oncreation_when_reconnect) || (!sock->reconnecting && sock->on_event != NULL)) && sock->on_event(sock, tcp_creation)) {
+      (void) close(sock->net.sfd);
+      sock->net.sfd = -1;
+      (void) pthread_mutex_unlock(&sock->lock);
+      return -1;
     }
     (void) pthread_mutex_unlock(&sock->lock);
     errno = 0;
@@ -268,12 +271,6 @@ static int tcp_socket_connect(struct tcp_socket* const sock) {
       }
     }
   }
-  
-  err:
-  (void) close(sock->net.sfd);
-  sock->net.sfd = -1;
-  (void) pthread_mutex_unlock(&sock->lock);
-  return -1;
 }
 
 #define socket ((struct tcp_socket*) addr->data)
@@ -491,6 +488,7 @@ int tcp_send(struct tcp_socket* const socket, void* data, uint64_t size, const e
   }
   (void) pthread_mutex_lock(&socket->lock);
   if(!tcp_socket_test_flag(socket, tcp_send_available)) {
+    errno = 0;
     const int ret = data_storage_add(&socket->queue, data, size, 0, flags);
     (void) pthread_mutex_unlock(&socket->lock);
     return ret;
@@ -501,6 +499,7 @@ int tcp_send(struct tcp_socket* const socket, void* data, uint64_t size, const e
     goto err1;
   }
   if(err == -1) {
+    errno = 0;
     const int ret = data_storage_add(&socket->queue, data, size, 0, flags);
     (void) pthread_mutex_unlock(&socket->lock);
     return ret;
@@ -604,7 +603,7 @@ static void tcp_reconnect(struct tcp_socket* socket, const int current_failed, c
   if(socket->settings.automatically_reconnect && !tcp_socket_test_flag(socket, tcp_closing)) {
     if(!socket->reconnecting && socket->settings.onclose_when_reconnect) {
       errno = EAGAIN;
-      socket->on_event(socket, tcp_close);
+      (void) socket->on_event(socket, tcp_close);
     }
     if(current_failed) {
       socket->cur_info = socket->cur_info->ai_next;

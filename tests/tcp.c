@@ -147,7 +147,7 @@ void print_help(void) {
   );
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   int clients_num = 1;
   int servers_num = 1;
   int client_restrict_thrds = 100;
@@ -269,11 +269,7 @@ int main(int argc, char **argv) {
   }
   /* Getting fancy with thread management */
   struct threads epoll_manager = {0};
-  if(threads(&epoll_manager) == -1) {
-    TEST_FAIL;
-  }
-  epoll_manager.func = epoll_startup;
-  if(threads_add(&epoll_manager, epolls_num) == -1) {
+  if(threads_add(&epoll_manager, epoll_startup, NULL, epolls_num) == -1) {
     TEST_FAIL;
   }
   
@@ -405,5 +401,6 @@ int main(int argc, char **argv) {
     free(buf);
   }
   TEST_PASS;
+  debug_free();
   return 0;
 }

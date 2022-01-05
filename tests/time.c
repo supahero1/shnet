@@ -52,6 +52,7 @@ void cbfunc4(void* data) {
         TEST_FAIL;
       }
     }
+    time_manager_resize_timeouts(data, 100);
     if(time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL) != 0) {
       TEST_FAIL;
     }
@@ -67,9 +68,17 @@ void cbfunc4(void* data) {
     if(time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2) != 0) {
       TEST_FAIL;
     }
-    time_manager_cancel_timeout(data, &timeout);
-    time_manager_cancel_timeout(data, &timeout2);
-    time_manager_cancel_interval(data, &interval);
+    time_manager_lock(data);
+    time_manager_cancel_timeout_raw(data, &timeout);
+    time_manager_cancel_timeout_raw(data, &timeout2);
+    if(time_manager_cancel_timeout_raw(data, &timeout2) == 1) {
+      TEST_FAIL;
+    }
+    time_manager_cancel_interval_raw(data, &interval);
+    if(time_manager_cancel_interval_raw(data, &interval) == 1) {
+      TEST_FAIL;
+    }
+    time_manager_unlock(data);
   }
 }
 
@@ -122,9 +131,13 @@ void cbbenchfunc(void* data) {
     sd = sqrt(sd);
     _debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
     TEST_PASS;
-    time_manager_stop(data);
+    _debug("Testing time succeeded", 1);
+    debug_free();
+    thread_cancellation_disable();
+    time_manager_stop_async(data);
+    time_manager_free(data);
     pthread_mutex_unlock(&mutexo);
-    pthread_exit(NULL);
+    thread_cancellation_enable();
   }
 }
 
@@ -182,6 +195,7 @@ int main() {
     TEST_FAIL;
   }
   pthread_mutex_lock(&mutexo);
-  time_manager_free(&manager);
+  pthread_mutex_unlock(&mutexo);
+  pthread_mutex_destroy(&mutexo);
   return 0;
 }
