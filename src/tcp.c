@@ -800,7 +800,7 @@ int tcp_server(struct tcp_server* const server, const struct tcp_server_options*
   struct addrinfo* cur_info;
   uint8_t alloc_info = 0;
   if(opt->info == NULL) {
-    const struct addrinfo hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags);
+    const struct addrinfo hints = net_get_addr_struct(opt->family, stream_socktype, tcp_protocol, opt->flags | wants_a_server);
     cur_info = net_get_address(opt->hostname, opt->port, &hints);
     if(cur_info == NULL) {
       goto err_mutex;

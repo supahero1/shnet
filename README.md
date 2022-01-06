@@ -631,8 +631,8 @@ void timer(void* data) {
 }
 void* data = /* something */;
 
-int err = time_manager_add_timeout/*_raw*/(&manager, timer, data, NULL);
-//                                                timer reference ^^^^
+int err = time_manager_add_timeout/*_raw*/(&manager, time_get_sec(1), timer, data, NULL);
+//                                                                 timer reference ^^^^
 ```
 
 Following the trend of other modules, both timeouts and intervals can be adjusted to allocate more space or clean up existing memory:
@@ -651,7 +651,7 @@ Cancelling a timeout requires a reference to be held:
 ```c
 struct time_reference ref = {0};
 
-int err = time_manager_add_timeout(&manager, timer, data, &ref);
+int err = time_manager_add_timeout(&manager, time_get_sec(1), timer, data, &ref);
 
 /* Change of mind */
 int success = time_manager_cancel_timeout/*_raw*/(&manager, &ref);
