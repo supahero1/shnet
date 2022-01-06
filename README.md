@@ -726,8 +726,309 @@ It is exactly the same as the `time_manager_add_timeout()` functions, with the a
 
 ## net
 
-Still experimented with.
+This module acts as a bridge between the system and other modules requiring networking functionality. Currently only TCP is implemented, but that might change in the future to include UDP or other protocols. Most functions of this module should not be used standalone, since they serve no purpose without a transport protocol requiring them.
+
+The constants defined in this module:
+* Addess families:
+  * `any_family`
+  * `ipv4`
+  * `ipv6`
+* Socket types:
+  * `any_socktype`
+  * `stream_socktype`
+  * `datagram_socktype`
+  * `raw_socktype`
+  * `seqpacket_socktype`
+* Transport protocols:
+  * `any_protocol`
+  * `tcp_protocol`
+  * `udp_protocol`
+  * `udp_lite_protocol`
+* Flags:
+  * `wants_a_server`: create a listening socket rather than a client,
+  * `numeric_hostname`: the value passed as hostname is an IP,
+  * `numeric_service`: the above, but for service/port,
+  * `wants_own_ip_version`: the kernel will pick only address families the hardware has configured,
+  * `wants_all_addresses`:
+  * `wants_mapped_ipv4`: in conjunction with the above flag, return all ipv4 and all ipv6-mapped-to-ipv4 addresses,
+  * `wants_canonical_name`: fetch the canonical name that comes with the DNS record.
+* Constants:
+  * `ip_max_strlen`: the maximum string length if address family is unknown, including the terminating NULL character,
+  * `ipv4_strlen`: the maximum string length for an ipv4 address, including the terminating NULL character,
+  * `ipv6_strlen`: the above, but for ipv6,
+  * `ipv4_size`: size of an ipv4 address structure,
+  * `ipv6_size`: the above, but for ipv6.
+
+There are a few universal functions that the application can use:
+* Performing a synchronous DNS lookup:
+```c
+//                            net_get_addr_struct(family, socktype,      protocol,     flags          );
+const struct addrinfo hints = net_get_addr_struct(ipv4, stream_socktype, tcp_protocol, numeric_service);
+//                     net_get_address(host,        service, hints);
+struct addrinfo* res = net_get_address("localhost", "8080", &hints);
+if(res == NULL) {
+  /* Consult errno for details */
+}
+
+/* ... Use the address */
+
+net_free_address(res); /* Cleanup afterwards */
+```
+
+* Performing an asynchronous DNS lookup:
+```c
+void async_dns(struct net_async_address* addr, struct addrinfo* info) {
+  /* Can access custom data using addr->data */
+  if(info == NULL) {
+    /* Failure, check errno */
+  } else {
+    /* Success, "info" contains the DNS records */
+  }
+  /* Cleanup */
+  net_free_address(info);
+  free(addr);
+}
+
+/* No error checks on purpose. Also notice that we are putting both structures in one memory chunk! */
+struct net_async_address* async = malloc(sizeof(struct net_async_address) + sizeof(struct addrinfo));
+async->hostname = "localhost";
+async->port = "8080";
+async->data = NULL;
+async->callback = async_dns;
+struct addrinfo* const info = (struct addrinfo*)(async + 1);
+info->ai_family = ipv4;
+info->ai_socktype = stream_socktype;
+info->ai_protocol = tcp_protocol;
+info->ai_flags = numeric_service;
+async->hints = info;
+if(net_get_address_async(async) == -1) {
+  free(async);
+  /* Check errno */
+}
+```
+
+* Given a valid ipv4/ipv6 address structure, convert it to a string:
+```c
+struct sockaddr_in6 addr = /* ... */;
+char str[ip_max_strlen]; /* Maybe we don't know if its ipv4 or ipv6 */
+net_address_to_string(&addr, str);
+```
+
+* Get various properties of a socket file descriptor:
+```c
+/* These functions take "struct net_socket" as their argument
+instead of a file descriptor, because other modules are built
+based on that structure. Given only a file descriptor, one
+can do: */
+struct net_socket socket = {0};
+socket.sfd = /* ... */;
+
+int family;
+net_socket_get_family(&socket, &family);
+
+int socktype;
+net_socket_get_socktype(&socket, &socktype);
+
+int protocol;
+net_socket_get_protocol(&socket, &protocol);
+
+struct sockaddr_in6 addr;
+net_socket_get_address(&socket, &addr);
+```
 
 ## tcp
 
-Still experimented with.
+This module exposes asynchronous TCP client and server.
+
+There are a few limitations no application can overcome:
+* A socket or a server can **ONLY** be in 1 epoll at a time,
+* All server sockets must be in the same epoll as their server,
+* A socket or a server may only be used from 1 thread at a time (excluding epoll).
+
+The meaning of the above will become clear after going through the documentation below. Violating these rules will result in undefined behavior. They make sure the underlying code stays simple and fast, without excess complexity created by multithreading.
+
+While sockets can be multithreaded, it should be done in a different way than one would imagine. Instead of throwing every socket into every thread and managing them all at the same time, the idea here is to divide sockets into different threads, if at all.
+
+The rules mentioned above fix many complex dependencies that would otherwise cause more lock contention or growth of the code to account for them:
+* No feasible mechanism of freeing a socket while its used by multiple threads and epoll at the same time - how do we know that all of them have finished using the socket so that it can be freed? And on top of that, how do we sync all of the epolls the socket is in to know all of them are not accessing the socket? How do we even know which epolls the socket is in without creating a new array just to know that?
+* If multiple threads are trying to send something or are tampering with the socket, there needs to be a lock for all of the operations, effectively blocking all but one of the threads for the same amount of time, and that is further blocking all of the other sockets from being processed at the same time. Kills off multithreading with lock contention.
+* The above rules mean absolutely no lock contention for reading data from the socket. If multiple threads were to do so, in order to not fragment the data across threads, a lock would need to be applied. Another factor to lock contention.
+* If server clients were not required to be in the same epoll as their server, that would also cause syncing issues mentioned in the first point above when trying to shutdown the server, and thus also shutting down all of the sockets.
+* Regarding the above, if the server has thousands of live connections, you can probably imagine it suffering to wait for every single socket to become unused in every other thread. The process of shutting down would take forever to complete.
+
+There are probably more problems coming with the lack of these rules that were not mentioned above. And to fix all of the issues above, all one needs to do is simply spread out sockets across threads so that a socket is only in one epoll thread, make only one thread other than epoll access it, and all of the problems are fixed. It's easier and faster than doing it the other way.
+
+### Client
+
+To create our first socket, we first need to understand settings and events.
+
+Settings are modifying behavior of a TCP socket and they are totally distinct from kernel settings that you set using `setsockopt()` or other functions. The available settings:
+* `automatically_close_onreadclose`: close the connection if the peer closes it. Defaults to true,
+* `automatically_reconnect`: if this is a client and not server connection, and if true, automatically retry the connection if it's closed by the peer. More information below. Defaults to false,
+* `onopen_when_reconnect`: emit the `open` event if we succeed reconnecting. Defaults to false,
+* `onclose_when_reconnect`: defaults to false,
+* `oncreation_when_reconnect`: defaults to false,
+* `init`: internal field. It must always be 1 to indicate the settings are "active",
+* `dont_send_buffered`: a flag internally used by epoll to know whether to send buffered data. Used for instance with TLS, since TLS is using its own sending functions distinct from the TCP ones. Defaults to false, don't change it unless necessary.
+
+The reconnecting flag, `automatically_reconnect`, was implemented to not introduce a burden of difficulties to try to reestablish a connection manually by the application. It works as the following:
+* If the socket is disconnected for any reason other than us closing it explicitly, try to reconnect,
+* Call the `close` event if `onclose_when_reconnect` was specified,
+* Try connecting to every known address of the peer, calling the `creation` and `destruction` events if `oncreation_when_reconnect` was specified,
+  * If that succeeds, wait for the connection to complete.
+    * If we connect, reset the reconnecting state so that all of this is possible again. Call the `open` event if `onopen_when_reconnect` was specified.
+    * Otherwise, go to the step below.
+  * If all addresses are unreachable and we can't even establish a connection,
+    * If we have already done a DNS lookup before (as part of reconnecting), declare the connection as dead.
+    * If we haven't, perform a new asynchronous DNS lookup of the peer's address,
+      * If succeeded, go to step 3.
+      * If failed, declare the connection as dead.
+
+If any kernel error occurs while doing the above so that we can't proceed, the connection is closed as well.
+
+The application can forcibly close the socket using `tcp_socket_close()` to bypass the reconnecting mechanism. Note that if `automatically_close_onreadclose` is also turned on, the socket __will__ reconnect, since that's not a connection close caused by the application.
+
+The socket will receive various events using one callback it has to supply. The available events are:
+* `tcp_creation`: called each time the socket's file descriptor is created/changed,
+* `tcp_destruction`: called to free resources allocated by the above if the file descriptor is about to be destroyed,
+* `tcp_open`: called when the connection is opened. Called again on every reconnection if `onopen_when_reconnect` was specified,
+* `tcp_data`: called when data might be in the socket's buffer. Note that there might not be any data at all,
+* `tcp_can_send`: called when the socket's send buffer is drained, useless to the application, only used by TLS,
+* `tcp_readclose`: called when the peer closes their side of the channel. The socket will be closed automatically after this event if `automatically_close_onreadclose` was specified. Note that even if `automatically_close_onreadclose` was specified, if there is any pending data in the socket's send buffer, it will first be sent out before closing the socket. However, if `automatically_reconnect` flag was set too, the waiting process will be omited and data will be sent after the socket is reconnected (if it reconnects),
+* `tcp_close`: called when the connection is closed. Called again only once even if there were multiple reconnection attempts (but none managed to connect) and `onclose_when_reconnect` was specified. It might be called twice in a row, but then it's likely the errno is different,
+* `tcp_free`: called after all of the routines to destroy the socket have been completed. This is the last event ever reported for a socket, and the last ever access of the socket's structure, meaning the application can `free()` any resources associated with the socket or even the socket itself from within the function.
+
+Creating the most basic socket ever:
+```c
+struct tcp_socket socket = {0};
+/* Not specifying any settings results in the default values mentioned above */
+int err = tcp_socket(&socket, &((struct tcp_socket_options) {
+  .hostname = "localhost",
+  .port = "8080",
+  .family = any_family,
+  .static_hostname = 1,
+  .static_port = 1,
+  .flags = numeric_service
+}));
+```
+
+This socket doesn't specify any settings, no epoll, and no event handler. It won't ever know if it connected, if an error occured, and when to free itself.
+
+Note that even though it doesn't specify an epoll, one is created just for the socket and will be freed automatically once the socket is freed using `tcp_socket_free()`. This can also be performed from the event handler.
+
+The `static_hostname` and `static_port` fields can be 1 if the application knows the `hostname` and `port` fields won't change their value and address to save a little bit of memory. In this case, these static strings are hardcoded into the program's code, so it's safe to do that.
+
+A more sophisticated socket might look like:
+```c
+/* To know when the socket is done for */
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+struct addrinfo* res;
+
+int handler(struct tcp_socket* socket, enum tcp_event event) {
+  switch(event) {
+    case tcp_open: {
+      printf("socket open\n");
+      break;
+    }
+    case tcp_close: {
+      printf("socket close, reason %d\n", errno);
+      
+      tcp_socket_free(socket);
+      break;
+    }
+    case tcp_free: {
+      net_free_address(res);
+      pthread_mutex_unlock(&mutex);
+      break;
+    }
+    default: break;
+  }
+  return 0;
+}
+
+int main() {
+  pthread_mutex_lock(&mutex);
+  
+  const struct addrinfo hints = net_get_addr_struct(ipv4, stream_socktype, tcp_protocol, 0);
+  res = net_get_address("localhost", "8080", &hints);
+  assert(res != NULL);
+
+  struct net_epoll epoll = {0};
+  int err = tcp_socket_epoll(&epoll);
+  assert(err == 0);
+  err = net_epoll_start(&epoll);
+  assert(err == 0);
+
+  struct tcp_socket socket = {0};
+  //                                          defaults, with reconnecting on
+  socket.settings = (struct tcp_socket_settings) { 1, 1, 0, 0, 0, 1, 0 };
+  socket.info = res;
+  socket.epoll = &epoll;
+  socket.on_event = handler;
+  err = tcp_socket(&socket, &((struct tcp_socket_options) {
+    .hostname = "localhost",
+    .port = "8080",
+    .family = any_family,
+    .static_hostname = 1,
+    .static_port = 1,
+    .flags = numeric_service
+  }));
+
+  /* Do something on the socket perhaps, send some stuff, etc. */
+
+  /* Cleanup */
+  tcp_socket_close(socket);
+  /* Make sure everything's been dealt with, just so
+  that we can quit the program with no memory leaks. */
+  pthread_mutex_lock(&mutex);
+  pthread_mutex_unlock(&mutex);
+  pthread_mutex_destroy(&mutex);
+  /* Give the thread some time to close itself */
+  usleep(1000);
+  return 0;
+}
+```
+
+Note that the program above was not tested. It's a semi-valid code only to demonstrate how sockets can be created and destroyed.
+
+The event handler for sockets must return an int for the purpose of the `tcp_creation` event. If the socket fails to allocate any resources it wanted to during that event, it should deallocate what it managed to allocate and return `-1`. It **MUST NOT** attempt to free or close the socket - it will be automatically done. No `tcp_close` event will be called in that case, since the socket is always closed when the `tcp_creation` event occurs.
+
+One can also specify custom `addr` field of the socket if available, to make it allocate less memory:
+```c
+struct tcp_socket_address addr = (struct tcp_socket_address) {
+  .hostname = "localhost",
+  .port = "8080"
+};
+
+/* ... */
+
+socket.addr = &addr;
+```
+
+Sending can be done like this:
+```c
+uint8_t data[] = { 0, 1, 2, 3 };
+uint64_t length = 4; /* Bytes */
+
+int err = tcp_socket_send(&socket, data, length, 0);
+if(err == -1) {
+  /* Socket writing channel is closed, no memory, etc.
+  Check errno for details */
+}
+```
+
+The last argument to the function are any flags from the `storage` module mentioned above.
+
+Note that the application can start sending things as soon as immediatelly after `tcp_socket()` function. The data obviously won't be sent out, but will be buffered until it can be sent.
+
+Receiving:
+```c
+uint8_t buffer[4096];
+
+uint64_t read = tcp_socket_read(&socket, buffer, 4096);
+```
+
+The function might not read as many bytes as the application wishes, but it will never read more than that. Additionally, it can be called at any time, even after the socket is in a dead state, as long as it's file descriptor is still intact (the underlying code only calls `close()` after `tcp_socket_free()`). To make sure all data is dead, the application should keep calling the function until either `read` is 0, or `errno` is not 0.
+
+More docs soon.

@@ -68,7 +68,7 @@ extern int  net_get_address_async(struct net_async_address* const);
 
 extern void net_free_address(struct addrinfo* const);
 
-extern int  net_address_to_string(void* const, char* const);
+extern void net_address_to_string(void* const, char* const);
 
 struct net_socket {
   unsigned int secure:1;
@@ -144,10 +144,6 @@ extern void net_epoll_stop(struct net_epoll* const);
 extern void net_epoll_stop_async(struct net_epoll* const);
 
 extern void net_epoll_free(struct net_epoll* const);
-
-extern void net_epoll_shutdown(struct net_epoll* const, const int);
-
-extern void net_epoll_shutdown_async(struct net_epoll* const, const int);
 
 extern int  net_epoll_add(struct net_epoll* const, void* const, const uint32_t);
 

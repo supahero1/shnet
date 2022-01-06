@@ -61,17 +61,12 @@ void net_free_address(struct addrinfo* const info) {
   freeaddrinfo(info);
 }
 
-int net_address_to_string(void* const addr, char* const buffer) {
-  const void* err;
+void net_address_to_string(void* const addr, char* const buffer) {
   if(((struct sockaddr*) addr)->sa_family == ipv4) {
-    err = inet_ntop(ipv4, &((struct sockaddr_in*) addr)->sin_addr.s_addr, buffer, ipv4_strlen);
+    (void) inet_ntop(ipv4, &((struct sockaddr_in*) addr)->sin_addr.s_addr, buffer, ipv4_strlen);
   } else {
-    err = inet_ntop(ipv6, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
+    (void) inet_ntop(ipv6, ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr, buffer, ipv6_strlen);
   }
-  if(err == NULL) {
-    return -1;
-  }
-  return 0;
 }
 
 int net_socket_get(const struct addrinfo* const info) {
@@ -160,10 +155,11 @@ void net_socket_default_options(const struct net_socket* const socket) {
 #define event_net ((struct net_socket*) events[i].data.ptr)
 
 void net_epoll_thread(void* net_epoll_thread_data) {
-  (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   struct epoll_event events[NET_EPOLL_DEFAULT_MAX_EVENTS];
   while(1) {
+    pthread_testcancel();
     const int count = epoll_wait(epoll->fd, events, NET_EPOLL_DEFAULT_MAX_EVENTS, -1);
+    pthread_testcancel();
     int check = 0;
     for(int i = 0; i < count; ++i) {
       if(event_net->wakeup) {
@@ -174,12 +170,14 @@ void net_epoll_thread(void* net_epoll_thread_data) {
         continue;
       }
       epoll->on_event(epoll, events[i].events, event_net);
+      pthread_testcancel();
     }
     if(check) {
       (void) pthread_mutex_lock(&epoll->lock);
       if(epoll->nets != NULL) {
         for(uint32_t i = 0; i < epoll->nets_len; ++i) {
           epoll->on_event(epoll, -1, epoll->nets[i]);
+          pthread_testcancel();
         }
         free(epoll->nets);
         epoll->nets = NULL;
@@ -195,9 +193,10 @@ void net_epoll_thread(void* net_epoll_thread_data) {
 #define event_net ((struct net_socket*) epoll->events[i].data.ptr)
 
 void net_epoll_thread_eventless(void* net_epoll_thread_data) {
-  (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   while(1) {
+    pthread_testcancel();
     const int count = epoll_wait(epoll->fd, epoll->events, epoll->events_size, -1);
+    pthread_testcancel();
     int check = 0;
     for(int i = 0; i < count; ++i) {
       if(event_net->wakeup) {
@@ -208,12 +207,14 @@ void net_epoll_thread_eventless(void* net_epoll_thread_data) {
         continue;
       }
       epoll->on_event(epoll, epoll->events[i].events, event_net);
+      pthread_testcancel();
     }
     if(check) {
       (void) pthread_mutex_lock(&epoll->lock);
       if(epoll->nets != NULL) {
         for(uint32_t i = 0; i < epoll->nets_len; ++i) {
           epoll->on_event(epoll, -1, epoll->nets[i]);
+          pthread_testcancel();
         }
         free(epoll->nets);
         epoll->nets = NULL;
@@ -303,26 +304,6 @@ void net_epoll_free(struct net_epoll* const epoll) {
     epoll->nets = NULL;
     epoll->nets_len = 0;
   }
-}
-
-void net_epoll_shutdown(struct net_epoll* const epoll, const int _free) {
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-  net_epoll_stop(epoll);
-  net_epoll_free(epoll);
-  if(_free) {
-    free(epoll);
-  }
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-}
-
-void net_epoll_shutdown_async(struct net_epoll* const epoll, const int _free) {
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-  net_epoll_stop_async(epoll);
-  net_epoll_free(epoll);
-  if(_free) {
-    free(epoll);
-  }
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 }
 
 static int net_epoll_modify(struct net_epoll* const epoll, void* const net, const int method, const uint32_t events) {
