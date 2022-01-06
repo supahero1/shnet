@@ -116,7 +116,11 @@ static void tcp_socket_free_raw(struct tcp_socket* const socket) {
       (void) socket->on_event(socket, tcp_free);
     }
     if(epoll != NULL) {
-      net_epoll_shutdown(epoll, 1);
+      thread_cancellation_disable();
+      net_epoll_stop(epoll);
+      net_epoll_free(epoll);
+      free(epoll);
+      thread_cancellation_enable();
     }
   }
 }
@@ -750,7 +754,11 @@ void tcp_server_free(struct tcp_server* const server) {
   server->sockets_len = 0;
   (void) server->on_event(server, tcp_free, NULL, NULL);
   if(epoll != NULL) {
-    net_epoll_shutdown(epoll, 1);
+    thread_cancellation_disable();
+    net_epoll_stop(epoll);
+    net_epoll_free(epoll);
+    free(epoll);
+    thread_cancellation_enable();
   }
 }
 
