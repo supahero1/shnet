@@ -72,7 +72,7 @@ uint64_t time_get_us(const uint64_t us) {
 
 uint64_t time_get_ns(const uint64_t ns) {
   struct timespec tp;
-  (void) clock_gettime(CLOCK_BOOTTIME, &tp);
+  (void) clock_gettime(CLOCK_REALTIME, &tp);
   return ns + tp.tv_sec * 1000000000 + tp.tv_nsec;
 }
 
@@ -185,7 +185,7 @@ static void time_manager_thread(void* time_manager_thread_data) {
     (void) sem_wait(&manager->amount);
     while(1) {
       uint64_t time = atomic_load_explicit(&manager->latest, memory_order_acquire);
-      (void) sem_timedwait(&manager->work, &(struct timespec){ .tv_sec = time / 1000000000, .tv_nsec = time % 1000000000 });
+      (void) sem_timedwait(&manager->work, &(struct timespec){ .tv_sec = time_ns_to_sec(time), .tv_nsec = time % 1000000000 });
       time = atomic_load_explicit(&manager->latest, memory_order_acquire);
       glob_time = time_get_time();
       if(glob_time >= time) {
