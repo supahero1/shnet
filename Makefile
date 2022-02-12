@@ -1,97 +1,87 @@
-.PHONY: empty build test build-tests clean prepare include copy-headers build-static static strip-static build-dynamic dynamic strip-dynamic uninstall
+.PHONY: empty build test build-tests clean uninstall static dynamic
 empty: ;
 
-CC := gcc
-CFLAGS += -pthread -Wall -pedantic -O3 -g -ggdb -fno-omit-frame-pointer
-LDLIBS += -lshnet
-LIBS += -lssl -lcrypto#-lz -lbrotlienc -lbrotlidec
-TESTLIBS += $(LIBS) -lm
-DIR_IN  := src
-DIR_OUT := bin
-DIR_TEST := tests
-DIR_INCLUDE := /usr/local/include/shnet
-DIR_LIB := /usr/local/lib
+BASE_FLAGS := -Wall -Wextra -Wno-newline-eof -Wno-unused-parameter -pedantic
+CFLAGS     += $(BASE_FLAGS) -Og -g -ggdb
+CXXFLAGS   += $(BASE_FLAGS) -Wno-c11-extensions -Wno-gnu-anonymous-struct -Wno-nested-anon-types
 
-ifneq ($(debug),)
-CFLAGS += -D SHNET_DEBUG
-endif
+DIR_IN      := src
+DIR_OUT     := bin
+DIR_TEST    := tests
+DIR_HEADERS := include
+DIR_INCLUDE := /usr/local/include
+DIR_LIB     := /usr/local/lib
 
 SOURCES = $(wildcard $(DIR_IN)/*.c)
 OBJECTS = $(SOURCES:$(DIR_IN)/%.c=$(DIR_OUT)/%.o)
 
 TEST_SUITES = $(wildcard $(DIR_TEST)/*.c)
-TEST_EXECS = $(TEST_SUITES:$(DIR_TEST)/%.c=$(DIR_OUT)/test_%)
+TEST_EXECS  = $(TEST_SUITES:$(DIR_TEST)/%.c=$(DIR_OUT)/test_%)
 
 ${DIR_OUT}:
 	mkdir -p $@
 
-shnet:
-	mkdir -p shnet
-
-${DIR_INCLUDE}:
-	mkdir -p $(DIR_INCLUDE)
-
 build: $(OBJECTS)
 
-build_tests: $(TEST_EXECS) | $(DIR_TEST)
+build-tests: build $(TEST_EXECS) | $(DIR_OUT)
 
-test: $(TEST_EXECS) | $(DIR_TEST)
-	$(DIR_OUT)/test_heap
-	$(DIR_OUT)/test_refheap
+test: build-tests $(DIR_OUT)/cc_compat
 	$(DIR_OUT)/test_threads
+	$(DIR_OUT)/test_thread_pool
 	$(DIR_OUT)/test_time
-	
-	$(DIR_OUT)/test_tcp_full_async
+	$(DIR_OUT)/test_async
+	$(DIR_OUT)/test_tcp
+	$(DIR_OUT)/test_tcp_bench -b
+	$(DIR_OUT)/test_tcp_bench -b -C 8 -S 8 -s
+	$(DIR_OUT)/test_tcp_bench -c
+	$(DIR_OUT)/test_tcp_bench -c -C 8 -S 8 -s
 
-${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h $(DIR_IN)/debug.c $(DIR_IN)/debug.h | $(DIR_OUT)
-	$(CC) $(CFLAGS) $< -o $@ $(TESTLIBS) $(LDLIBS)
-
-clean: | $(DIR_OUT)
+clean:
 	rm -r -f $(DIR_OUT) logs.txt
-	mkdir -p $(DIR_OUT)
-
-include: | $(DIR_INCLUDE)
-	cp $(DIR_IN)/*.h $(DIR_INCLUDE)
-
-copy-headers:
-	cp $(DIR_IN)/*.h shnet
-
-build-static: build
-	ar rcsv $(DIR_OUT)/libshnet.a $(OBJECTS)
-	ldconfig
-
-static: build-static include
-	cp $(DIR_OUT)/libshnet.a $(DIR_LIB)
-
-strip-static: build-static copy-headers
-	cp $(DIR_OUT)/libshnet.a shnet
-
-build-dynamic: build
-	$(CC) $(CFLAGS) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so $(LIBS)
-
-dynamic: build-dynamic include
-	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
-	ldconfig
-
-strip-dynamic: build-dynamic copy-headers
-	cp $(DIR_OUT)/libshnet.so shnet
 
 uninstall:
-	rm -f $(DIR_LIB)/libshnet.*
-	rm -r -f $(DIR_INCLUDE) shnet
+	rm -f $(DIR_LIB)/libshnet.a $(DIR_LIB)/libshnet.so
+	rm -r -f $(DIR_INCLUDE)/shnet
+
+static: build
+	ar rcsv $(DIR_OUT)/libshnet.a $(OBJECTS)
+	cp $(DIR_OUT)/libshnet.a $(DIR_LIB)
+	cp -r $(DIR_HEADERS)/* $(DIR_INCLUDE)/
+	ldconfig
+
+dynamic: build
+	$(CC) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so
+	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
+	cp -r $(DIR_HEADERS)/* $(DIR_INCLUDE)/
+	ldconfig
 
 
-${DIR_OUT}/refheap.o: $(DIR_OUT)/heap.o
+${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
+	clang++ $(CXXFLAGS) $(DIR_TEST)/cc_compat.cc -o $(DIR_OUT)/cc_compat -Iinclude
+
+${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h | build $(DIR_OUT)
+	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm
+
+${DIR_OUT}/test_threads: $(DIR_OUT)/threads.o
+
+${DIR_OUT}/test_thread_pool: $(DIR_OUT)/threads.o
+
+${DIR_OUT}/test_time: $(DIR_OUT)/time.o
+
+${DIR_OUT}/test_bench_time: $(DIR_OUT)/time.o
+
+${DIR_OUT}/test_async: $(DIR_OUT)/async.o
+
+${DIR_OUT}/test_tcp: $(DIR_OUT)/tcp.o
+
+${DIR_OUT}/test_tcp_bench: $(DIR_OUT)/tcp.o
+
+
+${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_HEADERS)/shnet/%.h $(DIR_HEADERS)/shnet/error.h | $(DIR_OUT)
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@ -Iinclude
+
+${DIR_OUT}/async.o: $(DIR_OUT)/threads.o
 
 ${DIR_OUT}/time.o: $(DIR_OUT)/threads.o
 
-${DIR_OUT}/net.o: $(DIR_OUT)/threads.o
-
-${DIR_OUT}/tcp.o: $(DIR_OUT)/net.o
-
-#${DIR_OUT}/tls.o: $(DIR_OUT)/tcp.o
-
-#${DIR_OUT}/http.o: $(DIR_OUT)/tls.o $(DIR_OUT)/compress.o $(DIR_OUT)/hash_table.o $(DIR_OUT)/http_p.o $(DIR_OUT)/time.o $(DIR_OUT)/base64.o
-
-${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_IN)/%.h | $(DIR_OUT)
-	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+${DIR_OUT}/tcp.o: $(DIR_OUT)/storage.o $(DIR_OUT)/threads.o $(DIR_OUT)/async.o $(DIR_OUT)/net.o

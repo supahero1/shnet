@@ -1,1 +1,0 @@
-CONNECT /lolololol/../lm%20fao/./yes.txt HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Encoding: br\r\n\r\na\r\n0123456789\r\n5\r\nabcde\r\n0\r\n

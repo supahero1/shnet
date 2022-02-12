@@ -1,10 +1,10 @@
-#include "time.h"
-#include "error.h"
-
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
-#include <signal.h>
+#include <assert.h>
+#include <stdatomic.h>
+
+#include <shnet/time.h>
+#include <shnet/error.h>
 
 uint64_t time_sec_to_ms(const uint64_t sec) {
   return sec * 1000;
@@ -81,351 +81,485 @@ uint64_t time_get_time() {
 }
 
 
-static int time_timeout_compare(const void* a, const void* b) {
-  const struct time_timeout* const x = a;
-  const struct time_timeout* const y = b;
-  if(x->time > y->time) {
-    return 1;
-  } else if(y->time > x->time) {
-    return -1;
-  } else {
-    return 0;
-  }
+
+static uint64_t time_peak_timeouts(const struct time_timers* const timers) {
+  return timers->timeouts[1].time;
 }
 
-static int time_interval_compare(const void* a, const void* b) {
-  const struct time_interval* const x = a;
-  const struct time_interval* const y = b;
-  const uint64_t t1 = x->base_time + x->interval * x->count;
-  const uint64_t t2 = y->base_time + y->interval * y->count;
-  if(t1 > t2) {
-    return 1;
-  } else if(t2 > t1) {
-    return -1;
-  } else {
-    return 0;
-  }
+#define timeof(idx) (timers->intervals[idx].base_time + timers->intervals[idx].interval * timers->intervals[idx].count)
+
+static uint64_t time_peak_intervals(const struct time_timers* const timers) {
+  return timeof(1);
 }
 
-int time_manager(struct time_manager* const manager) {
-  manager->timeouts.sign = heap_min;
-  manager->timeouts.compare = time_timeout_compare;
-  manager->timeouts.item_size = sizeof(struct time_timeout) + sizeof(void**);
-  manager->timeouts.used = manager->timeouts.item_size;
-  manager->timeouts.size = manager->timeouts.item_size;
-  
-  manager->intervals.sign = heap_min;
-  manager->intervals.compare = time_interval_compare;
-  manager->intervals.item_size = sizeof(struct time_interval) + sizeof(void**);
-  manager->intervals.used = manager->intervals.item_size;
-  manager->intervals.size = manager->intervals.item_size;
-  
-  int err;
-  safe_execute(err = sem_init(&manager->work, 0, 0), err != 0, err);
-  if(err != 0) {
-    goto err;
-  }
-  safe_execute(err = sem_init(&manager->amount, 0, 0), err != 0, err);
-  if(err != 0) {
-    goto err_sem;
-  }
-  safe_execute(err = pthread_mutex_init(&manager->mutex, NULL), err != 0, err);
-  if(err != 0) {
-    goto err_sem2;
-  }
-  return 0;
-  
-  err_sem2:
-  (void) sem_destroy(&manager->amount);
-  err_sem:
-  (void) sem_destroy(&manager->work);
-  err:
-  errno = err;
-  return -1;
+static uint64_t time_get_latest(const struct time_timers* const timers) {
+  return atomic_load_explicit(&timers->latest, memory_order_acquire);
 }
 
-static int time_manager_set_latest(struct time_manager* const manager) {
-  const uint64_t old = atomic_load_explicit(&manager->latest, memory_order_acquire);
-  uint64_t new;
-  if(!refheap_is_empty(&manager->timeouts)) {
-    if(!refheap_is_empty(&manager->intervals)) {
-      const struct time_timeout* const timeout = refheap_peak_rel(&manager->timeouts, 1);
-      const struct time_interval* const interval = refheap_peak_rel(&manager->intervals, 1);
-      const uint64_t time = interval->base_time + interval->interval * interval->count;
-      if(timeout->time > time) {
-        new = time | 1;
+static int time_set_latest(struct time_timers* const timers) {
+  const uint64_t old = time_get_latest(timers);
+  uint64_t latest;
+  if(timers->timeouts_used > 1) {
+    const uint64_t timeouts = time_peak_timeouts(timers);
+    if(timers->intervals_used > 1) {
+      const uint64_t intervals = time_peak_intervals(timers);
+      if(timeouts <= intervals) {
+        latest = timeouts & (~1);
       } else {
-        new = timeout->time & (UINT64_MAX - 1);
+        latest = intervals | 1;
       }
     } else {
-      const struct time_timeout* const timeout = refheap_peak_rel(&manager->timeouts, 1);
-      new = timeout->time & (UINT64_MAX - 1);
+      latest = timeouts & (~1);
     }
   } else {
-    if(!refheap_is_empty(&manager->intervals)) {
-      const struct time_interval* const interval = refheap_peak_rel(&manager->intervals, 1);
-      new = (interval->base_time + interval->interval * interval->count) | 1;
+    if(timers->intervals_used > 1) {
+      latest = time_peak_intervals(timers) | 1;
     } else {
-      new = 0;
+      latest = 0;
     }
   }
-  atomic_store_explicit(&manager->latest, new, memory_order_release);
-  if(new != old && new != 0) {
-    return 1;
-  }
-  return 0;
+  atomic_store_explicit(&timers->latest, latest, memory_order_release);
+  return old != latest;
 }
 
-#define manager ((struct time_manager*) time_manager_thread_data)
+/*
+ * TIMEOUTS
+ */
 
-static void time_manager_thread(void* time_manager_thread_data) {
-  uint64_t glob_time;
+static void time_timeouts_swap(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
+  timers->timeouts[one] = timers->timeouts[two];
+  if(timers->timeouts[two].ref != NULL) {
+    timers->timeouts[two].ref->ref = two;
+  }
+}
+
+static void time_timeouts_swap2(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
+  timers->timeouts[one] = timers->timeouts[two];
+  if(timers->timeouts[one].ref != NULL) {
+    timers->timeouts[one].ref->ref = one;
+  }
+}
+
+static void time_timeouts_down(const struct time_timers* const timers, uint32_t timer) {
+  const uint32_t save = timer;
+  timers->timeouts[0] = timers->timeouts[timer];
   while(1) {
-    check_for_timers:
-    (void) sem_wait(&manager->amount);
-    while(1) {
-      uint64_t time = atomic_load_explicit(&manager->latest, memory_order_acquire);
-      (void) sem_timedwait(&manager->work, &(struct timespec){ .tv_sec = time_ns_to_sec(time), .tv_nsec = time % 1000000000 });
-      time = atomic_load_explicit(&manager->latest, memory_order_acquire);
-      glob_time = time_get_time();
-      if(glob_time >= time) {
-        if(time == 0) {
-          goto check_for_timers;
+    uint32_t lchild = timer << 1;
+    uint32_t rchild = lchild + 1;
+    if(rchild >= timers->timeouts_used) {
+      if(lchild < timers->timeouts_used && timers->timeouts[0].time > timers->timeouts[lchild].time) {
+        time_timeouts_swap(timers, timer, lchild);
+        timer = lchild;
+      } else {
+        break;
+      }
+    } else {
+      if(timers->timeouts[lchild].time < timers->timeouts[rchild].time) {
+        if(timers->timeouts[0].time > timers->timeouts[lchild].time) {
+          time_timeouts_swap(timers, timer, lchild);
+          timer = lchild;
+        } else {
+          break;
         }
+      } else if(timers->timeouts[0].time > timers->timeouts[rchild].time) {
+        time_timeouts_swap(timers, timer, rchild);
+        timer = rchild;
+      } else {
         break;
       }
     }
-    time_manager_lock(manager);
-    const uint64_t ltest = atomic_load_explicit(&manager->latest, memory_order_acquire);
-    if(ltest == 0 || glob_time < ltest) {
-      time_manager_unlock(manager);
-    } else {
-      if((ltest & 1) == 0) {
-        struct time_timeout* latest = refheap_peak_rel(&manager->timeouts, 1);
-        struct time_reference* const ref = *(struct time_reference**)((char*) latest - sizeof(void**));
-        if(ref != NULL) {
-          ref->timer = 1;
-        }
-        struct time_timeout timeout = *latest;
-        refheap_delete(&manager->timeouts, manager->timeouts.item_size);
-        (void) time_manager_set_latest(manager);
-        time_manager_unlock(manager);
-        timeout.func(timeout.data);
+  }
+  if(save != timer) {
+    time_timeouts_swap2(timers, timer, 0);
+  }
+}
+
+static int time_timeouts_up(const struct time_timers* const timers, uint32_t timer) {
+  const uint32_t save = timer;
+  timers->timeouts[0] = timers->timeouts[timer];
+  uint32_t parent = timer >> 1;
+  while(parent > 0 && timers->timeouts[parent].time > timers->timeouts[0].time) {
+    time_timeouts_swap(timers, timer, parent);
+    timer = parent;
+    parent >>= 1;
+  }
+  if(save != timer) {
+    time_timeouts_swap2(timers, timer, 0);
+    return 1;
+  }
+  return 0;
+}
+
+int time_resize_timeouts_raw(struct time_timers* const timers, const uint32_t new_size) {
+  void* ptr;
+  safe_execute(ptr = realloc(timers->timeouts, sizeof(*timers->timeouts) * new_size), ptr == NULL, ENOMEM);
+  if(ptr == NULL) {
+    return -1;
+  }
+  timers->timeouts = ptr;
+  timers->timeouts_size = new_size;
+  return 0;
+}
+
+int time_resize_timeouts(struct time_timers* const timers, const uint32_t new_size) {
+  time_lock(timers);
+  const int ret = time_resize_timeouts_raw(timers, new_size);
+  time_unlock(timers);
+  return ret;
+}
+
+int time_add_timeout_raw(struct time_timers* const timers, const struct time_timeout* const timeout) {
+  if(timers->timeouts_used >= timers->timeouts_size && time_resize_timeouts_raw(timers, timers->timeouts_used + 1) == -1) {
+    return -1;
+  }
+  if(timeout->ref != NULL) {
+    timeout->ref->ref = timers->timeouts_used;
+  }
+  timers->timeouts[timers->timeouts_used++] = *timeout;
+  (void) time_timeouts_up(timers, timers->timeouts_used - 1);
+  if(time_set_latest(timers)) {
+    (void) sem_post(&timers->updates);
+  }
+  (void) sem_post(&timers->work);
+  return 0;
+}
+
+int time_add_timeout(struct time_timers* const timers, const struct time_timeout* const timeout) {
+  time_lock(timers);
+  const int ret = time_add_timeout_raw(timers, timeout);
+  time_unlock(timers);
+  return ret;
+}
+
+int time_cancel_timeout_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref == 0) {
+    return -1;
+  }
+  timers->timeouts[timer->ref] = timers->timeouts[--timers->timeouts_used];
+  if(!time_timeouts_up(timers, timer->ref)) {
+    time_timeouts_down(timers, timer->ref);
+  }
+  (void) time_set_latest(timers);
+  timer->ref = 0;
+  return 0;
+}
+
+int time_cancel_timeout(struct time_timers* const timers, struct time_timer* const timer) {
+  time_lock(timers);
+  const int ret = time_cancel_timeout_raw(timers, timer);
+  time_unlock(timers);
+  return ret;
+}
+
+struct time_timeout* time_open_timeout_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref != 0) {
+    return timers->timeouts + timer->ref;
+  }
+  return NULL;
+}
+
+struct time_timeout* time_open_timeout(struct time_timers* const timers, struct time_timer* const timer) {
+  time_lock(timers);
+  struct time_timeout* const ret = time_open_timeout_raw(timers, timer);
+  if(ret == NULL) {
+    time_unlock(timers);
+  }
+  return ret;
+}
+
+void time_close_timeout_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref == 0) {
+    return;
+  }
+  if(!time_timeouts_up(timers, timer->ref)) {
+    time_timeouts_down(timers, timer->ref);
+  }
+  (void) time_set_latest(timers);
+}
+
+void time_close_timeout(struct time_timers* const timers, struct time_timer* const timer) {
+  time_close_timeout_raw(timers, timer);
+  time_unlock(timers);
+}
+
+/*
+ * INTERVALS
+ */
+
+static void time_intervals_swap(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
+  timers->intervals[one] = timers->intervals[two];
+  if(timers->intervals[two].ref != NULL) {
+    timers->intervals[two].ref->ref = two;
+  }
+}
+
+static void time_intervals_swap2(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
+  timers->intervals[one] = timers->intervals[two];
+  if(timers->intervals[one].ref != NULL) {
+    timers->intervals[one].ref->ref = one;
+  }
+}
+
+static void time_intervals_down(const struct time_timers* const timers, uint32_t timer) {
+  const uint32_t save = timer;
+  timers->intervals[0] = timers->intervals[timer];
+  while(1) {
+    uint32_t lchild = timer << 1;
+    uint32_t rchild = lchild + 1;
+    if(rchild >= timers->intervals_used) {
+      if(lchild < timers->intervals_used && timeof(0) > timeof(lchild)) {
+        time_intervals_swap(timers, timer, lchild);
+        timer = lchild;
       } else {
-        struct time_interval* latest = refheap_peak_rel(&manager->intervals, 1);
-        struct time_interval interval = *latest;
-        ++latest->count;
-        refheap_down(&manager->intervals, manager->intervals.item_size);
-        (void) sem_post(&manager->amount);
-        (void) time_manager_set_latest(manager);
-        time_manager_unlock(manager);
-        interval.func(interval.data);
+        break;
+      }
+    } else {
+      const uint64_t lchild_t = timeof(lchild);
+      if(lchild_t < timeof(rchild)) {
+        if(timeof(0) > lchild_t) {
+          time_intervals_swap(timers, timer, lchild);
+          timer = lchild;
+        } else {
+          break;
+        }
+      } else if(timeof(0) > timeof(rchild)) {
+        time_intervals_swap(timers, timer, rchild);
+        timer = rchild;
+      } else {
+        break;
       }
     }
   }
-}
-
-#undef manager
-
-int time_manager_start(struct time_manager* const manager) {
-  return thread_start(&manager->thread, time_manager_thread, manager);
-}
-
-void time_manager_lock(struct time_manager* const manager) {
-  (void) pthread_mutex_lock(&manager->mutex);
-}
-
-void time_manager_unlock(struct time_manager* const manager) {
-  (void) pthread_mutex_unlock(&manager->mutex);
-}
-
-void time_manager_stop(struct time_manager* const manager) {
-  thread_stop(&manager->thread);
-}
-
-void time_manager_stop_async(struct time_manager* const manager) {
-  thread_stop_async(&manager->thread);
-}
-
-void time_manager_free(struct time_manager* const manager) {
-  (void) sem_destroy(&manager->work);
-  (void) sem_destroy(&manager->amount);
-  (void) pthread_mutex_destroy(&manager->mutex);
-  refheap_free(&manager->timeouts);
-  refheap_free(&manager->intervals);
-}
-
-
-
-int time_manager_resize_timeouts_raw(struct time_manager* const manager, const uint64_t new_size) {
-  return refheap_resize(&manager->timeouts, manager->timeouts.item_size * (new_size + 1));
-}
-
-int time_manager_resize_timeouts(struct time_manager* const manager, const uint64_t new_size) {
-  time_manager_lock(manager);
-  const int ret = time_manager_resize_timeouts_raw(manager, new_size);
-  time_manager_unlock(manager);
-  return ret;
-}
-
-int time_manager_add_timeout_raw(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_reference* const ref) {
-  if(refheap_insert(&manager->timeouts, &(struct time_timeout){ time, func, data }, (uint64_t*) ref) == -1) {
-    return -1;
+  if(save != timer) {
+    time_intervals_swap2(timers, timer, 0);
   }
-  if(time_manager_set_latest(manager)) {
-    (void) sem_post(&manager->work);
+}
+
+static int time_intervals_up(const struct time_timers* const timers, uint32_t timer) {
+  const uint32_t save = timer;
+  timers->intervals[0] = timers->intervals[timer];
+  uint32_t parent = timer >> 1;
+  while(parent > 0 && timeof(parent) > timeof(0)) {
+    time_intervals_swap(timers, timer, parent);
+    timer = parent;
+    parent >>= 1;
   }
-  (void) sem_post(&manager->amount);
-  return 0;
-}
-
-int time_manager_add_timeout(struct time_manager* const manager, const uint64_t time, void (*func)(void*), void* const data, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  const int ret = time_manager_add_timeout_raw(manager, time, func, data, ref);
-  time_manager_unlock(manager);
-  return ret;
-}
-
-int time_manager_cancel_timeout_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    refheap_delete(&manager->timeouts, ref->timer);
-    ref->timer = 1;
-    if(time_manager_set_latest(manager)) {
-      (void) sem_post(&manager->work);
-    }
+  if(save != timer) {
+    time_intervals_swap2(timers, timer, 0);
     return 1;
   }
   return 0;
 }
 
-int time_manager_cancel_timeout(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  const int ret = time_manager_cancel_timeout_raw(manager, ref);
-  time_manager_unlock(manager);
-  return ret;
-}
+#undef timeof
 
-struct time_timeout* time_manager_open_timeout_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    struct time_timeout* const timeout = refheap_peak(&manager->timeouts, ref->timer);
-    ref->last_time = timeout->time;
-    return timeout;
-  }
-  return NULL;
-}
-
-struct time_timeout* time_manager_open_timeout(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    struct time_timeout* const timeout = refheap_peak(&manager->timeouts, ref->timer);
-    ref->last_time = timeout->time;
-    return timeout;
-  }
-  time_manager_unlock(manager);
-  return NULL;
-}
-
-void time_manager_close_timeout_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  const struct time_timeout* const timeout = refheap_peak(&manager->timeouts, ref->timer);
-  if(timeout->time > ref->last_time) {
-    refheap_down(&manager->timeouts, ref->timer);
-  } else if(timeout->time < ref->last_time) {
-    refheap_up(&manager->timeouts, ref->timer);
-  }
-  if(time_manager_set_latest(manager)) {
-    (void) sem_post(&manager->work);
-  }
-}
-
-void time_manager_close_timeout(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_close_timeout_raw(manager, ref);
-  time_manager_unlock(manager);
-}
-
-
-
-int time_manager_resize_intervals_raw(struct time_manager* const manager, const uint64_t new_size) {
-  return refheap_resize(&manager->intervals, manager->intervals.item_size * (new_size + 1));
-}
-
-int time_manager_resize_intervals(struct time_manager* const manager, const uint64_t new_size) {
-  time_manager_lock(manager);
-  const int ret = time_manager_resize_intervals_raw(manager, new_size);
-  time_manager_unlock(manager);
-  return ret;
-}
-
-int time_manager_add_interval_raw(struct time_manager* const manager, const uint64_t base_time, const uint64_t interval, void (*func)(void*), void* const data, struct time_reference* const ref) {
-  if(refheap_insert(&manager->intervals, &(struct time_interval){ base_time, interval, 0, func, data }, (uint64_t*) ref) == -1) {
+int time_resize_intervals_raw(struct time_timers* const timers, const uint32_t new_size) {
+  void* ptr;
+  safe_execute(ptr = realloc(timers->intervals, sizeof(*timers->intervals) * new_size), ptr == NULL, ENOMEM);
+  if(ptr == NULL) {
     return -1;
   }
-  if(time_manager_set_latest(manager)) {
-    (void) sem_post(&manager->work);
-  }
-  (void) sem_post(&manager->amount);
+  timers->intervals = ptr;
+  timers->intervals_size = new_size;
   return 0;
 }
 
-int time_manager_add_interval(struct time_manager* const manager, const uint64_t base_time, const uint64_t interval, void (*func)(void*), void* const data, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  const int ret = time_manager_add_interval_raw(manager, base_time, interval, func, data, ref);
-  time_manager_unlock(manager);
+int time_resize_intervals(struct time_timers* const timers, const uint32_t new_size) {
+  time_lock(timers);
+  const int ret = time_resize_intervals_raw(timers, new_size);
+  time_unlock(timers);
   return ret;
 }
 
-int time_manager_cancel_interval_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    refheap_delete(&manager->intervals, ref->timer);
-    ref->timer = 1;
-    if(time_manager_set_latest(manager)) {
-      (void) sem_post(&manager->work);
+int time_add_interval_raw(struct time_timers* const timers, const struct time_interval* const interval) {
+  if(timers->intervals_used >= timers->intervals_size && time_resize_intervals_raw(timers, timers->intervals_used + 1) == -1) {
+    return -1;
+  }
+  if(interval->ref != NULL) {
+    interval->ref->ref = timers->intervals_used;
+  }
+  timers->intervals[timers->intervals_used++] = *interval;
+  (void) time_intervals_up(timers, timers->intervals_used - 1);
+  if(time_set_latest(timers)) {
+    (void) sem_post(&timers->updates);
+  }
+  (void) sem_post(&timers->work);
+  return 0;
+}
+
+int time_add_interval(struct time_timers* const timers, const struct time_interval* const interval) {
+  time_lock(timers);
+  const int ret = time_add_interval_raw(timers, interval);
+  time_unlock(timers);
+  return ret;
+}
+
+int time_cancel_interval_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref == 0) {
+    return -1;
+  }
+  timers->intervals[timer->ref] = timers->intervals[--timers->intervals_used];
+  if(!time_intervals_up(timers, timer->ref)) {
+    time_intervals_down(timers, timer->ref);
+  }
+  (void) time_set_latest(timers);
+  timer->ref = 0;
+  return 0;
+}
+
+int time_cancel_interval(struct time_timers* const timers, struct time_timer* const timer) {
+  time_lock(timers);
+  const int ret = time_cancel_interval_raw(timers, timer);
+  time_unlock(timers);
+  return ret;
+}
+
+struct time_interval* time_open_interval_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref != 0) {
+    return timers->intervals + timer->ref;
+  }
+  return NULL;
+}
+
+struct time_interval* time_open_interval(struct time_timers* const timers, struct time_timer* const timer) {
+  struct time_interval* const ret = time_open_interval_raw(timers, timer);
+  if(ret == NULL) {
+    time_unlock(timers);
+  }
+  return ret;
+}
+
+void time_close_interval_raw(struct time_timers* const timers, struct time_timer* const timer) {
+  if(timer->ref == 0) {
+    return;
+  }
+  if(!time_intervals_up(timers, timer->ref)) {
+    time_intervals_down(timers, timer->ref);
+  }
+  (void) time_set_latest(timers);
+}
+
+void time_close_interval(struct time_timers* const timers, struct time_timer* const timer) {
+  time_close_interval_raw(timers, timer);
+  time_unlock(timers);
+}
+
+
+
+#define timers ((struct time_timers*) time_thread_data)
+
+static void* time_thread(void* time_thread_data) {
+  while(1) {
+    start:
+    (void) sem_wait(&timers->work);
+    uint64_t time;
+    while(1) {
+      time = time_get_latest(timers);
+      if(time == 0) goto start;
+      if(time_get_time() >= time) break;
+      (void) sem_timedwait(&timers->updates, &((struct timespec) {
+        .tv_sec = time_ns_to_sec(time),
+        .tv_nsec = time % 1000000000
+      }));
     }
-    return 1;
+    void (*func)(void*) = NULL;
+    void* data;
+    time_lock(timers);
+    time = time_get_latest(timers);
+    if(time == 0 || time_get_time() < time) {
+      time_unlock(timers);
+      goto start;
+    }
+    if(time & 1) {
+      func = timers->intervals[1].func;
+      data = timers->intervals[1].data;
+      ++timers->intervals[1].count;
+      time_intervals_down(timers, 1);
+      (void) sem_post(&timers->work);
+    } else {
+      func = timers->timeouts[1].func;
+      data = timers->timeouts[1].data;
+      if(timers->timeouts[1].ref != NULL) {
+        timers->timeouts[1].ref->ref = 0;
+      }
+      if(--timers->timeouts_used > 1) {
+        timers->timeouts[1] = timers->timeouts[timers->timeouts_used];
+        time_timeouts_down(timers, 1);
+      }
+    }
+    (void) time_set_latest(timers);
+    time_unlock(timers);
+    if(func != NULL) {
+      pthread_cancel_off();
+      func(data);
+      pthread_cancel_on();
+    }
   }
+  assert(0);
+}
+
+#undef timers
+
+int time_timers(struct time_timers* const timers) {
+  int err;
+  safe_execute(err = sem_init(&timers->work, 0, 0), err == -1, errno);
+  if(err == -1) {
+    return -1;
+  }
+  safe_execute(err = sem_init(&timers->updates, 0, 0), err == -1, errno);
+  if(err == -1) {
+    goto err_work;
+  }
+  safe_execute(err = pthread_mutex_init(&timers->mutex, NULL), err == -1, err);
+  if(err == -1) {
+    errno = err;
+    goto err_updates;
+  }
+  timers->timeouts_used = 1;
+  timers->intervals_used = 1;
   return 0;
+  
+  err_updates:
+  (void) sem_destroy(&timers->updates);
+  err_work:
+  (void) sem_destroy(&timers->work);
+  return -1;
 }
 
-int time_manager_cancel_interval(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  const int ret = time_manager_cancel_interval_raw(manager, ref);
-  time_manager_unlock(manager);
-  return ret;
+int time_timers_start(struct time_timers* const timers) {
+  return pthread_start(&timers->thread, time_thread, timers);
 }
 
-struct time_interval* time_manager_open_interval_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    struct time_interval* const interval = refheap_peak(&manager->intervals, ref->timer);
-    ref->last_time = interval->base_time + interval->interval * interval->count;
-    return interval;
-  }
-  return NULL;
+void time_timers_stop(struct time_timers* const timers) {
+  pthread_cancel_sync(timers->thread);
 }
 
-struct time_interval* time_manager_open_interval(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_lock(manager);
-  if(ref->timer != 0 && (ref->timer & 1) == 0) {
-    struct time_interval* const interval = refheap_peak(&manager->intervals, ref->timer);
-    ref->last_time = interval->base_time + interval->interval * interval->count;
-    return interval;
-  }
-  time_manager_unlock(manager);
-  return NULL;
+void time_timers_stop_async(struct time_timers* const timers) {
+  pthread_cancel_async(timers->thread);
 }
 
-void time_manager_close_interval_raw(struct time_manager* const manager, struct time_reference* const ref) {
-  const struct time_interval* const interval = refheap_peak(&manager->intervals, ref->timer);
-  const uint64_t time = interval->base_time + interval->interval * interval->count;
-  if(time > ref->last_time) {
-    refheap_down(&manager->intervals, ref->timer);
-  } else if(time < ref->last_time) {
-    refheap_up(&manager->intervals, ref->timer);
-  }
-  if(time_manager_set_latest(manager)) {
-    (void) sem_post(&manager->work);
-  }
+void time_timers_stop_joinable(struct time_timers* const timers) {
+  pthread_cancel(timers->thread);
 }
 
-void time_manager_close_interval(struct time_manager* const manager, struct time_reference* const ref) {
-  time_manager_close_interval_raw(manager, ref);
-  time_manager_unlock(manager);
+void time_timers_free(struct time_timers* const timers) {
+  (void) sem_destroy(&timers->work);
+  (void) sem_destroy(&timers->updates);
+  (void) pthread_mutex_destroy(&timers->mutex);
+  free(timers->timeouts);
+  timers->timeouts = NULL;
+  timers->timeouts_used = 0;
+  timers->timeouts_size = 0;
+  free(timers->intervals);
+  timers->intervals = NULL;
+  timers->intervals_used = 0;
+  timers->intervals_size = 0;
+}
+
+void time_lock(struct time_timers* const timers) {
+  (void) pthread_mutex_lock(&timers->mutex);
+}
+
+void time_unlock(struct time_timers* const timers) {
+  (void) pthread_mutex_unlock(&timers->mutex);
 }

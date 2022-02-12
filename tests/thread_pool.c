@@ -1,8 +1,7 @@
 #include "tests.h"
 
-#include <time.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include <stdatomic.h>
+
 #include <shnet/threads.h>
 
 const uint32_t amount = 1000000;
@@ -10,64 +9,48 @@ const uint32_t amount = 1000000;
 _Atomic uint32_t count;
 
 void work(void* nil) {
-  atomic_fetch_add(&count, 100);
+  atomic_fetch_add_explicit(&count, 100, memory_order_relaxed);
 }
-
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void pool_work(void* nil) {
   for(unsigned long i = 0; i < 100; ++i) {
-    atomic_fetch_add(&count, 100);
+    atomic_fetch_add_explicit(&count, 100, memory_order_relaxed);
   }
-  if(atomic_load(&count) == amount) {
-    (void) pthread_mutex_unlock(&mutex);
+  if(atomic_load_explicit(&count, memory_order_relaxed) == amount) {
+    test_wake();
   }
 }
 
 int main() {
-  _debug("Testing thread_pool:", 1);
-  
-  (void) pthread_mutex_lock(&mutex);
-  
-  _debug("1. Control, x1 speed", 1);
+  begin_test("thread pool control group");
   atomic_store(&count, 0);
   for(uint32_t i = 0; i < 10000; ++i) {
     work(NULL);
   }
-  if(atomic_load(&count) != amount) {
-    TEST_FAIL;
-  }
-  TEST_PASS;
+  assert(atomic_load_explicit(&count, memory_order_relaxed) == amount);
+  end_test();
   
-  _debug("2. Experiment, x??? speed", 1);
+  begin_test("thread pool experiment group");
   atomic_store(&count, 0);
   struct thread_pool pool = {0};
-  if(thread_pool(&pool) == -1) {
-    TEST_FAIL;
-  }
-  if(thread_pool_resize_raw(&pool, 100) == -1) {
-    TEST_FAIL;
-  }
+  assert(thread_pool(&pool) != -1);
+  assert(thread_pool_resize_raw(&pool, 100) != -1);
   for(uint32_t i = 0; i < 100; ++i) {
     thread_pool_add_raw(&pool, pool_work, NULL);
   }
-  struct threads threads = {0};
-  if(threads_add(&threads, thread_pool_thread, &pool, 8) == -1) {
-    TEST_FAIL;
-  }
-  (void) pthread_mutex_lock(&mutex);
-  threads_shutdown(&threads);
-  threads_free(&threads);
-  TEST_PASS;
+  pthreads_t threads = {0};
+  assert(pthreads_start(&threads, thread_pool_thread, &pool, 8) != -1);
+  test_wait();
+  pthreads_shutdown_sync(&threads);
+  pthreads_free(&threads);
+  end_test();
   
-  _debug("3. Working manually", 1);
+  begin_test("thread pool manual work");
   for(uint32_t i = 0; i < 49; ++i) {
     thread_pool_add_raw(&pool, pool_work, NULL);
   }
   thread_pool_clear_raw(&pool);
-  if(pool.used != 0) {
-    TEST_FAIL;
-  }
+  assert(pool.used == 0);
   for(uint32_t i = 0; i < 49; ++i) {
     thread_pool_add_raw(&pool, pool_work, NULL);
   }
@@ -75,20 +58,19 @@ int main() {
   for(uint32_t i = 0; i < 49; ++i) {
     thread_pool_work_raw(&pool);
   }
-  if(atomic_load(&count) != 490000) {
-    TEST_FAIL;
-  }
-  if(pool.used != 0) {
-    TEST_FAIL;
-  }
-  TEST_PASS;
+  assert(atomic_load_explicit(&count, memory_order_relaxed) == 490000);
+  atomic_store_explicit(&count, 0, memory_order_relaxed);
+  assert(pool.used == 0);
+  end_test();
   
+  begin_test("thread pool");
+  thread_pool_lock(&pool);
+  thread_pool_try_work_raw(&pool);
+  thread_pool_unlock(&pool);
+  assert(atomic_load_explicit(&count, memory_order_relaxed) == 0);
+  end_test();
   
-  
-  _debug("Testing thread_pool succeeded", 1);
-  (void) pthread_mutex_unlock(&mutex);
-  (void) pthread_mutex_destroy(&mutex);
   thread_pool_free(&pool);
-  debug_free();
+  
   return 0;
 }

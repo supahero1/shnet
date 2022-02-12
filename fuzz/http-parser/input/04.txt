@@ -1,1 +1,0 @@
-GET /lmfao.lol HTT /1.1\r\n

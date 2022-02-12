@@ -1,8 +1,6 @@
-bin/
-shnet/
-dev/
-src_archive/
-tests_archive/
-log*
+bin
+dev
+src_old
+tests_old
 valgrind*
 vgcore*

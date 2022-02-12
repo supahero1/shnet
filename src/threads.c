@@ -1,200 +1,226 @@
-#include "error.h"
-#include "threads.h"
-
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
+#include <stdatomic.h>
 
-void thread_cancellation_disable() {
-  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-}
+#include <shnet/error.h>
+#include <shnet/threads.h>
 
-void thread_cancellation_enable() {
+void pthread_cancel_on() {
   (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 }
 
-void thread_cancellation_async() {
-  (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+void pthread_cancel_off() {
+  (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 }
 
-void thread_cancellation_deferred() {
-  (void) pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-}
-
-#define thrd ((struct thread_data*) thread_thread_data)
-
-static void* thread_thread(void* thread_thread_data) {
-  void (*func)(void*) = thrd->func;
-  void* const data = thrd->data;
-  free(thrd);
-  func(data);
-  return NULL;
-}
-
-#undef thrd
-
-int thread_start(struct thread* const thread, void (*func)(void*), void* const data_) {
-  struct thread_data* data;
-  safe_execute(data = malloc(sizeof(struct thread_data)), data == NULL, ENOMEM);
-  if(data == NULL) {
-    return -1;
-  }
-  data->func = func;
-  data->data = data_;
+int pthread_start_explicit(pthread_t* id, const pthread_attr_t* const attr, void* (*func)(void*), void* const data) {
   int err;
-  safe_execute(err = pthread_create(&thread->thread, NULL, thread_thread, data), err != 0, err);
+  pthread_t tid;
+  if(id == NULL) {
+    id = &tid;
+  }
+  safe_execute(err = pthread_create(id, attr, func, data), err != 0, err);
   if(err != 0) {
-    free(data);
     errno = err;
     return -1;
   }
   return 0;
 }
 
-void thread_stop(struct thread* const thread) {
-  if(pthread_equal(thread->thread, pthread_self())) {
-    (void) pthread_detach(thread->thread);
-    pthread_cancel(thread->thread);
+int pthread_start(pthread_t* const id, void* (*func)(void*), void* const data) {
+  return pthread_start_explicit(id, NULL, func, data);
+}
+
+void pthread_cancel_sync(const pthread_t id) {
+  if(pthread_equal(id, pthread_self())) {
+    (void) pthread_detach(id);
+    pthread_exit(NULL);
   } else {
-    pthread_cancel(thread->thread);
-    (void) pthread_join(thread->thread, NULL);
+    (void) pthread_cancel(id);
+    (void) pthread_join(id, NULL);
   }
 }
 
-void thread_stop_async(struct thread* const thread) {
-  (void) pthread_detach(thread->thread);
-  pthread_cancel(thread->thread);
+void pthread_cancel_async(const pthread_t id) {
+  (void) pthread_detach(id);
+  (void) pthread_cancel(id);
 }
 
 
 
-#define thrd ((struct threads_data*) threads_thread_data)
+#define data ((struct _pthreads_data*) pthreads_thread_data)
 
-static void* threads_thread(void* threads_thread_data) {
-  (void) pthread_barrier_wait(&thrd->barrier);
-  void (*func)(void*) = thrd->func;
-  void* const data = thrd->data;
-  if(atomic_fetch_sub(&thrd->count, 1) == 1) {
-    (void) pthread_mutex_unlock(thrd->mutex);
+static void* pthreads_thread(void* pthreads_thread_data) {
+  /*
+   * Notes for future me:
+   * NO, pthread_barrier_t may not be used here, because
+   * it cannot be interrupted by a cancellation request,
+   * which alone defeats the whole point of this system.
+   * Jesus...     This took too many tries to get right.
+   */
+  (void) sem_wait(&data->sem);
+  void* (*func)(void*) = data->func;
+  void* const arg = data->arg;
+  if(atomic_fetch_sub_explicit(&data->count, 1, memory_order_relaxed) == 1) {
+    (void) pthread_mutex_unlock(&data->mutex);
   }
-  func(data);
-  return NULL;
+  return func(arg);
 }
 
-#undef thrd
+#undef data
 
-int threads_resize(struct threads* const threads, const uint32_t new_size) {
-  pthread_t* ptr;
-  safe_execute(ptr = realloc(threads->threads, sizeof(pthread_t) * new_size), ptr == NULL, ENOMEM);
+int pthreads_resize(pthreads_t* const threads, const uint32_t new_size) {
+  void* ptr;
+  safe_execute(ptr = realloc(threads->ids, sizeof(*threads->ids) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
     return -1;
   }
-  threads->threads = ptr;
+  threads->ids = ptr;
   threads->size = new_size;
   return 0;
 }
 
-int threads_add(struct threads* const threads, void (*func)(void*), void* const data_, const uint32_t amount) {
+int pthreads_start_explicit(pthreads_t* const threads, const pthread_attr_t* const attr, void* (*func)(void*), void* const arg, const uint32_t amount) {
   const uint32_t total = threads->used + amount;
-  if(total > threads->size && threads_resize(threads, total) == -1) {
+  if(total > threads->size && pthreads_resize(threads, total) == -1) {
     return -1;
   }
-  struct threads_data* data;
-  safe_execute(data = malloc(sizeof(struct threads_data)), data == NULL, ENOMEM);
+  struct _pthreads_data* data;
+  safe_execute(data = malloc(sizeof(*data)), data == NULL, ENOMEM);
   if(data == NULL) {
     return -1;
   }
   int err;
-  safe_execute(err = pthread_barrier_init(&data->barrier, NULL, amount), err != 0, err);
-  if(err != 0) {
+  safe_execute(err = sem_init(&data->sem, 0, 0), err == -1, errno);
+  if(err == -1) {
     free(data);
-    errno = err;
     return -1;
   }
-  data->data = data_;
+  safe_execute(err = pthread_mutex_init(&data->mutex, NULL), err != 0, err);
+  if(err != 0) {
+    (void) sem_destroy(&data->sem);
+    free(data);
+    return -1;
+  }
+  data->arg = arg;
   data->func = func;
-  pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-  (void) pthread_mutex_lock(&mutex);
-  data->mutex = &mutex;
   atomic_store_explicit(&data->count, amount, memory_order_relaxed);
-  for(uint32_t i = threads->used; i < total; ++i) {
-    safe_execute(err = pthread_create(threads->threads + i, NULL, threads_thread, data), err != 0, err);
-    if(err != 0) {
-      if(i > threads->used) {
-        const uint32_t old = threads->used;
-        threads->used = i;
-        (void) threads_remove_async(threads, i - threads->used);
-        threads->used = old;
-      }
-      (void) pthread_barrier_destroy(&data->barrier);
-      (void) pthread_mutex_destroy(&mutex);
+  (void) pthread_mutex_lock(&data->mutex);
+  for(uint32_t i = 0; i < amount; ++i, ++threads->used) {
+    if(pthread_start_explicit(threads->ids + threads->used, attr, pthreads_thread, data)) {
+      pthreads_cancel_sync(threads, i);
+      (void) pthread_mutex_unlock(&data->mutex);
+      (void) pthread_mutex_destroy(&data->mutex);
+      (void) sem_destroy(&data->sem);
       free(data);
-      errno = err;
       return -1;
     }
   }
-  threads->used = total;
-  (void) pthread_mutex_lock(&mutex);
-  (void) pthread_mutex_unlock(&mutex);
-  (void) pthread_mutex_destroy(&mutex);
-  (void) pthread_barrier_destroy(&data->barrier);
+  for(uint32_t i = 0; i < amount; ++i) {
+    (void) sem_post(&data->sem);
+  }
+  /*
+   * Another note for future me:
+   * Confirmation is required. Otherwise, pthreads_cancel_*()
+   * will cancel our threads before they get the data freed.
+   */
+  (void) pthread_mutex_lock(&data->mutex);
+  (void) pthread_mutex_unlock(&data->mutex);
+  (void) pthread_mutex_destroy(&data->mutex);
+  (void) sem_destroy(&data->sem);
   free(data);
   return 0;
 }
 
-void threads_remove(struct threads* const threads, const uint32_t amount) {
-  const uint32_t total = threads->used - amount;
-  const pthread_t self = pthread_self();
-  int close_ourselves = 0;
-  for(uint32_t i = total; i < threads->used; ++i) {
-    if(pthread_equal(threads->threads[i], self) == 0) {
-      (void) pthread_cancel(threads->threads[i]);
-    } else {
-      close_ourselves = 1;
-    }
-  }
-  for(uint32_t i = total; i < threads->used; ++i) {
-    if(pthread_equal(threads->threads[i], self) == 0) {
-      (void) pthread_join(threads->threads[i], NULL);
-    }
-  }
-  threads->used = total;
-  if(close_ourselves == 1) {
-    (void) pthread_detach(self);
-    pthread_cancel(self);
-  }
+int pthreads_start(pthreads_t* const threads, void* (*func)(void*), void* const arg, const uint32_t amount) {
+  return pthreads_start_explicit(threads, NULL, func, arg, amount);
 }
 
-void threads_remove_async(struct threads* const threads, const uint32_t amount) {
+void pthreads_cancel(pthreads_t* const threads, const uint32_t amount) {
+  if(!amount) {
+    return;
+  }
   const uint32_t total = threads->used - amount;
   const pthread_t self = pthread_self();
   int close_ourselves = 0;
   for(uint32_t i = total; i < threads->used; ++i) {
-    if(pthread_equal(threads->threads[i], self) == 0) {
-      (void) pthread_detach(threads->threads[i]);
-      (void) pthread_cancel(threads->threads[i]);
+    if(!pthread_equal(threads->ids[i], self)) {
+      (void) pthread_cancel(threads->ids[i]);
     } else {
       close_ourselves = 1;
     }
   }
   threads->used = total;
   if(close_ourselves == 1) {
-    (void) pthread_detach(self);
-    pthread_cancel(self);
+    (void) pthread_cancel(self);
   }
 }
 
-void threads_shutdown(struct threads* const threads) {
-  threads_remove(threads, threads->used);
+void pthreads_cancel_sync(pthreads_t* const threads, const uint32_t amount) {
+  if(!amount) {
+    return;
+  }
+  const uint32_t total = threads->used - amount;
+  const pthread_t self = pthread_self();
+  int close_ourselves = 0;
+  for(uint32_t i = total; i < threads->used; ++i) {
+    if(!pthread_equal(threads->ids[i], self)) {
+      (void) pthread_cancel(threads->ids[i]);
+    } else {
+      close_ourselves = 1;
+    }
+  }
+  for(uint32_t i = total; i < threads->used; ++i) {
+    if(!pthread_equal(threads->ids[i], self)) {
+      (void) pthread_join(threads->ids[i], NULL);
+    }
+  }
+  threads->used = total;
+  if(close_ourselves == 1) {
+    (void) pthread_detach(self);
+    pthread_exit(NULL);
+  }
 }
 
-void threads_shutdown_async(struct threads* const threads) {
-  threads_remove_async(threads, threads->used);
+void pthreads_cancel_async(pthreads_t* const threads, const uint32_t amount) {
+  if(!amount) {
+    return;
+  }
+  const uint32_t total = threads->used - amount;
+  const pthread_t self = pthread_self();
+  int close_ourselves = 0;
+  for(uint32_t i = total; i < threads->used; ++i) {
+    if(!pthread_equal(threads->ids[i], self)) {
+      (void) pthread_detach(threads->ids[i]);
+      (void) pthread_cancel(threads->ids[i]);
+    } else {
+      close_ourselves = 1;
+    }
+  }
+  threads->used = total;
+  if(close_ourselves == 1) {
+    (void) pthread_detach(self);
+    (void) pthread_cancel(self);
+  }
 }
 
-void threads_free(struct threads* const threads) {
-  free(threads->threads);
-  threads->threads = NULL;
+void pthreads_shutdown(pthreads_t* const threads) {
+  pthreads_cancel(threads, threads->used);
+}
+
+void pthreads_shutdown_sync(pthreads_t* const threads) {
+  pthreads_cancel_sync(threads, threads->used);
+}
+
+void pthreads_shutdown_async(pthreads_t* const threads) {
+  pthreads_cancel_async(threads, threads->used);
+}
+
+void pthreads_free(pthreads_t* const threads) {
+  free(threads->ids);
+  threads->ids = NULL;
   threads->used = 0;
   threads->size = 0;
 }
@@ -203,10 +229,11 @@ void threads_free(struct threads* const threads) {
 
 #define pool ((struct thread_pool*) thread_pool_thread_data)
 
-void thread_pool_thread(void* thread_pool_thread_data) {
+void* thread_pool_thread(void* thread_pool_thread_data) {
   while(1) {
     thread_pool_work(pool);
   }
+  assert(0);
 }
 
 #undef pool
@@ -234,8 +261,8 @@ void thread_pool_unlock(struct thread_pool* const pool) {
 }
 
 int thread_pool_resize_raw(struct thread_pool* const pool, const uint32_t new_size) {
-  struct thread_data* ptr;
-  safe_execute(ptr = realloc(pool->queue, sizeof(struct thread_data) * new_size), ptr == NULL, ENOMEM);
+  void* ptr;
+  safe_execute(ptr = realloc(pool->queue, sizeof(*pool->queue) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
     return -1;
   }
@@ -255,49 +282,49 @@ int thread_pool_resize(struct thread_pool* const pool, const uint32_t new_size) 
 }
 
 int thread_pool_add_raw(struct thread_pool* const pool, void (*func)(void*), void* const data) {
-  if(pool->used == pool->size && thread_pool_resize(pool, pool->size + 1) == -1) {
+  if(pool->used >= pool->size && thread_pool_resize(pool, pool->used + 1) == -1) {
     return -1;
   }
-  pool->queue[pool->used++] = (struct thread_data) { .func = func, .data = data };
+  pool->queue[pool->used++] = (struct thread_pool_job) { .func = func, .data = data };
   (void) sem_post(&pool->sem);
   return 0;
 }
 
 int thread_pool_add(struct thread_pool* const pool, void (*func)(void*), void* const data) {
   thread_pool_lock(pool);
-  if(pool->used == pool->size && thread_pool_resize(pool, pool->size + 1) == -1) {
+  if(pool->used >= pool->size && thread_pool_resize(pool, pool->used + 1) == -1) {
     thread_pool_unlock(pool);
     return -1;
   }
-  pool->queue[pool->used++] = (struct thread_data) { .func = func, .data = data };
+  pool->queue[pool->used++] = (struct thread_pool_job) { .func = func, .data = data };
   thread_pool_unlock(pool);
   (void) sem_post(&pool->sem);
   return 0;
 }
 
 void thread_pool_try_work_raw(struct thread_pool* const pool) {
-  struct thread_data data;
   if(pool->used != 0) {
+    struct thread_pool_job data;
     data.func = pool->queue->func;
     data.data = pool->queue->data;
     --pool->used;
-    (void) memmove(pool->queue, pool->queue + 1, sizeof(struct thread_data) * pool->used);
+    (void) memmove(pool->queue, pool->queue + 1, sizeof(*pool->queue) * pool->used);
     data.func(data.data);
   }
 }
 
 void thread_pool_try_work(struct thread_pool* const pool) {
-  struct thread_data data;
-  (void) pthread_mutex_lock(&pool->mutex);
+  thread_pool_lock(pool);
   if(pool->used != 0) {
+    struct thread_pool_job data;
     data.func = pool->queue->func;
     data.data = pool->queue->data;
     --pool->used;
-    (void) memmove(pool->queue, pool->queue + 1, sizeof(struct thread_data) * pool->used);
-    (void) pthread_mutex_unlock(&pool->mutex);
+    (void) memmove(pool->queue, pool->queue + 1, sizeof(*pool->queue) * pool->used);
+    thread_pool_unlock(pool);
     data.func(data.data);
   } else {
-    (void) pthread_mutex_unlock(&pool->mutex);
+    thread_pool_unlock(pool);
   }
 }
 

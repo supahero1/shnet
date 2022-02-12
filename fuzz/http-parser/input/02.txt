@@ -1,1 +1,0 @@
-PUT / HTTP/1.1\r\nTransfer-Encoding: none\r\nContent-Encoding: none\r\nContent-Length: 1\r\n\r\nabcdefghijklmnoqprstuvwxyz

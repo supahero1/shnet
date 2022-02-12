@@ -1,201 +1,275 @@
+/*
+ * NOTE: these tests MAY fail if
+ * the system is under heavy load.
+ */
+
 #include "tests.h"
 
 #include <math.h>
-#include <time.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <stdatomic.h>
+
 #include <shnet/time.h>
 
-_Atomic unsigned char last;
+_Atomic uint32_t counter;
+_Atomic uint32_t total_size;
+struct time_timers timers = {0};
+int no = 0;
+uint64_t last_frame;
+uint64_t frames[100];
+int frames_len = 0;
 
-pthread_mutex_t mutexo = PTHREAD_MUTEX_INITIALIZER;
+struct test4_data {
+  struct time_timer interval;
+  struct time_timer timeout;
+};
 
-void cbfunc4(void*);
-
-void cbfunc1(void* data) {
-  (void) data;
-  if(atomic_load(&last) != 2) {
-    TEST_FAIL;
-  }
-  atomic_store(&last, 0);
-  if(time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL) != 0) {
-    TEST_FAIL;
-  }
-}
-
-void cbfunc2(void* data) {
-  (void) data;
-  if(atomic_load(&last) != 1) {
-    TEST_FAIL;
-  }
-  atomic_store(&last, 2);
-}
-
-void cbfunc3(void* data) {
-  (void) data;
-  if(atomic_load(&last) != 0) {
-    TEST_FAIL;
-  }
-  atomic_store(&last, 1);
-}
-
-void cbfunc5(void*);
-
-void cbfunc6(void*);
-
-void cbfunc4(void* data) {
-  if(atomic_fetch_add(&last, 1) == 0) {
-    for(int i = 0; i < 11; ++i) {
-      if(time_manager_add_timeout(data, time_get_ms(500), cbfunc4, data, NULL) != 0) {
-        TEST_FAIL;
-      }
-    }
-    time_manager_resize_timeouts(data, 100);
-    if(time_manager_add_timeout(data, time_get_sec(1), cbfunc5, data, NULL) != 0) {
-      TEST_FAIL;
-    }
-    struct time_reference timeout = {0};
-    struct time_reference timeout2 = {0};
-    struct time_reference interval = {0};
-    if(time_manager_add_timeout(data, time_get_ms(750), cbfunc6, data, &timeout) != 0) {
-      TEST_FAIL;
-    }
-    if(time_manager_add_interval(data, time_get_ms(100), time_ms_to_ns(100), cbfunc6, data, &interval) != 0) {
-      TEST_FAIL;
-    }
-    if(time_manager_add_timeout(data, time_get_ms(5), cbfunc6, data, &timeout2) != 0) {
-      TEST_FAIL;
-    }
-    time_manager_lock(data);
-    time_manager_cancel_timeout_raw(data, &timeout);
-    time_manager_cancel_timeout_raw(data, &timeout2);
-    if(time_manager_cancel_timeout_raw(data, &timeout2) == 1) {
-      TEST_FAIL;
-    }
-    time_manager_cancel_interval_raw(data, &interval);
-    if(time_manager_cancel_interval_raw(data, &interval) == 1) {
-      TEST_FAIL;
-    }
-    time_manager_unlock(data);
+void count_up(void* data) {
+  const uint32_t now = atomic_fetch_add_explicit(&counter, 1, memory_order_relaxed);
+  const uint32_t total = atomic_load(&total_size);
+  if(now + 1 == total) {
+    test_wake();
   }
 }
 
-void cbfunc5(void* data) {
-  (void) data;
-  if(atomic_load(&last) != 12) {
-    TEST_FAIL;
-  }
-  time_manager_stop(data);
-  (void) pthread_mutex_unlock(&mutexo);
-  pthread_exit(NULL);
+void cancel_timeout(void* data) {
+  assert(!time_cancel_timeout(&timers, data));
 }
 
-void cbfunc6(void* data) {
-  TEST_FAIL;
+void assert_0(void* data) {
+  assert(0);
 }
 
-uint64_t begin;
-uint64_t times;
-uint64_t last_time;
-uint64_t min = UINT64_MAX;
-uint64_t max = 0;
-#define AMOUNT 500
-uint64_t avg[AMOUNT];
+void cancel_interval(void* data) {
+  assert(!time_cancel_interval(&timers, data));
+}
 
-void cbbenchfunc(void* data) {
+void cancel_timeout_self(void* data) {
+  assert(time_cancel_timeout(&timers, data));
+  assert(time_open_timeout(&timers, data) == NULL);
+}
+
+void cancel_interval_self(void* data) {
+  assert(time_open_interval(&timers, data) != NULL);
+  time_close_interval(&timers, data);
+  assert(!time_cancel_interval(&timers, data));
+  assert(time_open_interval(&timers, data) == NULL);
+}
+
+void cancel_timeout_and_die(void* data) {
+  struct test4_data* d = (struct test4_data*) data;
+  assert(!no);
+  no = 1;
+  time_lock(&timers);
+  time_cancel_timeout_raw(&timers, &d->timeout);
+  time_cancel_interval_raw(&timers, &d->interval);
+  time_unlock(&timers);
+}
+
+void cancel_interval_and_die(void* data) {
+  struct test4_data* d = (struct test4_data*) data;
+  assert(!no);
+  no = 1;
+  time_lock(&timers);
+  time_cancel_interval_raw(&timers, &d->timeout);
+  time_cancel_interval_raw(&timers, &d->interval);
+  time_unlock(&timers);
+}
+
+void frame(void* data) {
   uint64_t now = time_get_time();
-  uint64_t diff = now - last_time;
-  last_time = now;
-  if(min > diff) {
-    min = diff;
-  }
-  if(max < diff) {
-    max = diff;
-  }
-  avg[times - 1] = diff;
-  printf("\r%.1f%%", (float) times / 10 * (1000 / AMOUNT));
-  fflush(stdout);
-  if(times++ == AMOUNT) {
-    float average = 0;
-    for(int i = 0; i < AMOUNT; ++i) {
-      average += (float) avg[i] / 1000000;
-    }
-    average /= AMOUNT;
-    float sd = 0;
-    for(int i = 0; i < AMOUNT; ++i) {
-      sd += ((float) avg[i] / 1000000 - average) * ((float) avg[i] / 1000000 - average);
-    }
-    sd /= AMOUNT;
-    sd = sqrt(sd);
-    _debug("\rAverage: %.2f ms\nMin: %.2f ms\nMax: %.2f ms\nStandard deviation: %.2f", 1, average, (float) min / 1000000, (float) max / 1000000, sd);
-    TEST_PASS;
-    _debug("Testing time succeeded", 1);
-    debug_free();
-    thread_cancellation_disable();
-    time_manager_stop_async(data);
-    time_manager_free(data);
-    pthread_mutex_unlock(&mutexo);
-    thread_cancellation_enable();
+  frames[frames_len++] = now - last_frame;
+  last_frame = now;
+  if(frames_len == sizeof(frames) / sizeof(frames[0])) {
+    time_cancel_interval(&timers, data);
+    test_wake();
   }
 }
 
-int counter = 0;
+void test7_modify_timeout(void* data) {
+  struct time_timeout* const timeout = time_open_timeout(&timers, data);
+  assert(timeout != NULL);
+  timeout->time = TIME_IMMEDIATELY;
+  time_close_timeout(&timers, data);
+}
+
+void close_timers(void* nil) {
+  time_timers_stop_joinable(&timers);
+}
 
 int main() {
-  _debug("Testing time:", 1);
-  _debug("1. Stress test", 1);
-  puts("If a round takes longer than 5 seconds, consider the test failed and feel free to break out using an interrupt (^C).");
-  srand(time_get_time());
-  (void) pthread_mutex_lock(&mutexo);
-  struct time_manager manager;
-  start:
-  printf("\rRound %d/3", counter + 1);
-  fflush(stdout);
-  memset(&manager, 0, sizeof(manager));
-  if(time_manager(&manager) != 0) {
-    TEST_FAIL;
+  atomic_store(&counter, 0);
+  atomic_store(&total_size, 0);
+  test_seed_random();
+  
+  begin_test("time init");
+  assert(!time_timers(&timers));
+  assert(!time_timers_start(&timers));
+  assert(!time_resize_timeouts(&timers, timers.timeouts_used + 100));
+  
+  struct time_timer timer;
+  for(int i = 0; i < 100; ++i) {
+    assert(!time_add_timeout(&timers, &((struct time_timeout) {
+      .func = count_up,
+      .time = time_ms_to_ns(100) + time_get_ms(rand() % 100),
+      .ref = &timer
+    })));
+    if(i < (rand() % 50)) {
+      time_cancel_timeout(&timers, &timer);
+    } else {
+      atomic_fetch_add(&total_size, 1);
+    }
   }
-  if(time_manager_start(&manager) != 0) {
-    TEST_FAIL;
+  assert(timers.timeouts_used == atomic_load(&total_size) + 1);
+  test_wait();
+  assert(!time_resize_timeouts(&timers, 1));
+  end_test();
+  
+  begin_test("time timeout cancellation");
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = assert_0,
+    .time = time_ms_to_ns(100),
+    .ref = &timer
+  })));
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = cancel_timeout,
+    .data = &timer,
+    .time = time_ms_to_ns(50)
+  })));
+  usleep(time_ms_to_us(150));
+  end_test();
+  
+  begin_test("time interval cancellation");
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = assert_0,
+    .base_time = time_get_ms(100),
+    .ref = &timer
+  })));
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = cancel_interval,
+    .data = &timer,
+    .time = time_get_ms(50)
+  })));
+  usleep(time_ms_to_us(150));
+  end_test();
+  
+  begin_test("time cancellation 1");
+  no = 0;
+  struct test4_data test4_data;
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = assert_0,
+    .time = time_get_ms(100),
+    .ref = &test4_data.timeout
+  })));
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = cancel_timeout_and_die,
+    .data = &test4_data,
+    .base_time = time_get_time(),
+    .interval = time_ms_to_ns(1),
+    .count = 50,
+    .ref = &test4_data.interval
+  })));
+  usleep(time_ms_to_us(150));
+  end_test();
+  
+  begin_test("time cancellation 2");
+  no = 0;
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = assert_0,
+    .base_time = time_get_ms(100),
+    .ref = &test4_data.timeout
+  })));
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = cancel_interval_and_die,
+    .data = &test4_data,
+    .base_time = time_get_ms(50),
+    .ref = &test4_data.interval
+  })));
+  usleep(time_ms_to_us(150));
+  end_test();
+  
+  begin_test("time benchmark");
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = frame,
+    .data = &timer,
+    .ref = &timer,
+    .base_time = time_get_ns(16666666),
+    .interval = 16666666
+  })));
+  last_frame = time_get_time();
+  test_wait();
+  double min = UINT32_MAX;
+  double max = 0;
+  double avg = 0;
+  for(int i = 0; i < frames_len; ++i) {
+    avg += frames[i];
+    if(frames[i] > max) {
+      max = frames[i];
+    }
+    if(frames[i] < min) {
+      min = frames[i];
+    }
   }
-  atomic_store(&last, 0);
-  if(time_manager_add_timeout(&manager, time_get_ms(1500), cbfunc1, &manager, NULL) != 0) {
-    TEST_FAIL;
+  min /= time_ms_to_ns(1);
+  max /= time_ms_to_ns(1);
+  avg /= frames_len * time_ms_to_ns(1);
+  double dev = 0;
+  for(int i = 0; i < frames_len; ++i) {
+    dev += ((double)(frames[i]/time_ms_to_ns(1)) - avg) * ((double)(frames[i]/time_ms_to_ns(1)) - avg);
   }
-  if(time_manager_add_timeout(&manager, time_get_ms(500), cbfunc3, &manager, NULL) != 0) {
-    TEST_FAIL;
-  }
-  if(time_manager_add_timeout(&manager, time_get_sec(1), cbfunc2, &manager, NULL) != 0) {
-    TEST_FAIL;
-  }
-  (void) pthread_mutex_lock(&mutexo);
-  time_manager_free(&manager);
-  if(counter++ == 2) {
-    puts("");
-    TEST_PASS;
-    goto benchmark;
-  }
-  goto start;
-  benchmark:
-  _debug("2. Benchmark", 1);
-  printf("An interval will be fired at 60FPS rate to see various statistics. The benchmark will end once %d samples are collected.\n", AMOUNT);
-  memset(&manager, 0, sizeof(manager));
-  if(time_manager(&manager) != 0) {
-    TEST_FAIL;
-  }
-  if(time_manager_start(&manager) != 0) {
-    TEST_FAIL;
-  }
-  begin = time_get_ns(16666666);
-  last_time = begin - 16666666;
-  times = 1;
-  if(time_manager_add_interval(&manager, begin, 16666666, cbbenchfunc, &manager, NULL) != 0) {
-    TEST_FAIL;
-  }
-  pthread_mutex_lock(&mutexo);
-  pthread_mutex_unlock(&mutexo);
-  pthread_mutex_destroy(&mutexo);
+  dev = sqrt(dev / frames_len);
+  end_test();
+  printf("Dev stats\nmin: %.2lf\nmax: %.2lf\navg: %.2lf\nsde: %.2lf\n", min, max, avg, dev);
+  
+  begin_test("time timer modification");
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = assert_0,
+    .time = time_get_ms(100),
+    .ref = &timer
+  })));
+  struct time_timer timer2;
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = cancel_timeout,
+    .time = time_get_ms(200),
+    .data = &timer,
+    .ref = &timer2
+  })));
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = test7_modify_timeout,
+    .time = time_get_ms(50),
+    .data = &timer2
+  })));
+  usleep(time_ms_to_us(150));
+  end_test();
+  
+  begin_test("time timeout self cancel");
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .func = cancel_timeout_self,
+    .time = TIME_IMMEDIATELY,
+    .data = &timer,
+    .ref = &timer
+  })));
+  usleep(time_ms_to_us(50));
+  end_test();
+  
+  begin_test("time interval self cancel");
+  assert(!time_add_interval(&timers, &((struct time_interval) {
+    .func = cancel_interval_self,
+    .base_time = time_get_time(),
+    .data = &timer,
+    .ref = &timer
+  })));
+  usleep(time_ms_to_us(50));
+  end_test();
+  
+  begin_test("time cleanup");
+  assert(!time_add_timeout(&timers, &((struct time_timeout) {
+    .time = TIME_IMMEDIATELY,
+    .func = close_timers
+  })));
+  (void) pthread_join(timers.thread, NULL);
+  end_test();
+  
+  time_timers_free(&timers);
   return 0;
 }
