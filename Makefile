@@ -60,12 +60,13 @@ dynamic: build
 	ldconfig
 
 
+ifeq (,$(shell which clang++))
+$(warning "Couldn't find clang++, skipping c++ compatibility tests")
+${DIR_OUT}/cc_compat: ;
+else
 ${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
-	ifeq (, $(shell which clang++))
-	$(warning "Couldn't find clang++, skipping c++ compatibility tests")
-	else
 	clang++ $(CXXFLAGS) $(DIR_TEST)/cc_compat.cc -o $(DIR_OUT)/cc_compat -Iinclude
-	endif
+endif
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_HEADERS)/shnet/tests.h | build $(DIR_OUT)
 	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm
