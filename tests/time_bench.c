@@ -1,10 +1,5 @@
-#include "../tests/tests.h"
+#include <shnet/tests.h>
 
-#include <time.h>
-#include <errno.h>
-#include <assert.h>
-#include <signal.h>
-#include <stdint.h>
 #include <inttypes.h>
 #include <stdatomic.h>
 
@@ -15,6 +10,7 @@
 
 #include <shnet/time.h>
 #include <shnet/error.h>
+#include <shnet/tests.h>
 
 #define TEST_NUM 10000
 

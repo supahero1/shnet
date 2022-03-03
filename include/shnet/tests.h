@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <errno.h>
+#include <unistd.h>
 #include <setjmp.h>
 #include <stdlib.h>
 #include <stdint.h>

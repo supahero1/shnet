@@ -1,7 +1,4 @@
-#include "tests.h"
-
-#include <unistd.h>
-
+#include <shnet/tests.h>
 #include <shnet/async.h>
 
 void onevt(struct async_loop* loop, uint32_t events, struct async_event* event) {

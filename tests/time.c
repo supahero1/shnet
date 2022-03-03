@@ -1,12 +1,11 @@
+#include <shnet/tests.h>
+
 /*
  * NOTE: these tests MAY fail if
  * the system is under heavy load.
  */
 
-#include "tests.h"
-
 #include <math.h>
-#include <unistd.h>
 #include <stdatomic.h>
 
 #include <shnet/time.h>

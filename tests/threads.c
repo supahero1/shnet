@@ -1,5 +1,4 @@
-#include "tests.h"
-
+#include <shnet/tests.h>
 #include <shnet/threads.h>
 
 /* Set these to something like 25UL and 1
@@ -8,7 +7,9 @@ for Valgrind, otherwise it's gonna choke.
 I find it unbelievable that some PC can't
 handle these settings, but if you really
 only fail because of asserts in callbacks
-below, try decreasing these 2. */
+below, try decreasing these 2.
+
+thread_count can't be less than 21. */
 #define thread_count 50UL
 #define repeat 25
 

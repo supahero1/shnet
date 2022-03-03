@@ -1,4 +1,4 @@
-#include "tests.h"
+#include <shnet/tests.h>
 
 #include <stdatomic.h>
 

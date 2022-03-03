@@ -1,6 +1,5 @@
 #define TEST_NO_ERR_HANDLER
-#include "tests.h"
-
+#include <shnet/tests.h>
 #include <shnet/error.h>
 
 int error_handler(int code) {

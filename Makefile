@@ -2,7 +2,7 @@
 empty: ;
 
 BASE_FLAGS := -Wall -Wextra -Wno-newline-eof -Wno-unused-parameter -pedantic
-CFLAGS     += $(BASE_FLAGS) -Og -g -ggdb
+CFLAGS     += $(BASE_FLAGS) -O3
 CXXFLAGS   += $(BASE_FLAGS) -Wno-c11-extensions -Wno-gnu-anonymous-struct -Wno-nested-anon-types
 
 DIR_IN      := src
@@ -59,7 +59,7 @@ dynamic: build
 ${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
 	clang++ $(CXXFLAGS) $(DIR_TEST)/cc_compat.cc -o $(DIR_OUT)/cc_compat -Iinclude
 
-${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_TEST)/tests.h | build $(DIR_OUT)
+${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_HEADERS)/shnet/tests.h | build $(DIR_OUT)
 	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm
 
 ${DIR_OUT}/test_threads: $(DIR_OUT)/threads.o

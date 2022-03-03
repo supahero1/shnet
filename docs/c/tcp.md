@@ -50,7 +50,7 @@ You can initialise the socket by setting `sock->on_event` and other members ment
 
 Returning `sock` is a special case scenario which will make the underlying code allocate space for the socket. Upon freeing the socket with `tcp_socket_free()`, the socket will automatically be `free()`'d.
 
-You can only safely call `tcp_socket_free()` once the `tcp_close` event occurs on the server.
+You can only safely call `tcp_server_free()` once the `tcp_close` event occurs on the server.
 
 ```c
 struct addrinfo* info = /* ... DNS lookup ... */;
