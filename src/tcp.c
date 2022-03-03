@@ -317,6 +317,7 @@ static int tcp_send_buffered(struct tcp_socket* const socket) {
             if(!socket->dont_autoclean) {
               (void) data_storage_resize(&socket->queue, socket->queue.used);
             }
+            return -1;
           }
           default: return -1;
         }

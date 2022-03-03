@@ -1,9 +1,13 @@
 .PHONY: empty build test build-tests clean uninstall static dynamic
 empty: ;
 
-BASE_FLAGS := -Wall -Wextra -Wno-newline-eof -Wno-unused-parameter -pedantic
+BASE_FLAGS := -Wall -Wextra -Wno-unused-parameter
 CFLAGS     += $(BASE_FLAGS) -O3
 CXXFLAGS   += $(BASE_FLAGS) -Wno-c11-extensions -Wno-gnu-anonymous-struct -Wno-nested-anon-types
+
+ifeq ($(CC),clang)
+BASE_FLAGS += -Wno-newline-eof
+endif
 
 DIR_IN      := src
 DIR_OUT     := bin
@@ -57,7 +61,11 @@ dynamic: build
 
 
 ${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
+	ifeq (, $(shell which clang++))
+	$(warning "Couldn't find clang++, skipping c++ compatibility tests")
+	else
 	clang++ $(CXXFLAGS) $(DIR_TEST)/cc_compat.cc -o $(DIR_OUT)/cc_compat -Iinclude
+	endif
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_HEADERS)/shnet/tests.h | build $(DIR_OUT)
 	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm
