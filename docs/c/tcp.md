@@ -16,6 +16,8 @@ All sockets use edge-triggered pooling. Because of that, if there is data to be 
 
 In event handlers, only one event at a time may occur.
 
+Events are handled using the `async` module (see `docs/c/async.md`). If you want to use an event loop for TCP clients and servers, use `tcp_async_loop()` for initialisation rather than `async_loop()`. The function sets the loop's `on_event` callback and initialises it like normally.
+
 ## Servers
 
 You can think about servers as of simple factories which create new sockets. There isn't anything else they can do. The life cycle of such created sockets does not depend on the server's life cycle.
