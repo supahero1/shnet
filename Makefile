@@ -2,12 +2,11 @@
 empty: ;
 
 BASE_FLAGS := -Wall -Wextra -Wno-unused-parameter
-CFLAGS     += $(BASE_FLAGS) -O3
-CXXFLAGS   += $(BASE_FLAGS) -Wno-c11-extensions -Wno-gnu-anonymous-struct -Wno-nested-anon-types
-
 ifeq ($(CC),clang)
 BASE_FLAGS += -Wno-newline-eof
 endif
+CFLAGS     += $(BASE_FLAGS) -O3
+CXXFLAGS   += $(BASE_FLAGS)
 
 DIR_IN      := src
 DIR_OUT     := bin
@@ -69,7 +68,7 @@ ${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
 endif
 
 ${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_HEADERS)/shnet/tests.h | build $(DIR_OUT)
-	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm
+	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm $(TESTLIBS)
 
 ${DIR_OUT}/test_threads: $(DIR_OUT)/threads.o
 

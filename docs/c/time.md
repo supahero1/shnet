@@ -4,7 +4,7 @@ The objective of this module is to bring kernel timers to the userspace, making 
 
 As of now (v5.17), the Linux kernel is using a red-black tree for storing timers, and managing them involves system calls, which can be costly. Additionally, 2 calls are required to initialise a timer (create & set time), which further decreases performance. This module boils down that cost to only 1 kernel timer per an unlimited number of userspace timers.
 
-Moreover, this module is using a very efficient heap implementation, which has a little modification that allows deletions of known items to be `O(1)`, where "known items" means the application has a pointer to an item it wants to delete. To learn more about this modified heap, see `src_archive/refheap.c`, `docs/archive/refheap.md`, `tests_archive/refheap.c`, and the benchmark below.
+Moreover, this module is using a very efficient heap implementation, which has a little modification that allows deletions of known items to be `O(1)`, where "known items" means the application has a pointer to an item it wants to delete. The pointer is updated internally by the heap when elements are moved. To learn more about this modified heap, see `src_archive/refheap.c`, `docs/archive/refheap.md`, `tests_archive/refheap.c`, and the benchmark below.
 
 On top of that, timers are small in size, and intervals (which are bigger than timeouts) have a separate heap so that timeouts don't need to be as big as them to share the same heap.
 
@@ -12,26 +12,26 @@ Run `make build-tests && bin/test_time_bench` to see how this module performs co
 
 ```
 Testing native timers creation... done
-9765us
+8169us
 Testing native timers deletion... done
-166886us
+161052us
 Testing native timers ALL... done
-365397us
+313411us
 Testing shnet timers creation... done
-830us
+712us
 Testing shnet timers deletion... done
-324us
+115us
 Testing shnet timers ALL... done
-1009us
+812us
 Testing libuv timers creation... done
-265us
+280us
 Testing libuv timers deletion... done
-1353us
+1319us
 Testing libuv timers ALL... done
-1610us
+1544us
 ```
 
-Run `make build-tests CFLAGS="-DLIBUV -luv"` if you also want to test against libuv like above.
+Run `make build-tests TESTLIBS="-DLIBUV -luv" && bin/test_time_bench` if you also want to test against libuv like above. If you have already built the source, run `make clean` first.
 
 `ALL` means creation + expiration + deletion (implicit or explicit). The benchmark is using immediately-expiring timers.
 
@@ -41,13 +41,13 @@ The benchmark is configured to run 10000 timers. You can modify that number usin
 
 ## Basic knowledge
 
-Time is always expressed as a `uint64_t`.
+Time is always expressed as `uint64_t`.
 
 This module features a lot of conversion functions in the format `time_x_to_y(uint64_t)`. Available values of `x` and `y` are `ns`, `us`, `ms`, and `sec`. `time_x_to_x()` functions do not exist.
 
-Timers and time-fetching routines are using the `CLOCK_REALTIME` clock. It is not possible to change that. Changing it in the source code will lead to very unpleasant results.
+Timers and time-fetching routines are using the `CLOCK_REALTIME` clock. It is not possible to change that. Changing it in the source code will lead to very unpleasant results (very possibly 100% CPU usage when having at least one timer).
 
-Time can be fetched using the `time_get_time()` function. Returns a `uint64_t` in nanoseconds.
+Time can be fetched using the `time_get_time()` function. Returns `uint64_t` in nanoseconds.
 
 One can write `time_get_x(uint64_t)` instead of `time_get_time() + time_x_to_ns(uint64_t)`.
 
@@ -75,11 +75,14 @@ err = time_timers_start(&timers);
 The thread can be manipulated as specified in `threads.md` via `timers.thread`:
 
 ```c
-time_timers_stop(&timers); /* pthread_cancel_sync(timers.thread) */
+/* pthread_cancel_sync(timers.thread) */
+time_timers_stop(&timers);
 
-time_timers_stop_async(&timers); /* pthread_cancel_async(timers.thread) */
+/* pthread_cancel_async(timers.thread) */
+time_timers_stop_async(&timers);
 
-time_timers_stop_joinable(&timers); /* pthread_cancel(timers.thread) */
+/* pthread_cancel(timers.thread) */
+time_timers_stop_joinable(&timers);
 ```
 
 Functions in the following section have thread-safe and unsafe versions. To run the raw versions in bulk, the time manager needs to be locked, and unlocked afterwards:
@@ -154,7 +157,7 @@ timeout = (struct time_timeout) {
 
 The `struct time_timer` variable acts as a pointer to the node which holds the timeout. It also holds the timeout's state, so that it can "fail fast" when trying to cancel an already executed (or cancelled) timer. It's only 4 bytes in size.
 
-After doing `time_add_timeout()` for the above timeout, it can be cancelled:
+After calling `time_add_timeout()` for the above timeout, it can be cancelled:
 
 ```c
 err = time_cancel_timeout(&timers, &timer);
@@ -163,7 +166,7 @@ if(err) {
 }
 ```
 
-Timers can also be "edited" on the fly before being executed. The application can change any members of a timer (**besides** `ref`):
+Timers can also be "edited" on the fly before being executed. The application can change any members of a timer (**excluding** `ref`):
 
 ```c
 struct time_timeout* timeout_ = time_open_timeout(&timers, &timer);
@@ -189,10 +192,26 @@ The next expiration of an interval is then `base_time + interval * count`. It is
 
 This functionality is analogous to the Linux kernel's `interval` and `value` fields of `struct itimerspec`. The beginning timeout (`value`) can be specified as `base_time + some_delay` or by increasing `count` above `0`, and the further `interval` is set using `interval`.
 
-`count` is increased by 1 everytime its interval expires.
+`count` is increased by 1 everytime its interval expires. Since it's a 64bit value, there's no need to worry about it overflowing to 0.
 
-Any delays are corrected automatically by the underlying code. For instance, if `interval` is 20ms, but it expires in 30ms, the next expiration will be in 40ms to account for the delay.
+```c
+struct time_timer timer;
+
+struct time_interval interval = (struct time_interval) {
+  .func = timer_cb,
+  .data = data,
+  
+  /* 1 second from now,
+     then every 50ms */
+  .time = time_get_sec(1),
+  .interval = time_ms_to_ns(50),
+  
+  .ref = &timer
+};
+``` 
+
+Any delays are corrected automatically by the underlying code. For instance, if an interval is to be executed 20ms from now, but it expires in 30ms from now, the next expiration will be in 40ms from now to account for the delay.
 
 `struct time_timer` is the same for both timeouts and intervals.
 
-**DO NOT** set `base_time` to `TIME_IMMEDIATELY`, instead set it to `time_get_time()`.
+**DO NOT** set `base_time` to `TIME_IMMEDIATELY` to make the interval be executed semi-instantly. Set it to `time_get_time()` instead.

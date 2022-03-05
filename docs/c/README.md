@@ -18,7 +18,7 @@ This directory contains documentation of all actively used modules in the librar
   assert(no error); */
   ```
 
-- ... structures can be reused immediatelly after a call to an appropriate function freeing them (if any). They can only be reused if they will be used the same way they were before.
+- ... structures can be reused immediatelly after a call to an appropriate function freeing them (if any). They can only be reused if they will be used the same way they were before. Otherwise, full zeroing is needed.
 
   ```c
   struct data_type data = {0};

@@ -31,7 +31,7 @@ int net_socket_setopt_true(int sfd, int level, int option);
 int net_socket_setopt_false(int sfd, int level, int option);
 
 /* getaddrinfo() */
-struct addrinfo* info = net_get_address(char* host, char* port, struct addrinfo* hints);
+struct addrinfo* net_get_address(char* host, char* port, struct addrinfo* hints);
 
 /* freeaddrinfo() */
 net_free_address(struct addrinfo* info);

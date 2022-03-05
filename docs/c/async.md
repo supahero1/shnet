@@ -55,7 +55,7 @@ async_loop_push_ptr_free(&loop);
 async_loop_commit(&loop);
 ```
 
-If `async_loop_commit()` is called without any of the functions prior to it, it will release the loop thread's resources and stop the loop from executing. All of the functions can be used at the same time in combination, but `async_loop_commit()` must be called last.
+If `async_loop_commit()` is called without any of the functions prior to it, it will release the loop thread's resources and stop the loop from executing. All of the functions can be used at the same time in any combination, but `async_loop_commit()` must be called last.
 
 Under the hood, the function simply creates a special event for the loop. The exception is handled once all events are dealt with.
 
@@ -93,10 +93,10 @@ event2.fd = event.fd;
 err = async_loop_mod(&loop, &event2, EPOLLOUT);
 
 /* ... */
-err = async_loop_remove(&loop, &event2 /* or &event */);
+err = async_loop_remove(&loop, &event2 /* or &event, because same fd */);
 ```
 
-The event's pointer **MUST NOT** change, unless you account for that by stopping the loop, modifying the event to set the new pointer, and restarting the loop, OR if you create a new event that will then edit the event's pointer. The pointer will be passed to the loop's `on_event` handler.
+The event's pointer **MUST NOT** change after being added while the loop is running, unless you account for that by stopping the loop, modifying the event to set the new pointer, and restarting the loop, OR if you create a new event that will then edit the event's pointer (because then the exception will be handled after all other events, so no race condition). The pointer will be passed to the loop's `on_event` handler.
 
 Events can be "simulated" after every other event has been processed:
 
@@ -106,7 +106,7 @@ err = async_loop_create_event(&loop, &event);
 
 In theory, any pointer can be passed in place of `struct async_event*`, but the underlying code is only utilising events, so there was never a need for `void*` pointers.
 
-It is entirely up to the `on_event()` handler of the loop to decide how to deal simulated events. Such an event will always have `events` set to `0`, `event` will be set to whatever was passed to `async_loop_create_event()`, and it will only be executed once.
+It is entirely up to the `on_event()` handler of the loop to decide how to deal with simulated events. Such an event will always have `events` set to `0`, `event` will be set to whatever was passed to `async_loop_create_event()`, and it will only be executed once.
 
 Asynchronous means of stopping a loop rely on this mechanism to some degree, although they do not call the above function.
 

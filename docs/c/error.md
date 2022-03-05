@@ -4,7 +4,7 @@ This header-only module is used by most, if not all, other modules in the librar
 
 ## Motivation
 
-Ultimately, it is not up to the library to make decisions for the whole application - if it encounters any error that stops it from moving forward, it lets the application know of it. At first glance, this alone is already flawed - some parts of the library, like the `threads` module, have heavily-computational functions, and them failing just to be tried later after the application attempts to fix any errors hurts performance.
+Ultimately, it is not up to the library to make decisions for the whole application - if it encounters any error that stops it from moving forward, it lets the application know of it. At first glance, this alone is already flawed - some parts of the library, like the `threads` module, have heavily-computational functions, and them failing just to be retried later after the application attempts to fix any errors hurts performance.
 
 Additionally, even if the application has some way of attempting to fix errors (freeing memory, file descriptors, etc.), it might not be aesthetic to add big `if` statements after every function to report the error, or even worse, make a `while` loop to continuously retry.
 
@@ -12,11 +12,24 @@ Moreover, some applications might not want to continue if any error occurs. For 
 
 ## Usage
 
-The application must define a function `int error_handler(int)` that  takes in an errno code, returns 0 if it wants the caller to retry the problematic function, or any other value to make the caller stop. Not defining the function will throw a compiler error. The function **MUST NOT** change `errno`, i.e. it might do it, but it must be the same upon exit as upon start of the function.
+The application must define a function `int error_handler(int)` that  takes in an errno code, returns `0` if it wants the caller to retry the problematic function, or any other value to make the caller stop. Not defining the function will throw a compiler error. The function **MUST NOT** change `errno`, i.e. it might do it, but it must be the same on exit as on start of the function.
 
-The module defines a macro `safe_execute(expr, bool, err_code)`. If `bool` argument is true (anything other than 0), `error_handler` is called with the given `err_code` (which doesn't need to be a constant - might as well be `errno`). If the handler returns 0, `safe_execute()` will repeat the `expr` expression, or quit otherwise.
+```c
+int error_handler(int err) {
+  switch(err) {
+    case ENOMEM: {
+      free_memory();
+      return 0; /* Continue */
+    }
+    /* ... cases for other errors ... */
+    default: return -1; /* Fail by default */
+  }
+}
+```
 
-`expr` is only used once in the `safe_execute()` macro, however as long as it resolves to false and `error_handler()` returns 0, `expr` will be executed multiple times. To prevent undefined behavior, refrain from using macro-unsafe expressions like `x++`.
+The module defines a macro `safe_execute(expr, bool, err_code)`. If `bool` argument is true (anything other than `0`), `error_handler` is called with the given `err_code` (which doesn't need to be a constant - might as well be `errno`). If the handler returns `0`, `safe_execute()` will repeat the `expr` expression, or quit otherwise.
+
+`expr` is only used once in the `safe_execute()` macro, however as long as it resolves to false and `error_handler()` returns `0`, `expr` will be executed multiple times. To prevent undefined behavior, refrain from using macro-unsafe expressions like `x++`.
 
 The following:
 
@@ -34,17 +47,6 @@ while(1) {
 Can be written as the following using this module:
 
 ```c
-int error_handler(int err) {
-  switch(err) {
-    case ENOMEM: {
-      free_memory();
-      return 0; /* Continue */
-    }
-    /* ... cases for other errors ... */
-    default: return -1; /* Fail by default */
-  }
-}
-
 void* ptr;
 /*
  * Can't declare the variable inside of the macro!
@@ -57,9 +59,16 @@ if(!ptr) {
 /* use ptr */
 ```
 
-The `error_handler` definition takes a lot of space in the example, but in a real application (and in the library) it's only a fraction of all the potential `safe_execute` calls.
+In the example above, it is impossible for `ptr` to be `NULL` after the `safe_execute()` call, because `error_handler()` (defined above) never returns failure on `ENOMEM`. The 2 lines of code (besides the redundant `if` statement) are equal to the first part of the example with the `while(1)` loop.
 
-In the example above, it is impossible for `ptr` to be `NULL` after the `safe_execute()` call, because `error_handler()` never returns failure on `ENOMEM`. The 2 lines of code (besides the redundant `if` statement) are equal to the first part of the example with the `while(1)` loop.
+This:
+
+```c
+safe_execute(void* ptr = ..., ..., ...);
+/* use ptr */
+```
+
+... is undefined behavior - `ptr` is limited to the scope of `safe_execute` and is not visible elsewhere.
 
 If `free_memory()` has a chance of not freeing memory, or if the application doesn't want to spin waiting for memory to become available, it can do the following to break out:
 

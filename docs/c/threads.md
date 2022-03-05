@@ -2,7 +2,7 @@
 
 This module deals with everything thread-related.
 
-Internally, the module is made in 3 parts - thread, threads, and thread pools.
+Internally, the module is split into 3 parts - thread, threads, and thread pools.
 
 The thread part deals with single-thread structure implementation. That is very simple, doesn't require barriers, a list of thread IDs, etc.
 
@@ -12,7 +12,7 @@ The thread pool part abstracts away the difference between the 2 above and imple
 
 ## Warning
 
-You should not use any functionality besides thead pools if you aren't familiar with threads, or otherwise you will very possibly run into multiple problems and memory leaks. Visit the [official pthreads documentation](https://man7.org/linux/man-pages/man7/pthreads.7.html) to learn more about them and about API used in this module.
+You should not use any functionality besides thead pools if you aren't familiar with threads, or otherwise you will very possibly run into multiple problems and memory leaks. Visit the [pthreads documentation](https://man7.org/linux/man-pages/man7/pthreads.7.html) to learn more about them and about API used in this module.
 
 ## Thread
 
@@ -35,6 +35,12 @@ err = pthread_start_explicit(&thread, &attr, func, data);
 ```
 
 The thread will start in the background, as normally expected from `pthread_create()`. If you need to be sure that the thread is active at the time your code is running, you can use pthread synchronization techniques to wait for the thread to start. This module doesn't take care of that.
+
+If the thread is meant to stop itself, meaning you don't need to hold a reference to it using `pthread_t`, you can drop the first argument:
+
+```c
+err = pthread_start(NULL, func, data);
+```
 
 There are 3 ways to stop that thread (from any thread, even **THE** thread). Pick the most suitable one:
 
@@ -62,7 +68,7 @@ There are 3 ways to stop that thread (from any thread, even **THE** thread). Pic
   
   You will need to call either `pthread_join()` or `pthread_detach()` to free the thread.
 
-All of the above functions mentioned in this section also work for the `threads` part, and any threads overall, even if they weren't created using this module.
+All of the above functions also work for the `threads` part, and any threads overall, even if they weren't created using this module.
 
 The above functions will only work if the target thread is cancellable and has cancellation points or has asynchronous cancellation turned on.
 
@@ -91,7 +97,7 @@ The structure is made to be very similar to the single thread part, althrough it
 pthreads_t threads = {0};
 ```
 
-The list of threads that the structure contains might not always be full, because it is not resized if threads are removed. You can adjust the list to reflect the number of used threads using the following:
+The list of threads that the structure contains might not always be full, because it is not resized if threads are removed. You can periodically adjust the list to save memory using the following:
 
 ```c
 uint32_t new_size = threads.used;
@@ -106,9 +112,9 @@ int err = pthreads_start(&threads, func, data, number);
 /* pthreads_start_explicit(&threads, &attr, func, data, number); */
 ```
 
-To ensure safety and proper code flow, these functions **block** until the requested number of threads are spawned. It is not possible to change this behavior. It is very unwise to try to remove threads (not the ones that are being added) at the same time, although it is possible (by calling `pthreads_resize(&threads, thread.used + number)` before the above).
+To ensure safety and proper code flow, these functions **block** until the requested number of threads are spawned. It is not possible to change this behavior. It is very unwise to try removing threads (not the ones that are being added) at the same time, although it is possible (by calling `pthreads_resize(&threads, thread.used + number)` before the above and not adjusting size of the list when deleting any threads).
 
-If creation of any of the requested threads fails, all other threads spawned within the same function will be destroyed **before** executing their start routine (the `func` parameter). Other threads in the structure, if any, will not be destroyed.
+If creation of any of the requested thread fails, all other threads spawned within the same function will be destroyed **before** executing their start routine (the `func` parameter). Other threads in the structure, if any, will not be destroyed.
 
 Similarly to single thread part, there exist 3 functions which remove threads from the structure: `pthreads_cancel()`, `pthreads_cancel_sync()`, and `pthreads_cancel_async()`. Their semantics are equal to their single thread counterparts, see above. However, they do not remove *all* threads from the structure - only given number of them:
 
@@ -136,6 +142,7 @@ In the above example, the fourth's thread ID is first saved to a variable to not
 
 pthread_t thread = threads.ids[3];
 memmove(threads.ids + 3, threads.ids + 4, threads.used - 4);
+--threads.used;
 ```
 
 The above example will preserve the order in which threads appear, making `pthreads_cancel_*()` functions behave correctly, if needed.
@@ -153,6 +160,8 @@ Finally, to free the list of threads and zero usage counters, you can use:
 ```c
 pthreads_free(&threads);
 ```
+
+It is OK to call `pthreads_cancel_async()` instead of the synchronous counterpart right before `pthreads_free()`.
 
 ## Thread pool
 
@@ -202,7 +211,9 @@ To queue a new job, you can do:
 no_mem = thread_pool_add(&pool, func, data);
 ```
 
-There is no function that bulk adds multiple jobs to the pool, use the above instead. If you need to queue multiple jobs all the time, consider putting a loop in the jobs's function so that it's performed multiple times. To further improve performance, acquire the pool's lock and execute `thread_pool_add_raw()` multiple times, after which unlock the pool's lock.
+There is no function that bulk adds multiple jobs to the pool, use the above instead. If you need to queue multiple jobs all the time, consider putting a loop in the jobs' function so that it's performed multiple times. To further improve performance, acquire the pool's lock and execute `thread_pool_add_raw()` multiple times, after which unlock the pool's lock.
+
+Jobs are executed outside of their pool's lock. Additionally, when they are executed, they will already be gone from the beginning of their pool's list of jobs.
 
 To remove all jobs:
 
@@ -218,7 +229,7 @@ pool.used = 5;
 thread_pool_unlock(&pool);
 ```
 
-Provided there were more before, this will shrink the number of jobs down to 5. After this, you can still change the limit upwards, since the old jobs are not deleted, unless you do `thread_pool_resize()`.
+Provided there were more before, this will shrink the number of jobs down to 5. After this, you can still change the limit upwards, up to the old limit, while under the lock. If you leave the lock, you **MUST NOT** increase the number of available jobs to do. Use `thread_pool_add()` instead.
 
 If you are not sure whether there are any jobs to do, do:
 
@@ -234,7 +245,7 @@ thread_pool_work(&pool);
 
 The blocking that the function performs (if there are no jobs) is a cancellation point and can be disturbed by a signal.
 
-Jobs will be executed outside of the pool's lock.
+The above will only execute one job.
 
 You can infinitely work using:
 

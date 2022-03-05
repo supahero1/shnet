@@ -42,13 +42,13 @@ The `on_event` callback **must** be specified by the application. Possible event
 - `tcp_close` when `tcp_server_close()` is completed,
 - `tcp_free` being the last event ever reported on the server. Since it's not accessed ever again by the underlying code, you can `free()` the server if it was allocated.
 
-When `tcp_open` occurs, `sock` is non-NULL and contains the connection's file descriptor at `sock->core.fd`. You **MUST** allocate space for the new socket. **DO NOT** write anything to the newly allocated space - instead, write changes to the `sock` pointer. The underlying code will populate the returned pointer using `sock`.
+When `tcp_open` occurs, `sock` is non-NULL and contains the connection's file descriptor at `sock->core.fd`. You **MUST** allocate space for the new socket (but see below). **DO NOT** write anything to the newly allocated space - instead, write changes to the `sock` pointer. The underlying code will populate the returned pointer using `sock`.
 
 Returning `NULL` from the callback will result in the connection being terminated on the spot. This is only true for the `tcp_open` event - all other events ignore the return value. You can use the return value to filter incoming connections, letting only the chosen ones through, however it's still better to do it using a firewall or other tools specifically designed for that.
 
 You can initialise the socket by setting `sock->on_event` and other members mentioned below in the sockets' documentation.
 
-Returning `sock` is a special case scenario which will make the underlying code allocate space for the socket. Upon freeing the socket with `tcp_socket_free()`, the socket will automatically be `free()`'d.
+Returning `sock` is a special case scenario which will make the underlying code allocate space for the socket. Upon freeing the socket with `tcp_socket_free()`, the memory will automatically be `free()`'d.
 
 You can only safely call `tcp_server_free()` once the `tcp_close` event occurs on the server.
 
@@ -70,7 +70,7 @@ The above function can fail with errno `EINVAL` for any of the following reasons
 - `options` is `NULL`,
 - `server.on_event` is `NULL`,
 - `options.info` and `options.hostname` and `options.port` are all `NULL`,
-- A double initialisation was detected.
+- A double initialisation was detected (not guaranteed to be).
 
 `info` is optional if any of `hostname` and `port` are set and vice versa. If `info` is `NULL`, a synchronous DNS lookup will be performed based on the values of `hostname`, `port`, `family`, and `flags`.
 
@@ -80,7 +80,7 @@ If `server.loop` is `NULL`, the underlying code will create a new event loop. It
 
 If `options.port` is `"0"`, the operating system will pick a free port for the server. After the `tcp_server()` function is completed, you can retrieve the server's port using `tcp_server_get_port(&server)`.
 
-The server's resources can be freed with `tcp_server_free(&server)`.
+The server's resources can be freed with `tcp_server_free(&server)`, but only after the `tcp_close` event occurs. The function also emits `tcp_free`, and during that event it's legal to `free()` memory holding the server itself, because it will not be accessed by the underlying code ever again.
 
 The server can be terminated using:
 
@@ -144,7 +144,7 @@ The above function can fail with errno `EINVAL` for any of the following reasons
 
 `info` is optional if any of `hostname` and `port` are set and vice versa. If `info` is `NULL`, an asynchronous DNS lookup will be performed based on the values of `hostname`, `port`, `family`, and `flags`.
 
-If `socket.loop` is `NULL`, the underlying code will create a new event loop. It will be automatically freed upon the socket's destruction.
+If `socket.loop` is `NULL`, the underlying code will create a new event loop. It will be automatically freed upon `tcp_socket_free()`.
 
 It is not guaranteed that the socket is connected after the `tcp_socket()` function, however you can already start queueing up data using `tcp_send()`:
 
@@ -159,7 +159,7 @@ Frames not declared with `dont_free` member set to `1` will be freed when they a
 
 The above function is thread-safe and can be called at the same time from the socket's event handler and from a user thread. If it fails in either, the data will be sent later in the same order `tcp_send()` was called.
 
-You can probably ignore the return value of the function. If any fatal error occurs, the connection will be terminated. The only realistic error to watch out for is `ENOMEM`. Note that if it occurs, and since `error_handler` (described in `docs/c/error.md`) is retrying until it's unsuccessful, the connection **SHOULD** be closed, since data is lost in a sense. On top of that, if you are using `tcp_send()` from both event handler and user thread, the connection **MUST** be closed, because order of data may have been corrupted, unless you account for that.
+You can probably ignore the return value of the function. If any fatal error occurs, the connection will be terminated. The only realistic error to watch out for is `ENOMEM`. Note that if it occurs, and since `error_handler` (described in `docs/c/error.md`) is retrying until it's unsuccessful, the connection **SHOULD** be closed, since data is lost in a sense. On top of that, if you are using `tcp_send()` from both event handler and user thread, the connection **MUST** be closed, because order of data may have been corrupted, unless you account for that with double mutex protection or such.
 
 The application can know how much data is unsent using:
 
@@ -206,11 +206,11 @@ tcp_socket_keepalive_explicit(&socket, idle_time, reprobe_time, retries);
 tcp_socket_dont_receive_data(&socket);
 ```
 
-The connection can be closed gracefully using `tcp_socket_close(&socket)`. This function waits until all buffered data is sent and then sends a `FIN` to the peer, closing the channel. Afterwards, it waits for the peer to send back a `FIN`.
+The connection can be closed gracefully using `tcp_socket_close(&socket)`. The connection will wait until all buffered data is sent and then will send a `FIN` to the peer, closing the channel. Afterwards, it will wait for the peer to send back a `FIN`. The function does not block to wait for all of that.
 
-The above means that after `tcp_socket()`, data can be queued using `tcp_send()` and `tcp_socket_close()` can be called immediatelly afterwards. It will gracefully wait for all of the data to be sent before closing the connection.
+The above means that after `tcp_socket()`, data can be queued using `tcp_send()` and `tcp_socket_close()` can be called immediatelly afterwards. The socket will gracefully wait for all of the data to be sent before closing the connection.
 
-If currently buffered data and data still in flight aren't important, the connection can be closed forcibly using `tcp_socket_force_close(&socket)`. This function will not wait for anything. It's likely to simply send a `RST` to the peer, terminating the connection.
+If currently buffered data and data still in flight aren't deemed important, the connection can be closed forcibly using `tcp_socket_force_close(&socket)`. This function will not wait for anything. It's likely to immediatelly send a `RST` to the peer, terminating the connection.
 
 You can indicate to the library that you will no longer use the socket in any way by calling `tcp_socket_free(&socket)`. It is **NOT** guaranteed that the socket's resources are released after this function completes. This is only a hint for the underlying code about when it can destroy the socket.
 

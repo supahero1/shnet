@@ -49,7 +49,7 @@ By default, if a new frame can't be added to a storage (an error occured), it wi
 
 `read_only` should be set to `1` if you are sure the data won't be modified after adding it to a storage. This makes the underlying code make optimised decisions about how to handle the frame.
 
-`dont_free` must be set to `1` if you don't want the data to be freed after it is fully read.
+`dont_free` must be set to `1` if you don't want the data to be destroyed after it is fully read. This also means `data_storage_free()` will not touch it (but the list of frames will be destroyed).
 
 You can insert a frame like this:
 
@@ -76,7 +76,7 @@ err = data_storage_add(&storage, &((struct data_frame) {
 }));
 ```
 
-Playing clever by setting `offset` to `0` and `len` to `4096 - 256` **MIGHT NOT** work and might end up with undefined behavior in case of `mmap()`ed data. The bytes below `offset` will never really be touched by the underlying code, the real length is what matters. Only set `offset` to `0` if you know what you are doing.
+Playing clever by setting `offset` to `0` and `len` to `4096 - 256` **MIGHT NOT** work and might end up with undefined behavior in case of `mmap()`ed data. Only set `offset` to `0` if you know what you are doing.
 
 Data can be used like so:
 
@@ -109,8 +109,6 @@ Another function used in the above example is `data_storage_finish()`. Its job i
 
 It is also legal to call the function when there are no frames in the storage. It will simply do nothing then.
 
----
-
 If not using `data_storage_drain()`, you can check if a storage is empty with:
 
 ```c
@@ -126,4 +124,4 @@ uint32_t new_size = storage.used;
 int no_mem = data_storage_resize(&storage, new_size);
 ```
 
-In the above example, the storage's list of frames is resized to its real size. This might prove important to you, because when frames are removed (using `data_storage_drain()`), the list of frames isn't `realloc()`'ed to the new smaller size. Thus, the above function can be used to optimise your code - it either makes space for a lot of new frames, or cleans up after a lot of frames. You can access the fake size of the list of frames (fake, because not necessarily are all of the frames used) using `storage.size`.
+In the above example, the storage's list of frames is resized to its real size. This might prove important to you, because when frames are removed (using `data_storage_drain()`), the list of frames isn't `realloc()`'ed to the new smaller size. Thus, the above function can be used to optimise your code - it either makes space for a lot of new frames, or cleans up after a lot of frames. You can access the fake size of the list of frames (fake, because not necessarily all of the frames are used) using `storage.size`. Any data between `storage.used` and `storage.size` is unused.
