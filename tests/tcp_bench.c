@@ -60,7 +60,7 @@ void socket_onevent(struct tcp_socket* socket, enum tcp_event event) {
       break;
     }
     case tcp_free: {
-      if(socket->core.socket) {
+      if(!socket->core.server) {
         if(atomic_load_explicit(&test_is_over, memory_order_acquire)) {
           test_wake();
           break;

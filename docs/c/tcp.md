@@ -119,7 +119,7 @@ Possible events are:
 
 It is possible for `tcp_close` to occur without `tcp_open` prior to it. This will happen when the connection couldn't be established and errno will be set to the reason why. If it's `0` or `EAGAIN`, the connection termination was likely graceful and controlled.
 
-Inside of the event handler, it's possible to know if the socket is a client or not (created by a server) using `socket.core.server`. If it's `1`, it was created by a server. This is **NOT** possible during the `tcp_free` event, because the socket can't be touched after it occurs, so instead, `socket.core.socket` can be used. If it's `0`, the socket was created by a server. This single bit is not cleared upon a socket destruction, but it does not influence `tcp_socket()` so it does not matter - structure reuse is still possible.
+Inside of the event handler, it's possible to know if the socket is a client or not (created by a server) using `socket.core.server`. If it's `1`, it was created by a server. This information is available even in the `tcp_free` event.
 
 If `socket.dont_close_onreadclose` is `1`, the connection will automatically be `tcp_socket_close()`'d upon the `tcp_readclose` event.
 

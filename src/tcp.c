@@ -82,14 +82,6 @@ static void tcp_socket_free_(struct tcp_socket* const socket) {
   }
   uint8_t free_ = socket->free;
   socket->core.fd = -1;
-  /*
-   * This meaningless (at this point) bit can be used to
-   * notify the on_event() handler about which socket this
-   * really is (client or a server socket, don't confuse
-   * with listening socket). This can be done, because the
-   * bit doesn't change behavior of tcp_socket().
-   */
-  socket->core.socket = socket->core.server ^ 1;
   socket->opened = 0;
   socket->free = 0;
   socket->close_guard = 0;
@@ -205,8 +197,6 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
     errno = EINVAL;
     return -1;
   }
-  socket->core.fd = -1;
-  socket->core.socket = 1;
   {
     int err;
     safe_execute(err = pthread_mutex_init(&socket->lock, NULL), err != 0, err);
@@ -234,6 +224,9 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
     socket->alloc_loop = 1;
   }
   tcp_clear_flag(socket);
+  socket->core.fd = -1;
+  socket->core.socket = 1;
+  socket->core.server = 0;
   if(opt->info != NULL) {
     if(tcp_socket_connect(socket, opt->info) == -1) {
       goto err_loop;
@@ -566,6 +559,8 @@ int tcp_server(struct tcp_server* const server, const struct tcp_server_options*
     }
   }
   tcp_clear_flag(server);
+  server->core.socket = 0;
+  server->core.server = 1;
   if(async_loop_add(server->loop, &server->core, EPOLLET | EPOLLIN) == -1) {
     goto err_sfd;
   }
