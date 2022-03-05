@@ -3,10 +3,13 @@
 # Requirements
 
 - Any system with a [Linux kernel](https://www.kernel.org/)
-- [Clang](https://clang.llvm.org/) or [GCC](https://gcc.gnu.org/) (but no C++ support)
+- [Clang](https://clang.llvm.org/) or [GCC](https://gcc.gnu.org/)
+- Clang++ for C++ support
 - [Make](https://www.gnu.org/software/make/)
 
 # Building
+
+The master branch might not always be stable. If you seek production-ready code, get the latest release.
 
 ```bash
 git clone -b master https://github.com/supahero1/shnet
