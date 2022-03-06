@@ -1,7 +1,7 @@
 #ifndef hZgotNx_NDps_9BZatasI3s_D_0k_KCF
 #define hZgotNx_NDps_9BZatasI3s_D_0k_KCF 1
 
-extern int error_handler(int);
+extern int error_handler(int, int);
 
 /*
   void* ptr = malloc(size);
@@ -11,11 +11,15 @@ extern int error_handler(int);
 */
 #define safe_execute(expression, error_condition, error) \
 do { \
-  expression; \
-  if((error_condition) && !error_handler(error)) { \
-    continue; \
+  int error_counter = 0; \
+  while(1) { \
+    expression; \
+    if((error_condition) && !error_handler(error, error_counter)) { \
+      ++error_counter; \
+      continue; \
+    } \
+    break; \
   } \
-  break; \
-} while(1)
+} while(0)
 
 #endif // hZgotNx_NDps_9BZatasI3s_D_0k_KCF

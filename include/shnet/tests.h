@@ -21,8 +21,8 @@
 #ifndef TEST_NO_ERR_HANDLER
 #include <shnet/error.h>
 
-int error_handler(int c) {
-  if(c == EINTR) return 0;
+int error_handler(int e, int c) {
+  if(e == EINTR) return 0;
   return -1;
 }
 #endif // TEST_NO_ERR_HANDLER

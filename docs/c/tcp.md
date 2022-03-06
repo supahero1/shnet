@@ -18,6 +18,8 @@ In event handlers, only one event at a time may occur.
 
 Events are handled using the `async` module (see `docs/c/async.md`). If you want to use an event loop for TCP clients and servers, use `tcp_async_loop()` for initialisation rather than `async_loop()`. The function sets the loop's `on_event` callback and initialises it like normally.
 
+The above also means that once memory for a server or a socket is allocated, the pointer cannot change. Thus, it is impossible to have a `realloc()`-able array of them. An array of pointers to them is fine.
+
 ## Servers
 
 You can think about servers as of simple factories which create new sockets. There isn't anything else they can do. The life cycle of such created sockets does not depend on the server's life cycle.
@@ -158,6 +160,8 @@ int err = tcp_send(&socket, &frame);
 ```
 
 Frames not declared with `dont_free` member set to `1` will be freed when they are no longer needed. That can happen when they were fully processed, or if the socket is destroyed.
+
+If atomic access to the array of frames is required, you can use `tcp_lock(&socket)` and `tcp_unlock(&socket)`. This might be necessary even if `dont_send_buffered` is set to `1` if any other user thread is calling `tcp_send()`.
 
 The above function is thread-safe and can be called at the same time from the socket's event handler and from a user thread. If it fails in either, the data will be sent later in the same order `tcp_send()` was called.
 

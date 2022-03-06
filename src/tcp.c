@@ -18,10 +18,15 @@
 #define tcp_remove_flag(a,b) atomic_fetch_and_explicit(&(a)->core.flags, ~(b), memory_order_acq_rel)
 #define tcp_clear_flag(a) atomic_store_explicit(&(a)->core.flags, 0, memory_order_release)
 
-#define tcp_lock(a) (void) pthread_mutex_lock(&(a)->lock)
-#define tcp_unlock(a) (void) pthread_mutex_unlock(&(a)->lock)
 
 
+void tcp_lock(struct tcp_socket* const socket) {
+  (void) pthread_mutex_lock(&socket->lock);
+}
+
+void tcp_unlock(struct tcp_socket* const socket) {
+  (void) pthread_mutex_unlock(&socket->lock);
+}
 
 void tcp_socket_cork_on(struct tcp_socket* const socket) {
   (void) net_socket_setopt_true(socket->core.fd, net_proto_tcp, TCP_CORK);
@@ -666,9 +671,6 @@ int tcp_async_loop(struct async_loop* const loop) {
 }
 
 
-
-#undef tcp_unlock
-#undef tcp_lock
 
 #undef tcp_clear_flag
 #undef tcp_remove_flag

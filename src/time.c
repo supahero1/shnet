@@ -191,6 +191,9 @@ static int time_timeouts_up(const struct time_timers* const timers, uint32_t tim
 }
 
 int time_resize_timeouts_raw(struct time_timers* const timers, const uint32_t new_size) {
+  if(new_size == timers->timeouts_size) {
+    return 0;
+  }
   void* ptr;
   safe_execute(ptr = realloc(timers->timeouts, sizeof(*timers->timeouts) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
@@ -354,6 +357,9 @@ static int time_intervals_up(const struct time_timers* const timers, uint32_t ti
 #undef timeof
 
 int time_resize_intervals_raw(struct time_timers* const timers, const uint32_t new_size) {
+  if(new_size == timers->intervals_size) {
+    return 0;
+  }
   void* ptr;
   safe_execute(ptr = realloc(timers->intervals, sizeof(*timers->intervals) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {

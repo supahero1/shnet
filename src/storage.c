@@ -45,6 +45,9 @@ void data_storage_free(struct data_storage* const storage) {
 }
 
 int data_storage_resize(struct data_storage* const storage, const uint32_t new_len) {
+  if(new_len == storage->size) {
+    return 0;
+  }
   void* ptr;
   safe_execute(ptr = realloc(storage->frames, sizeof(*storage->frames) * new_len), ptr == NULL, ENOMEM);
   if(ptr == NULL) {

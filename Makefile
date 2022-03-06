@@ -29,6 +29,8 @@ build: $(OBJECTS)
 build-tests: build $(TEST_EXECS) | $(DIR_OUT)
 
 test: build-tests $(DIR_OUT)/cc_compat
+	$(DIR_OUT)/test_error
+	$(DIR_OUT)/test_storage
 	$(DIR_OUT)/test_threads
 	$(DIR_OUT)/test_thread_pool
 	$(DIR_OUT)/test_time

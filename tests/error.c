@@ -2,7 +2,7 @@
 #include <shnet/tests.h>
 #include <shnet/error.h>
 
-int error_handler(int code) {
+int error_handler(int code, int count) {
   return !code;
 }
 

@@ -44,6 +44,10 @@ struct tcp_socket {
   uint8_t alloc_ctx:1;
 };
 
+extern void tcp_lock(struct tcp_socket* const);
+
+extern void tcp_unlock(struct tcp_socket* const);
+
 extern void tcp_socket_cork_on(struct tcp_socket* const);
 
 extern void tcp_socket_cork_off(struct tcp_socket* const);

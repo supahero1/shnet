@@ -12,22 +12,23 @@ Moreover, some applications might not want to continue if any error occurs. For 
 
 ## Usage
 
-The application must define a function `int error_handler(int)` that  takes in an errno code, returns `0` if it wants the caller to retry the problematic function, or any other value to make the caller stop. Not defining the function will throw a compiler error. The function **MUST NOT** change `errno`, i.e. it might do it, but it must be the same on exit as on start of the function.
+The application must define a function `int error_handler(int, int)` that  takes in an errno code, returns `0` if it wants the caller to retry the problematic function, or any other value to make the caller stop. Not defining the function will throw a compiler error. The function **MUST NOT** change `errno`, i.e. it might do it, but it must be the same on exit as on start of the function.
 
 ```c
-int error_handler(int err) {
+int error_handler(int err, int count) {
   switch(err) {
     case ENOMEM: {
       free_memory();
       return 0; /* Continue */
     }
+    case EINTR: return 0;
     /* ... cases for other errors ... */
     default: return -1; /* Fail by default */
   }
 }
 ```
 
-The module defines a macro `safe_execute(expr, bool, err_code)`. If `bool` argument is true (anything other than `0`), `error_handler` is called with the given `err_code` (which doesn't need to be a constant - might as well be `errno`). If the handler returns `0`, `safe_execute()` will repeat the `expr` expression, or quit otherwise.
+The module defines a macro `safe_execute(expr, bool, err_code)`. If `bool` argument is true (anything other than `0`), `error_handler` is called with the given `err_code` (which doesn't need to be a constant - might as well be `errno`) and an error count denoting how many times this particular error has occured in a row, counting from `0`. If the handler returns `0`, `safe_execute()` will repeat the `expr` expression, or quit otherwise.
 
 `expr` is only used once in the `safe_execute()` macro, however as long as it resolves to false and `error_handler()` returns `0`, `expr` will be executed multiple times. To prevent undefined behavior, refrain from using macro-unsafe expressions like `x++`.
 
@@ -68,12 +69,12 @@ safe_execute(void* ptr = ..., ..., ...);
 /* use ptr */
 ```
 
-... is undefined behavior - `ptr` is limited to the scope of `safe_execute` and is not visible elsewhere.
+... is invalid - `ptr` is limited to the scope of `safe_execute` and is not visible elsewhere.
 
 If `free_memory()` has a chance of not freeing memory, or if the application doesn't want to spin waiting for memory to become available, it can do the following to break out:
 
 ```c
-int error_handler(int err) {
+int error_handler(int err, int count) {
   switch(err) {
     case ENOMEM: {
       /* Assuming it returns 0 on success, other on failure */
@@ -99,4 +100,17 @@ In an application that can't afford errors, the following approach can be used i
 void* ptr;
 safe_execute(ptr = malloc(1024), ptr == NULL, errno);
 assert(ptr);
+```
+
+If you want to give up retrying after X times, you can use the second argument:
+
+```c
+int error_handler(int err, int count) {
+  switch(err) {
+    case ENOMEM: {
+      if(count == 2) {
+        /* Failed 3 times, no hope */
+        return -1;
+      }
+    /* ... */
 ```

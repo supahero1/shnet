@@ -72,6 +72,9 @@ static void* pthreads_thread(void* pthreads_thread_data) {
 #undef data
 
 int pthreads_resize(pthreads_t* const threads, const uint32_t new_size) {
+  if(new_size == threads->size) {
+    return 0;
+  }
   void* ptr;
   safe_execute(ptr = realloc(threads->ids, sizeof(*threads->ids) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
@@ -260,6 +263,9 @@ void thread_pool_unlock(struct thread_pool* const pool) {
 }
 
 int thread_pool_resize_raw(struct thread_pool* const pool, const uint32_t new_size) {
+  if(new_size == pool->size) {
+    return 0;
+  }
   void* ptr;
   safe_execute(ptr = realloc(pool->queue, sizeof(*pool->queue) * new_size), ptr == NULL, ENOMEM);
   if(ptr == NULL) {
