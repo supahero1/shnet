@@ -7,6 +7,7 @@ BASE_FLAGS += -Wno-newline-eof
 endif
 CFLAGS     += $(BASE_FLAGS) -O3
 CXXFLAGS   += $(BASE_FLAGS)
+CLIBS      += -pthread -ldl
 
 DIR_IN      := src
 DIR_OUT     := bin
@@ -20,6 +21,7 @@ OBJECTS = $(SOURCES:$(DIR_IN)/%.c=$(DIR_OUT)/%.o)
 
 TEST_SUITES = $(wildcard $(DIR_TEST)/*.c)
 TEST_EXECS  = $(TEST_SUITES:$(DIR_TEST)/%.c=$(DIR_OUT)/test_%)
+TESTLIBS   += $(CLIBS) -lrt
 
 ${DIR_OUT}:
 	mkdir -p $@
@@ -88,7 +90,7 @@ ${DIR_OUT}/test_tcp_bench: $(DIR_OUT)/tcp.o
 
 
 ${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_HEADERS)/shnet/%.h $(DIR_HEADERS)/shnet/error.h | $(DIR_OUT)
-	$(CC) $(CFLAGS) -fPIC -c $< -o $@ -Iinclude
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@ -Iinclude $(CLIBS)
 
 ${DIR_OUT}/async.o: $(DIR_OUT)/threads.o
 

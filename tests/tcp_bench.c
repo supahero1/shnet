@@ -20,7 +20,6 @@ _Atomic int test_is_over = 0;
 
 struct async_loop* async_loops;
 int async_loops_num;
-_Atomic int async_loop_num = 0;
 
 struct addrinfo* res;
 

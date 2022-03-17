@@ -4,3 +4,4 @@ src_old
 tests_old
 valgrind*
 vgcore*
+js

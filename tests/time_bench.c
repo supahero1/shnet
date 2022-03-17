@@ -3,7 +3,7 @@
 #include <inttypes.h>
 #include <stdatomic.h>
 
-/* sudo make build-tests CFLAGS="-DLIBUV -luv" */
+/* sudo make build-tests TESTLIBS="-DLIBUV -luv" */
 #ifdef LIBUV
 #include <uv.h>
 #endif
