@@ -57,7 +57,7 @@ static: build
 	ldconfig
 
 dynamic: build
-	$(CC) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so
+	$(CC) $(CFLAGS) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so $(CLIBS)
 	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
 	cp -r $(DIR_HEADERS)/* $(DIR_INCLUDE)/
 	ldconfig

@@ -23,6 +23,8 @@ sudo make static
 sudo make dynamic
 ```
 
+If you don't know which one to use, use dynamic.
+
 To build without installing:
 ```bash
 sudo make build
