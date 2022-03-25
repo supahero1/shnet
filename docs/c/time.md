@@ -12,32 +12,34 @@ Run `make build-tests && bin/test_time_bench` to see how this module performs co
 
 ```
 Testing native timers creation... done
-8169us
+4858us
 Testing native timers deletion... done
-161052us
+40466us
 Testing native timers ALL... done
-313411us
+113463us
 Testing shnet timers creation... done
-712us
+320us
 Testing shnet timers deletion... done
-115us
+43us
 Testing shnet timers ALL... done
-812us
+397us
 Testing libuv timers creation... done
-280us
+106us
 Testing libuv timers deletion... done
-1319us
+607us
 Testing libuv timers ALL... done
-1544us
+729us
 ```
 
 Run `make build-tests TESTLIBS="-DLIBUV -luv" && bin/test_time_bench` if you also want to test against libuv like above. If you have already built the source, run `make clean` first.
+
+Libuv is expending a lot of memory for their timers just for pointers to heap nodes, while shnet is using a continuous array of nodes. It appears as this pointer based approach speeds up the insertion, but deletion hurts much more. In benchmarks with low number of timers, libuv approaches the speed of shnet, however with 5k-10k of them shnet is about twice as fast, and with 50k its almost 3 times as fast, with deletion being about 20 times faster. Shnet not only scales well in terms of performance, but also in terms of very low memory usage, allowing you to have a lot of timers at the same time.
 
 `ALL` means creation + expiration + deletion (implicit or explicit). The benchmark is using immediately-expiring timers.
 
 When running the benchmark, you might also notice kernel timers are super unreliable and yield unpredictable timings everytime the benchmark is run. This module's timers don't have such a problem.
 
-The benchmark is configured to run 10000 timers. You can modify that number using the `TEST_NUM` macro at the beginning of the file.
+The benchmark is configured to run 5000 timers. You can modify that number using the `TEST_NUM` macro at the beginning of the file.
 
 ## Basic knowledge
 

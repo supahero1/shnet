@@ -3,6 +3,8 @@
 /*
  * NOTE: these tests MAY fail if
  * the system is under heavy load.
+ * Normally, this doesn't fail even
+ * with Valgrind on.
  */
 
 #include <math.h>

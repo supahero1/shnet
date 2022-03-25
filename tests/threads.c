@@ -1,29 +1,34 @@
 #include <shnet/tests.h>
 #include <shnet/threads.h>
 
-/* Set these to something like 25UL and 1
-for Valgrind, otherwise it's gonna choke.
+/*
+ * Set thread_count to a low value above
+ * 21UL, repeat to a low value above 1
+ * and safety_timeout to a high value
+ * like 2000 (or even higher) if you
+ * intend to use Valgrind on this test,
+ * or if your system is under heavy load.
+ * Otherwise, you will be constantly
+ * assert(0)-ed.
+ */
 
-Try decreasing these 2 if you are
-constantly assert(0)-ing below.
-
-thread_count can't be less than 21. */
-
-#define thread_count 35UL
+#define thread_count 40UL
 #define repeat 15
+
+#define safety_timeout 300
 
 void* assert_0(void* data) {
   assert(0);
 }
 
 void* cb(void* data) {
-  test_sleep(100);
+  test_sleep(safety_timeout);
   assert(0);
 }
 
 void* cb2(void* data) {
   test_wake();
-  test_sleep(100);
+  test_sleep(safety_timeout);
   assert(0);
 }
 
@@ -37,7 +42,7 @@ void* quit_meaningful(void* data) {
 
 void* cancel_self(void* data) {
   pthread_cancel(pthread_self());
-  test_sleep(100);
+  test_sleep(safety_timeout);
   assert(0);
 }
 
@@ -48,14 +53,14 @@ void* sync_cancel_self(void* data) {
 
 void* async_cancel_self(void* data) {
   pthread_cancel_async(pthread_self());
-  test_sleep(100);
+  test_sleep(safety_timeout);
   assert(0);
 }
 
 void* cancellation_test(void* data) {
   pthread_cancel_off();
   test_wake();
-  test_sleep(100);
+  test_sleep(safety_timeout);
   pthread_cancel_on();
   pthread_testcancel();
   assert(0);
@@ -244,6 +249,13 @@ int main() {
     }
   }
   pthreads_free(&threads);
+  end_test();
+  
+  begin_test("threads cleanup check");
+  /*
+   * Make sure no thread is still alive.
+   */
+  test_sleep(safety_timeout);
   end_test();
   
   return 0;

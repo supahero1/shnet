@@ -1,5 +1,14 @@
 This directory contains documentation of all actively used modules in the library. Documentation of WIP modules might not be here yet. Symbols that aren't supposed to be used by the application might not be documented.
 
+If you are here for the first time, you should probably start in this order:
+1. error
+2. storage
+3. threads
+4. time
+5. async
+6. net
+7. tcp
+
 # Code of conduct
 
 **Unless specified otherwise...**

@@ -19,8 +19,8 @@ cd shnet
 The library is available in static and dynamic releases:
 
 ```bash
-sudo make dynamic
 sudo make static
+sudo make dynamic
 ```
 
 To build without installing:
@@ -28,12 +28,12 @@ To build without installing:
 sudo make build
 ```
 
-If full build was chosen, the user can then test the library:
+You can then test the library:
 ```bash
 sudo make test
 ```
 
-To build tests, but not execute them, do:
+To build tests, but not execute them (for instance to run manually with Valgrind), do:
 ```bash
 sudo make build-tests
 ```

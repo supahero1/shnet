@@ -11,13 +11,15 @@
 #include <shnet/time.h>
 #include <shnet/error.h>
 #include <shnet/tests.h>
+#include <shnet/threads.h>
 
-#define TEST_NUM 10000
+#define TEST_NUM 5000
 
 _Atomic unsigned long counter;
 
 void native_timer_callback(union sigval val) {
   (void) val;
+  pthread_detach(pthread_self());
 }
 
 void native_timer_callback_all(union sigval val) {
@@ -162,6 +164,8 @@ int main() {
   end = time_get_time();
   end_test();
   assert(printf("%" PRIu64 "us\n", time_ns_to_us(end - start)) > 0);
+  time_timers_stop(&timers);
+  time_timers_free(&timers);
   
 #ifdef LIBUV
   uv_loop_t* loop = uv_default_loop();
@@ -199,6 +203,11 @@ int main() {
   end_test();
   assert(printf("%" PRIu64 "us\n", time_ns_to_us(end - start)) > 0);
   assert(atomic_load(&counter) == TEST_NUM);
+  for(unsigned int i = 0; i < TEST_NUM; ++i) {
+    assert(!uv_timer_stop(uv_timers + i));
+  }
+  /* Always returns UV_EBUSY for some reason, mem leak */
+  uv_loop_close(loop);
 #endif
   
   return 0;
