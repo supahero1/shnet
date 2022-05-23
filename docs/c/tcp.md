@@ -3,7 +3,7 @@
 This module is an abstraction layer of Linux TCP sockets. It implements
 both client and server. In benchmarks, it's around the speed of iPerf3.
 
-For examples of usage, see `tests/009_tcp.c`.
+For examples of usage, see `tests/c/009_tcp.c`.
 
 ## Dependencies
 
