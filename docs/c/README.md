@@ -1,15 +1,13 @@
-This directory contains documentation of all actively used modules in the library. Documentation of WIP modules might not be here yet. Symbols that aren't supposed to be used by the application might not be documented.
-
-If you are here for the first time, you should probably start in this order:
-1. error
-2. storage
-3. threads
-4. time
-5. async
-6. net
-7. tcp
-
 # Code of conduct
+
+This directory contains documentation of all actively used modules in the
+library. Documentation of WIP modules might not be here yet. Symbols that
+aren't supposed to be used by the application might not be documented.
+
+Each module has a list of dependencies somewhere at the top of its
+documentation (or it doesn't, meaning it's a leaf). You should get
+to know them first or otherwise you might not underestand what the
+documentation explains.
 
 **Unless specified otherwise...**
 
@@ -19,15 +17,22 @@ If you are here for the first time, you should probably start in this order:
   struct some thing = {0};
   ```
 
-- ... functions return 0 on success and other values on failure, setting errno to the error's code.
+- ... functions return 0 on success and other values
+      on failure, setting errno to the error's code.
 
   ```c
   assert(! func());
   /* assert(! error );
   assert(no error); */
+  
+  if(func()) {  /* if(error occured){} */
+    /* ... */
+  }
   ```
 
-- ... structures can be reused immediatelly after a call to an appropriate function freeing them (if any). They can only be reused if they will be used the same way they were before. Otherwise, full zeroing is needed.
+- ... structures can be reused immediatelly after a call to an appropriate
+      function freeing them (if any). They can only be reused if they will
+      be used the same way they were before. Otherwise, full zeroing is needed.
 
   ```c
   struct data_type data = {0};
@@ -37,9 +42,14 @@ If you are here for the first time, you should probably start in this order:
   data_type_free(&data);
   /* ready to be used again, without zeroing */
   data_type_init(&data);
+  
+  data_type_free(&data);
+  /* can't reuse for a different purpose without zeroing */
+  data = {0};
+  other_data_type_init(&data);
   ```
 
-- ... structures and functions are thread-unsafe.
+- ... structures and functions are thread-unsafe by default.
 
   ```c
   // thread 1:
@@ -49,7 +59,11 @@ If you are here for the first time, you should probably start in this order:
   do_something_else(&structure); // UNDEFINED BEHAVIOR
   ```
 
-- ... functions that end with the word "raw" are always thread-unsafe. If a raw function exists, there also exists its counterpart without the word "raw" and which is thread-safe. This holds true only if both of the functions exist. Functions without the counterpart might or might not be thread-safe.
+- ... functions that end with the word "raw" are always thread-unsafe. The
+      documentation will mention if there exists a pair of functions where
+      one is raw and the other is not. In that case, the non-raw function
+      is always thread-safe and there must exist a locking function for
+      the data type to allow the usage of raw functions.
 
   ```c
   /* Thread-safe */

@@ -1,99 +1,113 @@
-.PHONY: empty build test build-tests clean uninstall static dynamic
-empty: ;
+VERSION = 1
+PATCH = 3
 
-BASE_FLAGS := -Wall -Wextra -Wno-unused-parameter
-ifeq ($(CC),clang)
-BASE_FLAGS += -Wno-newline-eof
-endif
-CFLAGS     += $(BASE_FLAGS) -O3
-CXXFLAGS   += $(BASE_FLAGS)
-CLIBS      += -pthread -ldl
+CLI_VERSION = 1
+CLI_PATCH = 0
 
-DIR_IN      := src
-DIR_OUT     := bin
-DIR_TEST    := tests
-DIR_HEADERS := include
-DIR_INCLUDE := /usr/local/include
-DIR_LIB     := /usr/local/lib
+.EXPORT_ALL_VARIABLES:
 
-SOURCES = $(wildcard $(DIR_IN)/*.c)
-OBJECTS = $(SOURCES:$(DIR_IN)/%.c=$(DIR_OUT)/%.o)
-
-TEST_SUITES = $(wildcard $(DIR_TEST)/*.c)
-TEST_EXECS  = $(TEST_SUITES:$(DIR_TEST)/%.c=$(DIR_OUT)/test_%)
-TESTLIBS   += $(CLIBS) -lrt
-
-${DIR_OUT}:
-	mkdir -p $@
-
-build: $(OBJECTS)
-
-build-tests: build $(TEST_EXECS) | $(DIR_OUT)
-
-test: build-tests $(DIR_OUT)/cc_compat
-	$(DIR_OUT)/test_error
-	$(DIR_OUT)/test_storage
-	$(DIR_OUT)/test_threads
-	$(DIR_OUT)/test_thread_pool
-	$(DIR_OUT)/test_time
-	$(DIR_OUT)/test_async
-	$(DIR_OUT)/test_tcp
-	$(DIR_OUT)/test_tcp_bench -b
-	$(DIR_OUT)/test_tcp_bench -b -C 8 -S 8 -s
-	$(DIR_OUT)/test_tcp_bench -c
-	$(DIR_OUT)/test_tcp_bench -c -C 8 -S 8 -s
-
-clean:
-	rm -r -f $(DIR_OUT) logs.txt
-
-uninstall:
-	rm -f $(DIR_LIB)/libshnet.a $(DIR_LIB)/libshnet.so
-	rm -r -f $(DIR_INCLUDE)/shnet
-
-static: build
-	ar rcsv $(DIR_OUT)/libshnet.a $(OBJECTS)
-	cp $(DIR_OUT)/libshnet.a $(DIR_LIB)
-	cp -r $(DIR_HEADERS)/* $(DIR_INCLUDE)/
-	ldconfig
-
-dynamic: build
-	$(CC) $(CFLAGS) $(OBJECTS) -shared -o $(DIR_OUT)/libshnet.so $(CLIBS)
-	cp $(DIR_OUT)/libshnet.so $(DIR_LIB)
-	cp -r $(DIR_HEADERS)/* $(DIR_INCLUDE)/
-	ldconfig
-
-
-ifeq (,$(shell which clang++))
-$(warning "Couldn't find clang++, skipping c++ compatibility tests")
-${DIR_OUT}/cc_compat: ;
+ifeq ($(VERBOSE),1)
+Q = 
 else
-${DIR_OUT}/cc_compat: $(DIR_TEST)/cc_compat.cc | $(DIR_OUT)
-	clang++ $(CXXFLAGS) $(DIR_TEST)/cc_compat.cc -o $(DIR_OUT)/cc_compat -Iinclude
+Q = @
+COVFLAGS = -q
 endif
 
-${DIR_OUT}/test_%: $(DIR_TEST)/%.c $(DIR_HEADERS)/shnet/tests.h | build $(DIR_OUT)
-	$(CC) $(CFLAGS) $< $(OBJECTS) -o $@ -Iinclude -lm $(TESTLIBS)
+CC     := gcc
+CXX    := g++
+CFLAGS := -Wall -Wextra -flto
+ifeq ($(DEBUG),1)
+CFLAGS += -Og -g3
+else
+CFLAGS += -O3
+endif
+ifeq ($(COVERAGE),1)
+CFLAGS += --coverage
+endif
+CLIBS  := -pthread #-lssl -lcrypto
 
-${DIR_OUT}/test_threads: $(DIR_OUT)/threads.o
+DIR_TOP      := $(shell pwd)
+DIR_IN       := $(DIR_TOP)/src
+DIR_OUT      := $(DIR_TOP)/bin
+DIR_LIB_OUT  := $(DIR_OUT)/lib
+DIR_TEST     := $(DIR_TOP)/tests
+DIR_TEST_OUT := $(DIR_OUT)/tests
+DIR_DEPS     := $(DIR_OUT)/deps
+DIR_HEADERS  := $(DIR_TOP)/include
+DIR_INCLUDE  := /usr/local/include
+DIR_LIB      := /usr/local/lib
+DIR_COVERAGE := $(DIR_TOP)/coverage
+DIR_CLI      := $(DIR_TOP)/cli
+DIR_CLI_OUT  := $(DIR_OUT)/cli
+DIR_BIN      := /usr/bin
 
-${DIR_OUT}/test_thread_pool: $(DIR_OUT)/threads.o
+.PHONY: build
+build: | $(DIR_CLI_OUT)
+	$(Q)$(DIR_TOP)/sed_in
+	$(Q)$(MAKE) -C $(DIR_IN)
+ifeq ($(STATIC),1)
+	$(Q)$(RM) $(DIR_LIB)/libshnet.so \
+			$(DIR_LIB_OUT)/libshnet.so
+	$(Q)$(AR) rsc $(DIR_LIB_OUT)/libshnet.a \
+			$(DIR_LIB_OUT)/*.o
+else
+	$(Q)$(RM) $(DIR_LIB)/libshnet.a \
+			$(DIR_LIB_OUT)/libshnet.a
+	$(Q)$(CC) $(CFLAGS) $(DIR_LIB_OUT)/*.o -shared \
+			-o $(DIR_LIB_OUT)/libshnet.so $(CLIBS)
+endif
+	$(Q)ldconfig $(DIR_LIB_OUT)
+	$(Q)#$(MAKE) -C $(DIR_CLI)
+	$(Q)#$(CC) $(CFLAGS) $(DIR_CLI_OUT)/*.o -lshnet \
+	#		-o $(DIR_CLI_OUT)/shnet -I$(DIR_HEADERS) \
+	#		-L$(DIR_LIB_OUT) $(CLIBS)
+	@echo "Building complete."
 
-${DIR_OUT}/test_time: $(DIR_OUT)/time.o
+.PHONY: install
+install: build | $(DIR_LIB) $(DIR_BIN) $(DIR_INCLUDE)/shnet
+ifeq ($(STATIC),1)
+	$(Q)install $(DIR_LIB_OUT)/libshnet.a $(DIR_LIB)/
+else
+	$(Q)install $(DIR_LIB_OUT)/libshnet.so $(DIR_LIB)/
+endif
+	$(Q)cp -r $(DIR_HEADERS)/shnet $(DIR_INCLUDE)/
+	$(Q)ldconfig $(DIR_LIB_OUT)
+	$(Q)#install $(DIR_CLI_OUT)/shnet $(DIR_BIN)/
+	@echo "Installation complete."
 
-${DIR_OUT}/test_bench_time: $(DIR_OUT)/time.o
+.PHONY: test
+ifeq ($(COVERAGE),1)
+test: build | $(DIR_COVERAGE)
+	$(Q)$(RM) $(DIR_LIB_OUT)/*.gcda
+else
+test: build
+endif
+	$(Q)$(RM) -r $(DIR_TEST_OUT)
+	$(Q)$(MAKE) -C $(DIR_TEST)
+	@echo "Testing complete."
+ifeq ($(COVERAGE),1)
+	$(Q)lcov $(COVFLAGS) -c -d $(DIR_LIB_OUT) -o \
+			$(DIR_LIB_OUT)/coverage.info
+	$(Q)genhtml $(DIR_LIB_OUT)/coverage.info \
+			$(COVFLAGS) -o $(DIR_COVERAGE)
+	@echo "Coverage in file:$(DIR_COVERAGE)/index.html"
+endif
+	@echo "Testing complete."
 
-${DIR_OUT}/test_async: $(DIR_OUT)/async.o
+.PHONY: clean
+clean:
+	$(Q)$(RM) -r $(DIR_OUT) $(DIR_COVERAGE)
+	$(Q)$(DIR_TOP)/unsed_in
+	@echo "Clean complete."
 
-${DIR_OUT}/test_tcp: $(DIR_OUT)/tcp.o
+.PHONY: uninstall
+uninstall:
+	$(Q)$(RM) -r $(DIR_INCLUDE)/shnet $(DIR_BIN)/shnet \
+			$(DIR_LIB)/libshnet.so $(DIR_LIB)/libshnet.a
+	@echo "Uninstall complete."
 
-${DIR_OUT}/test_tcp_bench: $(DIR_OUT)/tcp.o
+.PHONY: help
+help:
+	$(Q)cat INSTALL
 
-
-${DIR_OUT}/%.o: $(DIR_IN)/%.c $(DIR_HEADERS)/shnet/%.h $(DIR_HEADERS)/shnet/error.h | $(DIR_OUT)
-	$(CC) $(CFLAGS) -fPIC -c $< -o $@ -Iinclude $(CLIBS)
-
-${DIR_OUT}/async.o: $(DIR_OUT)/threads.o
-
-${DIR_OUT}/time.o: $(DIR_OUT)/threads.o
-
-${DIR_OUT}/tcp.o: $(DIR_OUT)/storage.o $(DIR_OUT)/threads.o $(DIR_OUT)/async.o $(DIR_OUT)/net.o
+include Rules.make

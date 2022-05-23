@@ -1,11 +1,16 @@
 #ifndef __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z
 #define __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z 1
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <shnet/threads.h>
 
-#define TIME_IMMEDIATELY 2
+enum time_const {
+  time_immediately = 2,
+  time_step = 2
+};
 
 extern uint64_t time_sec_to_ms(const uint64_t);
 
@@ -70,7 +75,10 @@ struct time_timers {
   struct time_timeout* timeouts;
   struct time_interval* intervals;
   
-  _Atomic uint64_t latest;
+#ifndef __cplusplus
+  _Atomic
+#endif
+  uint64_t latest;
   sem_t work;
   sem_t updates;
   pthread_mutex_t mutex;
@@ -84,15 +92,15 @@ struct time_timers {
 
 extern int  time_timers(struct time_timers* const);
 
-extern int  time_timers_start(struct time_timers* const);
+extern int  time_start(struct time_timers* const);
 
-extern void time_timers_stop(struct time_timers* const);
+extern void time_stop(struct time_timers* const);
 
-extern void time_timers_stop_async(struct time_timers* const);
+extern void time_stop_sync(struct time_timers* const);
 
-extern void time_timers_stop_joinable(struct time_timers* const);
+extern void time_stop_async(struct time_timers* const);
 
-extern void time_timers_free(struct time_timers* const);
+extern void time_free(struct time_timers* const);
 
 extern void time_lock(struct time_timers* const);
 
@@ -139,5 +147,9 @@ extern struct time_interval* time_open_interval(struct time_timers* const, struc
 extern void time_close_interval_raw(struct time_timers* const, struct time_timer* const);
 
 extern void time_close_interval(struct time_timers* const, struct time_timer* const);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z

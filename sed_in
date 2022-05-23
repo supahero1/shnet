@@ -1,0 +1,14 @@
+#!/bin/bash
+echo "#!/usr/bin/sed -f" > $DIR_TOP/.sed.temp
+echo "s/%SHNET_VERSION%/$VERSION/" >> $DIR_TOP/.sed.temp
+echo "s/%SHNET_PATCH%/$PATCH/" >> $DIR_TOP/.sed.temp
+echo "s/%SHNET_CLI_VERSION%/$CLI_VERSION/" >> $DIR_TOP/.sed.temp
+echo "s/%SHNET_CLI_PATCH%/$CLI_PATCH/" >> $DIR_TOP/.sed.temp
+chmod u+x $DIR_TOP/.sed.temp
+result=$(find $DIR_TOP -name "*.in" -not -path "$DIR_TOP/.git/*")
+for file in $result
+do
+  short=${file: : -3}
+  $DIR_TOP/.sed.temp $file > $short
+done
+rm -f $DIR_TOP/.sed.temp

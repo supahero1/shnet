@@ -1,6 +1,10 @@
 #ifndef _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_
 #define _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_ 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -8,6 +12,10 @@
 extern void pthread_cancel_on(void);
 
 extern void pthread_cancel_off(void);
+
+extern void pthread_async_on(void);
+
+extern void pthread_async_off(void);
 
 extern int  pthread_start(pthread_t* const, void* (*)(void*), void* const);
 
@@ -24,12 +32,15 @@ typedef struct {
   uint32_t size;
 } pthreads_t;
 
-struct _pthreads_data {
+struct pthreads_data {
   void* (*func)(void*);
   void* arg;
   sem_t sem;
   pthread_mutex_t mutex;
-  _Atomic uint32_t count;
+#ifndef __cplusplus
+  _Atomic
+#endif
+  uint32_t count;
 };
 
 extern int  pthreads_resize(pthreads_t* const, const uint32_t);
@@ -95,5 +106,9 @@ extern void  thread_pool_clear_raw(struct thread_pool* const);
 extern void  thread_pool_clear(struct thread_pool* const);
 
 extern void  thread_pool_free(struct thread_pool* const);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_

@@ -1,6 +1,10 @@
 #ifndef PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF
 #define PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 struct data_frame {
@@ -34,10 +38,14 @@ extern int  data_storage_resize(struct data_storage* const, const uint32_t);
 
 extern int  data_storage_add(struct data_storage* const, const struct data_frame* const);
 
-extern int  data_storage_drain(struct data_storage* const, const uint64_t);
+extern void data_storage_drain(struct data_storage* const, const uint64_t);
 
 extern void data_storage_finish(const struct data_storage* const);
 
 extern int  data_storage_is_empty(const struct data_storage* const);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF

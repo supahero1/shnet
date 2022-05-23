@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
-#include <string.h>
 #include <stdatomic.h>
 #include <sys/eventfd.h>
 
@@ -16,38 +15,29 @@ void* async_loop_thread(void* async_loop_thread_data) {
   pthread_cancel_off();
   while(1) {
     const int count = epoll_wait(loop->fd, loop->events, loop->events_len, -1);
+    assert(count >= 0);
     for(int i = 0; i < count; ++i) {
       if(event->wakeup) {
-        atomic_thread_fence(memory_order_acquire);
-        const uint8_t flags = atomic_load_explicit(&loop->evt.flags, memory_order_relaxed);
-        if(flags != 0) {
-          if(!(flags & 1)) {
-            (void) pthread_detach(loop->thread);
-          }
-          if(flags & 2) {
-            async_loop_free(loop);
-          }
-          if(flags & 4) {
-            free(loop);
-          }
-          return NULL;
+        const async_flag_raw_t flags = atomic_load_explicit(&loop->evt.flags, memory_order_acquire);
+        atomic_store_explicit(&loop->evt.flags, 0, memory_order_release);
+        if(!(flags & 1)) {
+          (void) pthread_detach(loop->thread);
         }
-        uint64_t r;
-        (void) eventfd_read(loop->evt.fd, &r);
+        if(flags & 2) {
+          async_loop_free(loop);
+        } else {
+          eventfd_t temp;
+          assert(!eventfd_read(loop->evt.fd, &temp));
+          (void) temp;
+        }
+        if(flags & 4) {
+          free(loop);
+        }
+        return NULL;
       } else {
         loop->on_event(loop, loop->events[i].events, event);
       }
     }
-    (void) pthread_mutex_lock(&loop->lock);
-    if(loop->fake_events != NULL) {
-      for(uint32_t i = 0; i < loop->fake_events_len; ++i) {
-        loop->on_event(loop, 0, loop->fake_events[i]);
-      }
-      free(loop->fake_events);
-      loop->fake_events = NULL;
-      loop->fake_events_len = 0;
-    }
-    (void) pthread_mutex_unlock(&loop->lock);
   }
   assert(0);
 }
@@ -57,9 +47,9 @@ void* async_loop_thread(void* async_loop_thread_data) {
 
 int async_loop(struct async_loop* const loop) {
   if(loop->events_len == 0) {
-    loop->events_len = 100;
+    loop->events_len = 64;
   }
-  safe_execute(loop->events = malloc(sizeof(*loop->events) * loop->events_len), loop->events == NULL, ENOMEM);
+  loop->events = shnet_malloc(sizeof(*loop->events) * loop->events_len);
   if(loop->events == NULL) {
     return -1;
   }
@@ -69,26 +59,19 @@ int async_loop(struct async_loop* const loop) {
     goto err_e;
   }
   loop->fd = fd;
-  safe_execute(fd = pthread_mutex_init(&loop->lock, NULL), fd != 0, fd);
-  if(fd != 0) {
-    errno = fd;
-    goto err_fd;
-  }
-  safe_execute(fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE), fd == -1, errno);
+  safe_execute(fd = eventfd(0, EFD_NONBLOCK), fd == -1, errno);
   if(fd == -1) {
-    goto err_mutex;
+    goto err_fd;
   }
   loop->evt.fd = fd;
   loop->evt.wakeup = 1;
-  if(async_loop_add(loop, &loop->evt, EPOLLIN) != 0) {
+  if(async_loop_add(loop, &loop->evt, EPOLLIN) == -1) {
     goto err_efd;
   }
   return 0;
   
   err_efd:
   (void) close(loop->evt.fd);
-  err_mutex:
-  (void) pthread_mutex_destroy(&loop->lock);
   err_fd:
   (void) close(loop->fd);
   err_e:
@@ -103,7 +86,6 @@ int async_loop_start(struct async_loop* const loop) {
 
 void async_loop_stop(struct async_loop* const loop) {
   async_loop_push_joinable(loop);
-  atomic_thread_fence(memory_order_release);
   assert(!eventfd_write(loop->evt.fd, 1));
   (void) pthread_join(loop->thread, NULL);
 }
@@ -111,33 +93,23 @@ void async_loop_stop(struct async_loop* const loop) {
 void async_loop_free(struct async_loop* const loop) {
   (void) close(loop->fd);
   (void) close(loop->evt.fd);
-  (void) pthread_mutex_destroy(&loop->lock);
-  free(loop->fake_events);
-  loop->fake_events = NULL;
-  loop->fake_events_len = 0;
   free(loop->events);
   loop->events = NULL;
 }
 
-void async_loop_reset(struct async_loop* const loop) {
-  atomic_store_explicit(&loop->evt.flags, 0, memory_order_relaxed);
-}
-
 void async_loop_push_joinable(struct async_loop* const loop) {
-  atomic_fetch_or_explicit(&loop->evt.flags, 1, memory_order_relaxed);
+  atomic_fetch_or_explicit(&loop->evt.flags, 1, memory_order_acq_rel);
 }
 
 void async_loop_push_free(struct async_loop* const loop) {
-  atomic_fetch_or_explicit(&loop->evt.flags, 2, memory_order_relaxed);
+  atomic_fetch_or_explicit(&loop->evt.flags, 2, memory_order_acq_rel);
 }
 
 void async_loop_push_ptr_free(struct async_loop* const loop) {
-  atomic_fetch_or_explicit(&loop->evt.flags, 4, memory_order_relaxed);
+  atomic_fetch_or_explicit(&loop->evt.flags, 4, memory_order_acq_rel);
 }
 
 void async_loop_commit(struct async_loop* const loop) {
-  atomic_fetch_or_explicit(&loop->evt.flags, 8, memory_order_relaxed);
-  atomic_thread_fence(memory_order_release);
   assert(!eventfd_write(loop->evt.fd, 1));
 }
 
@@ -162,39 +134,4 @@ int async_loop_mod(const struct async_loop* const loop, struct async_event* cons
 
 int async_loop_remove(const struct async_loop* const loop, struct async_event* const event) {
   return async_loop_modify(loop, event, EPOLL_CTL_DEL, 0);
-}
-
-static int async_loop_resize(struct async_loop* const loop, const uint32_t new_size) {
-  void* ptr;
-  safe_execute(ptr = realloc(loop->fake_events, sizeof(*loop->fake_events) * new_size), ptr == NULL, ENOMEM);
-  if(ptr == NULL) {
-    return -1;
-  }
-  loop->fake_events = ptr;
-  return 0;
-}
-
-int async_loop_create_event(struct async_loop* const loop, struct async_event* const event) {
-  (void) pthread_mutex_lock(&loop->lock);
-  if(async_loop_resize(loop, loop->fake_events_len + 1) == -1) {
-    (void) pthread_mutex_unlock(&loop->lock);
-    return -1;
-  }
-  loop->fake_events[loop->fake_events_len++] = event;
-  (void) pthread_mutex_unlock(&loop->lock);
-  assert(!eventfd_write(loop->evt.fd, 1));
-  return 0;
-}
-
-int async_loop_create_events(struct async_loop* const loop, struct async_event* const events, const uint32_t num) {
-  (void) pthread_mutex_lock(&loop->lock);
-  if(async_loop_resize(loop, loop->fake_events_len + num) == -1) {
-    (void) pthread_mutex_unlock(&loop->lock);
-    return -1;
-  }
-  (void) memcpy(loop->fake_events + loop->fake_events_len, events, sizeof(*events) * num);
-  loop->fake_events_len += num;
-  (void) pthread_mutex_unlock(&loop->lock);
-  assert(!eventfd_write(loop->evt.fd, 1));
-  return 0;
 }

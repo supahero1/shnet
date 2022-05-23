@@ -1,0 +1,10 @@
+#ifndef yuRHkI__FpXOdhqX_dGrNwz_lL_4hJ85
+#define yuRHkI__FpXOdhqX_dGrNwz_lL_4hJ85 1
+
+#define SHNET_VERSION %SHNET_VERSION%
+#define SHNET_PATCH %SHNET_PATCH%
+
+#define SHNET_CLI_VERSION %SHNET_CLI_VERSION%
+#define SHNET_CLI_PATCH %SHNET_CLI_PATCH%
+
+#endif // yuRHkI__FpXOdhqX_dGrNwz_lL_4hJ85

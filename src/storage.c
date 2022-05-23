@@ -48,8 +48,16 @@ int data_storage_resize(struct data_storage* const storage, const uint32_t new_l
   if(new_len == storage->size) {
     return 0;
   }
-  void* ptr;
-  safe_execute(ptr = realloc(storage->frames, sizeof(*storage->frames) * new_len), ptr == NULL, ENOMEM);
+  if(new_len == 0) {
+    if(storage->frames != NULL) {
+      free(storage->frames);
+      storage->frames = NULL;
+    }
+    storage->used = 0;
+    storage->size = 0;
+    return 0;
+  }
+  void* const ptr = shnet_realloc(storage->frames, sizeof(*storage->frames) * new_len);
   if(ptr == NULL) {
     return -1;
   }
@@ -62,11 +70,13 @@ int data_storage_add(struct data_storage* const storage, const struct data_frame
   if(storage->used >= storage->size && data_storage_resize(storage, storage->used + 1)) {
     return -1;
   }
+  if(frame->offset == frame->len) {
+    return 0;
+  }
   if(!frame->read_only) {
     if(!frame->file) {
       const uint64_t len = frame->len - frame->offset;
-      void* data_ptr;
-      safe_execute(data_ptr = malloc(len), data_ptr == NULL, ENOMEM);
+      void* const data_ptr = shnet_malloc(len);
       if(data_ptr == NULL) {
         goto err;
       }
@@ -102,21 +112,17 @@ int data_storage_add(struct data_storage* const storage, const struct data_frame
   return -1;
 }
 
-int data_storage_drain(struct data_storage* const storage, const uint64_t amount) {
+void data_storage_drain(struct data_storage* const storage, const uint64_t amount) {
   if(storage->used == 0) {
-    /* Do not defy the rules. */
     assert(amount == 0);
-    return 1;
+    return;
   }
   storage->frames->offset += amount;
   if(storage->frames->offset == storage->frames->len) {
     data_storage_free_frame(storage->frames);
-    if(--storage->used == 0) {
-      return 1;
-    }
+    --storage->used;
     (void) memmove(storage->frames, storage->frames + 1, sizeof(*storage->frames) * storage->used);
   }
-  return 0;
 }
 
 void data_storage_finish(const struct data_storage* const storage) {
@@ -124,8 +130,7 @@ void data_storage_finish(const struct data_storage* const storage) {
     storage->frames->len -= storage->frames->offset;
     (void) memmove(storage->frames->data, storage->frames->data + storage->frames->offset, storage->frames->len);
     storage->frames->offset = 0;
-    char* ptr;
-    safe_execute(ptr = realloc(storage->frames->data, storage->frames->len), ptr == NULL, ENOMEM);
+    char* const ptr = shnet_realloc(storage->frames->data, storage->frames->len);
     if(ptr != NULL) {
       storage->frames->data = ptr;
     }

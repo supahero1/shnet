@@ -15,6 +15,14 @@ void pthread_cancel_off() {
   (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 }
 
+void pthread_async_on() {
+  (void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+}
+
+void pthread_async_off() {
+  (void) pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+}
+
 int pthread_start_explicit(pthread_t* id, const pthread_attr_t* const attr, void* (*func)(void*), void* const data) {
   int err;
   pthread_t tid;
@@ -50,7 +58,7 @@ void pthread_cancel_async(const pthread_t id) {
 
 
 
-#define data ((struct _pthreads_data*) pthreads_thread_data)
+#define data ((struct pthreads_data*) pthreads_thread_data)
 
 static void* pthreads_thread(void* pthreads_thread_data) {
   /*
@@ -60,7 +68,7 @@ static void* pthreads_thread(void* pthreads_thread_data) {
    * which alone defeats the whole point of this system.
    * Jesus...     This took too many tries to get right.
    */
-  (void) sem_wait(&data->sem);
+  while(sem_wait(&data->sem) != 0);
   void* (*func)(void*) = data->func;
   void* const arg = data->arg;
   if(atomic_fetch_sub_explicit(&data->count, 1, memory_order_relaxed) == 1) {
@@ -75,8 +83,16 @@ int pthreads_resize(pthreads_t* const threads, const uint32_t new_size) {
   if(new_size == threads->size) {
     return 0;
   }
-  void* ptr;
-  safe_execute(ptr = realloc(threads->ids, sizeof(*threads->ids) * new_size), ptr == NULL, ENOMEM);
+  if(new_size == 0) {
+    if(threads->ids != NULL) {
+      free(threads->ids);
+      threads->ids = NULL;
+    }
+    threads->used = 0;
+    threads->size = 0;
+    return 0;
+  }
+  void* const ptr = shnet_realloc(threads->ids, sizeof(*threads->ids) * new_size);
   if(ptr == NULL) {
     return -1;
   }
@@ -90,8 +106,7 @@ int pthreads_start_explicit(pthreads_t* const threads, const pthread_attr_t* con
   if(total > threads->size && pthreads_resize(threads, total) == -1) {
     return -1;
   }
-  struct _pthreads_data* data;
-  safe_execute(data = malloc(sizeof(*data)), data == NULL, ENOMEM);
+  struct pthreads_data* const data = shnet_malloc(sizeof(*data));
   if(data == NULL) {
     return -1;
   }
@@ -146,16 +161,16 @@ void pthreads_cancel(pthreads_t* const threads, const uint32_t amount) {
   }
   const uint32_t total = threads->used - amount;
   const pthread_t self = pthread_self();
-  int close_ourselves = 0;
+  int ourself = 0;
   for(uint32_t i = total; i < threads->used; ++i) {
     if(!pthread_equal(threads->ids[i], self)) {
       (void) pthread_cancel(threads->ids[i]);
     } else {
-      close_ourselves = 1;
+      ourself = 1;
     }
   }
   threads->used = total;
-  if(close_ourselves == 1) {
+  if(ourself == 1) {
     (void) pthread_cancel(self);
   }
 }
@@ -166,12 +181,12 @@ void pthreads_cancel_sync(pthreads_t* const threads, const uint32_t amount) {
   }
   const uint32_t total = threads->used - amount;
   const pthread_t self = pthread_self();
-  int close_ourselves = 0;
+  int ourself = 0;
   for(uint32_t i = total; i < threads->used; ++i) {
     if(!pthread_equal(threads->ids[i], self)) {
       (void) pthread_cancel(threads->ids[i]);
     } else {
-      close_ourselves = 1;
+      ourself = 1;
     }
   }
   for(uint32_t i = total; i < threads->used; ++i) {
@@ -180,7 +195,7 @@ void pthreads_cancel_sync(pthreads_t* const threads, const uint32_t amount) {
     }
   }
   threads->used = total;
-  if(close_ourselves == 1) {
+  if(ourself == 1) {
     (void) pthread_detach(self);
     pthread_exit(NULL);
   }
@@ -192,17 +207,17 @@ void pthreads_cancel_async(pthreads_t* const threads, const uint32_t amount) {
   }
   const uint32_t total = threads->used - amount;
   const pthread_t self = pthread_self();
-  int close_ourselves = 0;
+  int ourself = 0;
   for(uint32_t i = total; i < threads->used; ++i) {
     if(!pthread_equal(threads->ids[i], self)) {
       (void) pthread_detach(threads->ids[i]);
       (void) pthread_cancel(threads->ids[i]);
     } else {
-      close_ourselves = 1;
+      ourself = 1;
     }
   }
   threads->used = total;
-  if(close_ourselves == 1) {
+  if(ourself == 1) {
     (void) pthread_detach(self);
     (void) pthread_cancel(self);
   }
@@ -266,8 +281,16 @@ int thread_pool_resize_raw(struct thread_pool* const pool, const uint32_t new_si
   if(new_size == pool->size) {
     return 0;
   }
-  void* ptr;
-  safe_execute(ptr = realloc(pool->queue, sizeof(*pool->queue) * new_size), ptr == NULL, ENOMEM);
+  if(new_size == 0) {
+    if(pool->queue != NULL) {
+      free(pool->queue);
+      pool->queue = NULL;
+    }
+    pool->used = 0;
+    pool->size = 0;
+    return 0;
+  }
+  void* const ptr = shnet_realloc(pool->queue, sizeof(*pool->queue) * new_size);
   if(ptr == NULL) {
     return -1;
   }
@@ -284,7 +307,7 @@ int thread_pool_resize(struct thread_pool* const pool, const uint32_t new_size) 
 }
 
 int thread_pool_add_raw(struct thread_pool* const pool, void (*func)(void*), void* const data) {
-  if(pool->used >= pool->size && thread_pool_resize(pool, pool->used + 1) == -1) {
+  if(pool->used >= pool->size && thread_pool_resize_raw(pool, pool->used + 1) == -1) {
     return -1;
   }
   pool->queue[pool->used++] = (struct thread_pool_job) { .func = func, .data = data };
@@ -294,7 +317,7 @@ int thread_pool_add_raw(struct thread_pool* const pool, void (*func)(void*), voi
 
 int thread_pool_add(struct thread_pool* const pool, void (*func)(void*), void* const data) {
   thread_pool_lock(pool);
-  if(pool->used >= pool->size && thread_pool_resize(pool, pool->used + 1) == -1) {
+  if(pool->used >= pool->size && thread_pool_resize_raw(pool, pool->used + 1) == -1) {
     thread_pool_unlock(pool);
     return -1;
   }
@@ -331,12 +354,12 @@ void thread_pool_try_work(struct thread_pool* const pool) {
 }
 
 void thread_pool_work_raw(struct thread_pool* const pool) {
-  (void) sem_wait(&pool->sem);
+  while(sem_wait(&pool->sem) != 0);
   thread_pool_try_work_raw(pool);
 }
 
 void thread_pool_work(struct thread_pool* const pool) {
-  (void) sem_wait(&pool->sem);
+  while(sem_wait(&pool->sem) != 0);
   thread_pool_try_work(pool);
 }
 

@@ -1,69 +1,27 @@
-**Shnet** is an asynchronous networking library created in "modules", each of which can be used by the application independently.
+**Shnet** is a multi-purpose library created in "modules",
+each of which can be used by the application independently.
 
 # Requirements
 
-- Any system with a [Linux kernel](https://www.kernel.org/)
-- [Clang](https://clang.llvm.org/) or [GCC](https://gcc.gnu.org/)
-- Clang++ for C++ support
+Obligatory:
+
+- Any system with the [Linux kernel](https://www.kernel.org/)
+- [GCC](https://gcc.gnu.org/)
 - [Make](https://www.gnu.org/software/make/)
+- ~~[OpenSSL](https://github.com/openssl/openssl)~~ (next release)
 
-# Building
+[Valgrind](https://valgrind.org/) is necessary
+if you want to test the code in debug mode.
 
-The master branch might not always be stable. If you seek production-ready code, get the latest release.
+See `INSTALL` or do `make help` to learn
+how to build, install, and test the library.
 
-```bash
-git clone -b master https://github.com/supahero1/shnet
-cd shnet
-```
+**DO NOT** `git clone` this repository. Instead, download
+the latest release that is not flagged as a pre-release.
 
-The library is available in static and dynamic releases:
+## Licenses
 
-```bash
-sudo make static
-sudo make dynamic
-```
+This project is licensed under Apache License
+2.0 and using the following libraries:
 
-If you don't know which one to use, use dynamic.
-
-To build without installing:
-```bash
-sudo make build
-```
-
-You can then test the library:
-```bash
-sudo make test
-```
-
-To build tests, but not execute them (for instance to run manually with Valgrind), do:
-```bash
-sudo make build-tests
-```
-
-To remove build files:
-```bash
-sudo make clean
-```
-
-To uninstall the library:
-```bash
-sudo make uninstall
-```
-
-Multiple `make` commands can be chained very simply. The following command performs a full dynamic reinstall and tests the library afterwards:
-```bash
-sudo make clean uninstall dynamic test
-```
-
-To link the library with your project, simply add the `-lshnet` flag.
-
-# C++
-
-Since Clang supports the C `_Atomic` keyword in C++ code, it is possible to use both languages in one project:
-```c
-extern "C" {
-  #include <shnet/header.h>
-}
-
-/* ... C++ code ... */
-```
+- [OpenSSL](https://github.com/openssl/openssl) (Apache License 2.0)

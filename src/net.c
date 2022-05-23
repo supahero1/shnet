@@ -4,11 +4,12 @@
 #include <endian.h>
 #include <pthread.h>
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
+#include <linux/in.h>
+#include <linux/ip.h>
 
 #include <shnet/net.h>
 #include <shnet/error.h>
+#include <shnet/threads.h>
 
 struct addrinfo net_get_addr_struct(const int family, const int socktype, const int protocol, const int flags) {
   return (struct addrinfo) {
@@ -43,14 +44,7 @@ static void* net_get_address_thread(void* net_get_address_thread_data) {
 #undef addr
 
 int net_get_address_async(struct net_async_address* const addr) {
-  pthread_t id;
-  int err;
-  safe_execute(err = pthread_create(&id, NULL, net_get_address_thread, addr), err != 0, err);
-  if(err != 0) {
-    errno = err;
-    return -1;
-  }
-  return 0;
+  return pthread_start(NULL, net_get_address_thread, addr);
 }
 
 void net_free_address(struct addrinfo* const info) {
@@ -97,13 +91,13 @@ int net_socket_get(const struct addrinfo* const info) {
 
 int net_socket_bind(const int sfd, const struct addrinfo* const info) {
   int err;
-  safe_execute(err = bind(sfd, info->ai_addr, info->ai_family == net_family_ipv4 ? net_const_ipv4_size : net_const_ipv6_size), err == -1 && (errno == ENOMEM || errno == ENOBUFS), errno);
+  safe_execute(err = bind(sfd, info->ai_addr, info->ai_family == net_family_ipv4 ? net_const_ipv4_size : net_const_ipv6_size), err == -1, errno);
   return err;
 }
 
 int net_socket_connect(const int sfd, const struct addrinfo* const info) {
   int err;
-  safe_execute(err = connect(sfd, info->ai_addr, info->ai_family == net_family_ipv4 ? net_const_ipv4_size : net_const_ipv6_size), err == -1 && (errno == ENOMEM || errno == ENOBUFS), errno);
+  safe_execute(err = connect(sfd, info->ai_addr, info->ai_family == net_family_ipv4 ? net_const_ipv4_size : net_const_ipv6_size), err == -1, errno);
   return err;
 }
 
@@ -154,11 +148,11 @@ int net_socket_get_protocol(const int sfd) {
 }
 
 void net_socket_get_peer_address(const int sfd, void* const address) {
-  (void) getpeername(sfd, address, &(socklen_t){sizeof(struct sockaddr_in6)});
+  (void) getpeername(sfd, address, &(socklen_t){sizeof(struct sockaddr_storage)});
 }
 
 void net_socket_get_local_address(const int sfd, void* const address) {
-  (void) getsockname(sfd, address, &(socklen_t){sizeof(struct sockaddr_in6)});
+  (void) getsockname(sfd, address, &(socklen_t){sizeof(struct sockaddr_storage)});
 }
 
 void net_socket_dont_block(const int sfd) {

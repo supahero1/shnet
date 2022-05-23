@@ -1,0 +1,95 @@
+                           Building & installing shnet
+================================================================================
+
+TL;DR
+To build and install the library, do:
+
+    make install
+
+Consider adding 'test' at the end of the command to make sure the library works
+as expected.
+
+-------------------------------- DETAILED GUIDE --------------------------------
+
+Since shnet is only meant to be ran on Linux, there is no configuration
+executable. You can build the library right away with:
+
+    make
+
+or
+
+    make build
+
+You must execute 'make' in the top dir of the source code (that this file is in)
+or the compilation will fail.
+
+If you wish to build the library with debug info, add:
+
+    make DEBUG=1
+
+The library can also be built as static or shared, where the latter is the
+default. Build a static one with:
+
+    make STATIC=1
+
+If you built a static release, you must also add 'STATIC=1' to the installation
+command mentioned below.
+
+After building, tests can be run with:
+
+    make test
+
+You can also run every test with Valgrind (recommended to also build with debug
+then):
+
+    make test VALGRIND=1
+
+Tests can also be ran to test line coverage of the library. To do that, add
+'COVERAGE=1' to both 'build' and 'test':
+
+    make COVERAGE=1
+    make test COVERAGE=1
+
+Some tests have certain timing requirements to be met. If you see some failed
+assertions, try rerunning the tests under lower system load.
+
+If the library was not built before tests, the command will do it. Any flags
+specified, like 'DEBUG' or 'COVERAGE', will then be passed to both 'build' and
+'test'.
+
+Next, the library is ready to be installed (to '/usr/local' by default) with:
+
+    make install
+
+You can change the output dir for headers and library files with 'DIR_LIB' and
+'DIR_INCLUDE' variables. See the beginning of 'Makefile' file in the top dir for
+more info and variables to change.
+
+If the library was not build beforehand, the command will do it. It will not
+test the library. Any flags will be passed down to both 'build' and 'install'.
+
+You may remove your installation with:
+
+    make uninstall
+
+The above will only remove the library and header files from the file system.
+
+You may also remove all intermediate files created by any make commands with:
+
+    make clean
+
+All of the above targets will output only the necessary information without any
+build info. If you wish to see more of what is going on behind the curtains,
+add:
+
+    make <command> VERBOSE=1
+
+Additionally, you may chain multiple commands, as long as the commands are
+linear (i.e. you don't mix building with cleaning up files):
+
+    make clean uninstall install test DEBUG=1 VERBOSE=1
+
+The above command will first remove any files created by previous make commands,
+then remove the library and its headers from system directories, followed by
+building, installing and testing the library with debug info, all of that with
+verbose output.

@@ -1,6 +1,10 @@
 #ifndef hZgotNx_NDps_9BZatasI3s_D_0k_KCF
 #define hZgotNx_NDps_9BZatasI3s_D_0k_KCF 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern int error_handler(int, int);
 
 /*
@@ -21,5 +25,17 @@ do { \
     break; \
   } \
 } while(0)
+
+#include <stddef.h>
+
+extern void* shnet_malloc(const size_t);
+
+extern void* shnet_calloc(const size_t, const size_t);
+
+extern void* shnet_realloc(void* const, const size_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // hZgotNx_NDps_9BZatasI3s_D_0k_KCF

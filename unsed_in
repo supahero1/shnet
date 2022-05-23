@@ -1,0 +1,7 @@
+#!/bin/bash
+result=$(find $DIR_TOP -name "*.in" -not -path "$DIR_TOP/.git/*")
+for file in $result
+do
+  short=${file: : -3}
+  rm -f $short
+done

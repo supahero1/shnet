@@ -128,13 +128,6 @@ static int time_set_latest(struct time_timers* const timers) {
 
 static void time_timeouts_swap(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
   timers->timeouts[one] = timers->timeouts[two];
-  if(timers->timeouts[two].ref != NULL) {
-    timers->timeouts[two].ref->ref = two;
-  }
-}
-
-static void time_timeouts_swap2(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
-  timers->timeouts[one] = timers->timeouts[two];
   if(timers->timeouts[one].ref != NULL) {
     timers->timeouts[one].ref->ref = one;
   }
@@ -170,7 +163,7 @@ static void time_timeouts_down(const struct time_timers* const timers, uint32_t 
     }
   }
   if(save != timer) {
-    time_timeouts_swap2(timers, timer, 0);
+    time_timeouts_swap(timers, timer, 0);
   }
 }
 
@@ -184,7 +177,7 @@ static int time_timeouts_up(const struct time_timers* const timers, uint32_t tim
     parent >>= 1;
   }
   if(save != timer) {
-    time_timeouts_swap2(timers, timer, 0);
+    time_timeouts_swap(timers, timer, 0);
     return 1;
   }
   return 0;
@@ -194,8 +187,16 @@ int time_resize_timeouts_raw(struct time_timers* const timers, const uint32_t ne
   if(new_size == timers->timeouts_size) {
     return 0;
   }
-  void* ptr;
-  safe_execute(ptr = realloc(timers->timeouts, sizeof(*timers->timeouts) * new_size), ptr == NULL, ENOMEM);
+  if(new_size == 0) {
+    if(timers->timeouts != NULL) {
+      free(timers->timeouts);
+      timers->timeouts = NULL;
+    }
+    timers->timeouts_used = 1;
+    timers->timeouts_size = 0;
+    return 0;
+  }
+  void* const ptr = shnet_realloc(timers->timeouts, sizeof(*timers->timeouts) * new_size);
   if(ptr == NULL) {
     return -1;
   }
@@ -291,13 +292,6 @@ void time_close_timeout(struct time_timers* const timers, struct time_timer* con
 
 static void time_intervals_swap(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
   timers->intervals[one] = timers->intervals[two];
-  if(timers->intervals[two].ref != NULL) {
-    timers->intervals[two].ref->ref = two;
-  }
-}
-
-static void time_intervals_swap2(const struct time_timers* const timers, const uint32_t one, const uint32_t two) {
-  timers->intervals[one] = timers->intervals[two];
   if(timers->intervals[one].ref != NULL) {
     timers->intervals[one].ref->ref = one;
   }
@@ -334,7 +328,7 @@ static void time_intervals_down(const struct time_timers* const timers, uint32_t
     }
   }
   if(save != timer) {
-    time_intervals_swap2(timers, timer, 0);
+    time_intervals_swap(timers, timer, 0);
   }
 }
 
@@ -348,7 +342,7 @@ static int time_intervals_up(const struct time_timers* const timers, uint32_t ti
     parent >>= 1;
   }
   if(save != timer) {
-    time_intervals_swap2(timers, timer, 0);
+    time_intervals_swap(timers, timer, 0);
     return 1;
   }
   return 0;
@@ -360,8 +354,16 @@ int time_resize_intervals_raw(struct time_timers* const timers, const uint32_t n
   if(new_size == timers->intervals_size) {
     return 0;
   }
-  void* ptr;
-  safe_execute(ptr = realloc(timers->intervals, sizeof(*timers->intervals) * new_size), ptr == NULL, ENOMEM);
+  if(new_size == 0) {
+    if(timers->intervals != NULL) {
+      free(timers->intervals);
+      timers->intervals = NULL;
+    }
+    timers->intervals_used = 1;
+    timers->intervals_size = 0;
+    return 0;
+  }
+  void* const ptr = shnet_realloc(timers->intervals, sizeof(*timers->intervals) * new_size);
   if(ptr == NULL) {
     return -1;
   }
@@ -457,7 +459,7 @@ void time_close_interval(struct time_timers* const timers, struct time_timer* co
 static void* time_thread(void* time_thread_data) {
   while(1) {
     start:
-    (void) sem_wait(&timers->work);
+    while(sem_wait(&timers->work) != 0);
     uint64_t time;
     while(1) {
       time = time_get_latest(timers);
@@ -489,7 +491,7 @@ static void* time_thread(void* time_thread_data) {
         timers->timeouts[1].ref->ref = 0;
       }
       if(--timers->timeouts_used > 1) {
-        timers->timeouts[1] = timers->timeouts[timers->timeouts_used];
+        time_timeouts_swap(timers, 1, timers->timeouts_used);
         time_timeouts_down(timers, 1);
       }
     }
@@ -516,8 +518,8 @@ int time_timers(struct time_timers* const timers) {
   if(err == -1) {
     goto err_work;
   }
-  safe_execute(err = pthread_mutex_init(&timers->mutex, NULL), err == -1, err);
-  if(err == -1) {
+  safe_execute(err = pthread_mutex_init(&timers->mutex, NULL), err != 0, err);
+  if(err != 0) {
     errno = err;
     goto err_updates;
   }
@@ -532,33 +534,31 @@ int time_timers(struct time_timers* const timers) {
   return -1;
 }
 
-int time_timers_start(struct time_timers* const timers) {
+int time_start(struct time_timers* const timers) {
   return pthread_start(&timers->thread, time_thread, timers);
 }
 
-void time_timers_stop(struct time_timers* const timers) {
-  pthread_cancel_sync(timers->thread);
-}
-
-void time_timers_stop_async(struct time_timers* const timers) {
-  pthread_cancel_async(timers->thread);
-}
-
-void time_timers_stop_joinable(struct time_timers* const timers) {
+void time_stop(struct time_timers* const timers) {
   pthread_cancel(timers->thread);
 }
 
-void time_timers_free(struct time_timers* const timers) {
+void time_stop_sync(struct time_timers* const timers) {
+  pthread_cancel_sync(timers->thread);
+}
+
+void time_stop_async(struct time_timers* const timers) {
+  pthread_cancel_async(timers->thread);
+}
+
+void time_free(struct time_timers* const timers) {
   (void) sem_destroy(&timers->work);
   (void) sem_destroy(&timers->updates);
   (void) pthread_mutex_destroy(&timers->mutex);
   free(timers->timeouts);
   timers->timeouts = NULL;
-  timers->timeouts_used = 0;
   timers->timeouts_size = 0;
   free(timers->intervals);
   timers->intervals = NULL;
-  timers->intervals_used = 0;
   timers->intervals_size = 0;
 }
 

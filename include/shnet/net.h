@@ -1,6 +1,10 @@
 #ifndef MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
 #define MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <netdb.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -100,5 +104,9 @@ extern void net_socket_get_local_address(const int, void* const);
 extern void net_socket_dont_block(const int);
 
 extern void net_socket_default_options(const int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
