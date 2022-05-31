@@ -43,6 +43,8 @@ DIR_BIN      := /usr/bin
 
 .PHONY: build
 build: | $(DIR_CLI_OUT)
+	$(Q)chmod u+x $(DIR_TOP)/sed_in
+	$(Q)chmod u+x $(DIR_TOP)/unsed_in
 	$(Q)$(DIR_TOP)/sed_in
 	$(Q)$(MAKE) -C $(DIR_IN)
 ifeq ($(STATIC),1)
