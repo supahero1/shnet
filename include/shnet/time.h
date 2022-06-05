@@ -90,21 +90,23 @@ struct time_timers {
   uint32_t intervals_size;
 };
 
-extern int  time_timers(struct time_timers* const);
+extern void* time_thread(void*);
 
-extern int  time_start(struct time_timers* const);
+extern int   time_timers(struct time_timers* const);
 
-extern void time_stop(struct time_timers* const);
+extern int   time_start(struct time_timers* const);
 
-extern void time_stop_sync(struct time_timers* const);
+extern void  time_stop(struct time_timers* const);
 
-extern void time_stop_async(struct time_timers* const);
+extern void  time_stop_sync(struct time_timers* const);
 
-extern void time_free(struct time_timers* const);
+extern void  time_stop_async(struct time_timers* const);
 
-extern void time_lock(struct time_timers* const);
+extern void  time_free(struct time_timers* const);
 
-extern void time_unlock(struct time_timers* const);
+extern void  time_lock(struct time_timers* const);
+
+extern void  time_unlock(struct time_timers* const);
 
 
 extern int  time_resize_timeouts_raw(struct time_timers* const, const uint32_t);

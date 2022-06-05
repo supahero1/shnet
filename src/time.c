@@ -456,7 +456,7 @@ void time_close_interval(struct time_timers* const timers, struct time_timer* co
 
 #define timers ((struct time_timers*) time_thread_data)
 
-static void* time_thread(void* time_thread_data) {
+void* time_thread(void* time_thread_data) {
   while(1) {
     start:
     while(sem_wait(&timers->work) != 0);
