@@ -1,5 +1,5 @@
-#ifndef _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_
-#define _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_ 1
+#ifndef _shnet_threads_h_
+#define _shnet_threads_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -111,4 +111,4 @@ extern void  thread_pool_free(struct thread_pool* const);
 }
 #endif
 
-#endif // _Px_6_UB_O_c7dZDKE3_I_hzvZK85iC_
+#endif // _shnet_threads_h_

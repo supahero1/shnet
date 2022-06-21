@@ -1,5 +1,5 @@
-#ifndef __Qz_51_Jfgr_mbwOPa_oh_vMG78RXim
-#define __Qz_51_Jfgr_mbwOPa_oh_vMG78RXim 1
+#ifndef _shnet_tcp_h_
+#define _shnet_tcp_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,4 +123,4 @@ extern int  tcp_async_loop(struct async_loop* const);
 }
 #endif
 
-#endif // __Qz_51_Jfgr_mbwOPa_oh_vMG78RXim
+#endif // _shnet_tcp_h_

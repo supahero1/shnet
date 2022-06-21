@@ -1,5 +1,5 @@
-#ifndef __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z
-#define __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z 1
+#ifndef _shnet_time_h_
+#define _shnet_time_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -154,4 +154,4 @@ extern void time_close_interval(struct time_timers* const, struct time_timer* co
 }
 #endif
 
-#endif // __11_1Yvki_LNXnG7i_t6C_IE_7_ZZ1Z
+#endif // _shnet_time_h_

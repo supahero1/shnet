@@ -19,6 +19,11 @@ how to build, install, and test the library.
 **DO NOT** `git clone` this repository. Instead, download
 the latest release that is not flagged as a pre-release.
 
+The header files may be embedded within a C++ project, however note
+that no C++ code may directly try to access atomic variables in the
+library (as in, you would never need to access them anyway, unless
+you explicitly tried to).
+
 ## Licenses
 
 This project is licensed under Apache License

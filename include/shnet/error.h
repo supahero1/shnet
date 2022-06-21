@@ -1,5 +1,5 @@
-#ifndef hZgotNx_NDps_9BZatasI3s_D_0k_KCF
-#define hZgotNx_NDps_9BZatasI3s_D_0k_KCF 1
+#ifndef _shnet_error_h_
+#define _shnet_error_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,4 +38,4 @@ extern void* shnet_realloc(void* const, const size_t);
 }
 #endif
 
-#endif // hZgotNx_NDps_9BZatasI3s_D_0k_KCF
+#endif // _shnet_error_h_

@@ -1,5 +1,5 @@
-#ifndef X3TIrqm_E__OmXwd_gsJr74__ASz3mxQ
-#define X3TIrqm_E__OmXwd_gsJr74__ASz3mxQ 1
+#ifndef _shnet_test_h_
+#define _shnet_test_h_ 1
 
 #ifdef __cplusplus
 #error This header file is not compatible with C++
@@ -100,4 +100,4 @@ do { \
   test_error_set(name, err_save); \
 } while(0)
 
-#endif // X3TIrqm_E__OmXwd_gsJr74__ASz3mxQ
+#endif // _shnet_test_h_

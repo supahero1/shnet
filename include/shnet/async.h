@@ -1,5 +1,5 @@
-#ifndef xuspO3U__sJ_6UGWy_hM1A_r_zOz_zX_
-#define xuspO3U__sJ_6UGWy_hM1A_r_zOz_zX_ 1
+#ifndef _shnet_async_h_
+#define _shnet_async_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,4 +64,4 @@ extern int   async_loop_remove(const struct async_loop* const, struct async_even
 }
 #endif
 
-#endif // xuspO3U__sJ_6UGWy_hM1A_r_zOz_zX_
+#endif // _shnet_async_h_

@@ -1,5 +1,5 @@
-#ifndef MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
-#define MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i 1
+#ifndef _shnet_net_h_
+#define _shnet_net_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,4 +109,4 @@ extern void net_socket_default_options(const int);
 }
 #endif
 
-#endif // MHNJj_yfLA3WP__Eq_f4M__J_JwdkH_i
+#endif // _shnet_net_h_

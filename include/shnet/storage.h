@@ -1,5 +1,5 @@
-#ifndef PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF
-#define PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF 1
+#ifndef _shnet_storage_h_
+#define _shnet_storage_h_ 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,4 +48,4 @@ extern int  data_storage_is_empty(const struct data_storage* const);
 }
 #endif
 
-#endif // PtC_TO_Ikc_NvoKymeL0_eZfvItFDVXF
+#endif // _shnet_storage_h_

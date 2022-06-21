@@ -96,12 +96,24 @@ time_lock(&timers);
 time_unlock(&timers);
 ```
 
+The application can call `time_thread(&timers)` instead of `time_start(&timers)`
+, however there is no way to stop the execution of the thread other than by
+terminating it. Also note that if a timer that you run triggers an infinite
+loop, you can call `time_thread()` from `main()` and then run your program
+via `gdb`. Once you think the infinite loop is running, send an interrupt and
+`gdb` will log the stack trace for the loop. Note that the interrupt arrives
+to the `main()` function, so there would be no way to debug timers with `gdb`
+if they were ran via `time_start()` (in another thread) (unless maybe if you
+block the signal in `main()`, but doing that in a heavily multithreaded
+environment is like trying to find a needle in a haystack, since the signal
+can potentially reach any running thread).
+
 ## Timers
 
 The kernel does not divide timers into timeouts and intervals. That is different
 for this module. Even though function semantics are basically the same for both,
 memory footprint plays a role here (an interval is 16 bytes larger than a
-  timeout. That's 1.5x larger for 64bit, 2x for 32bit).
+timeout. That's 1.5x larger for 64bit, 2x for 32bit).
 
 All timeout functions are exactly the same as their interval counterparts.
 Simply substitute `timeout` with `interval` and you are ready to go.
