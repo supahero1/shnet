@@ -43,8 +43,7 @@ DIR_BIN      := /usr/bin
 
 .PHONY: build
 build: | $(DIR_CLI_OUT)
-	$(Q)chmod u+x $(DIR_TOP)/sed_in
-	$(Q)chmod u+x $(DIR_TOP)/unsed_in
+	$(Q)chmod +x $(DIR_TOP)/sed_in
 	$(Q)$(DIR_TOP)/sed_in
 	$(Q)$(MAKE) -C $(DIR_IN)
 ifeq ($(STATIC),1)
@@ -97,8 +96,9 @@ endif
 	@echo "Testing complete."
 
 .PHONY: clean
-clean:
+clean: chmod
 	$(Q)$(RM) -r $(DIR_OUT) $(DIR_COVERAGE)
+	$(Q)chmod +x $(DIR_TOP)/unsed_in
 	$(Q)$(DIR_TOP)/unsed_in
 	@echo "Clean complete."
 
