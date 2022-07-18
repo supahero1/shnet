@@ -15,7 +15,6 @@ void* async_loop_thread(void* async_loop_thread_data) {
   pthread_cancel_off();
   while(1) {
     const int count = epoll_wait(loop->fd, loop->events, loop->events_len, -1);
-    assert(count >= 0);
     for(int i = 0; i < count; ++i) {
       if(event->wakeup) {
         const async_flag_raw_t flags = atomic_load_explicit(&loop->evt.flags, memory_order_acquire);
