@@ -41,7 +41,7 @@ int pthread_create(pthread_t* a, const pthread_attr_t* b, void* (*c)(void*), voi
     _pthread_create = (int (*)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*)) dlsym(RTLD_NEXT, "pthread_create");
     if(_pthread_create == NULL) {
       puts(dlerror());
-      assert(0 && "(not supposed to happen)");
+      assert(!"(not supposed to happen)");
     }
   }
   if(preemption_off) {
@@ -66,6 +66,25 @@ void test_preempt_on(void) {
     assert(!_pthread_create(preemption_queue[i].a, preemption_queue[i].b, preemption_queue[i].c, preemption_queue[i].d));
   }
   preemption_queue_len = 0;
+}
+
+uint8_t old_closing;
+uint8_t old_closing_fast;
+
+void test_set_socket_not_closed(struct tcp_socket* const socket) {
+  old_closing = socket->closing;
+  socket->closing = 0;
+  old_closing_fast = socket->closing_fast;
+  socket->closing_fast = 0;
+}
+
+void test_restore_socket_closed(struct tcp_socket* const socket) {
+  socket->closing = old_closing;
+  socket->closing_fast = old_closing_fast;
+}
+
+void test_buffer_data(struct tcp_socket* const socket, const struct data_frame* const frame) {
+  assert(!data_storage_add(&socket->queue, frame));
 }
 
 struct tcp_socket sockets[10] = {0};
@@ -172,6 +191,38 @@ void open_free_only(struct tcp_socket* sock, enum tcp_event event) {
         assert(errno == expected_errno);
         expected_errno = 0;
       }
+      break;
+    }
+    case tcp_free: {
+      test_mutex_wake();
+      break;
+    }
+    default: break;
+  }
+}
+
+void open_free(struct tcp_socket* sock, enum tcp_event event) {
+  switch(event) {
+    case tcp_open:
+    case tcp_free: {
+      test_mutex_wake();
+      break;
+    }
+    default: break;
+  }
+}
+
+void open_close_free(struct tcp_socket* sock, enum tcp_event event) {
+  switch(event) {
+    case tcp_close: {
+      tcp_lock(sock);
+      assert(sock->opened);
+      tcp_unlock(sock);
+      if(expected_errno != 0) {
+        assert(errno == expected_errno);
+        expected_errno = 0;
+      }
+      test_mutex_wake();
       break;
     }
     case tcp_free: {
@@ -776,6 +827,43 @@ int main() {
   test_mutex_wait();
   test_end();
   
+  test_begin("tcp send err");
+  sockets->on_event = open_close_free;
+  assert(!tcp_socket(sockets, &options));
+  tcp_socket_close(sockets);
+  test_mutex_wait();
+  void* ptr = mmap(NULL, 1, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  assert(ptr != MAP_FAILED);
+  /* This call "fails quick" without any syscalls */
+  assert(tcp_send(sockets, &((struct data_frame) {
+    .data = ptr,
+    .mmaped = 1,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 1,
+    .free_onerr = 0
+  })) == -1);
+  assert(errno == EPIPE);
+  errno = 0;
+  test_expect_no_segfault(ptr);
+  /* Now, trick the tcp_send() function into thinking the connection is alive */
+  test_set_socket_not_closed(sockets);
+  assert(tcp_send(sockets, &((struct data_frame) {
+    .data = ptr,
+    .mmaped = 1,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 0,
+    .free_onerr = 1
+  })) == -1);
+  assert(errno == EPIPE);
+  errno = 0;
+  test_expect_segfault(ptr);
+  test_restore_socket_closed(sockets);
+  tcp_socket_free(sockets);
+  test_mutex_wait();
+  test_end();
+
   test_begin("tcp send 1");
   sockets->on_event = free_only;
   expected_read = 524288 - 8192;
@@ -862,6 +950,72 @@ int main() {
   assert(!memcmp(send_buf + 8192, recv_buf, 524288 - 8192));
   test_end();
   
+  test_begin("tcp graceful shutdown with buffered data");
+  expected_read = 1;
+  recv_buf_len = 0;
+  recv_buf[0] = ~send_buf[0];
+  sockets->on_event = open_free;
+  sockets->dont_send_buffered = 1;
+  assert(!tcp_socket(sockets, &options));
+  test_mutex_wait();
+  test_buffer_data(sockets, &((struct data_frame) {
+    .data = send_buf,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 1,
+    .free_onerr = 0
+  }));
+  tcp_socket_close(sockets);
+  assert(sockets->queue.used == 1);
+  assert(tcp_send_buffered(sockets) == -2);
+  assert(errno == 0);
+  tcp_socket_free(sockets);
+  test_mutex_wait();
+  test_wait();
+  assert(send_buf[0] == recv_buf[0]);
+  test_end();
+
+  test_begin("tcp send buffered err");
+  sockets->on_event = open_free;
+  assert(sockets->dont_send_buffered);
+  assert(!tcp_socket(sockets, &options));
+  test_mutex_wait();
+  tcp_socket_close(sockets);
+  /* After closing, sending must be disabled */
+  assert(tcp_send(sockets, &((struct data_frame) {
+    .data = NULL,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 1,
+    .free_onerr = 0
+  })) == -1);
+  assert(errno == EPIPE);
+  errno = 0;
+  test_buffer_data(sockets, &((struct data_frame) {
+    .data = NULL,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 1,
+    .free_onerr = 0
+  }));
+  /* While having buffered data too */
+  assert(tcp_send(sockets, &((struct data_frame) {
+    .data = NULL,
+    .len = 1,
+    .read_only = 1,
+    .dont_free = 1,
+    .free_onerr = 0
+  })) == -1);
+  assert(errno == EPIPE);
+  errno = 0;
+  assert(tcp_send_buffered(sockets) == -2);
+  assert(errno == EPIPE);
+  errno = 0;
+  assert(sockets->queue.used == 0);
+  tcp_socket_free(sockets);
+  test_mutex_wait();
+  test_end();
+
   test_begin("tcp free after close");
   sockets->on_event = close_only;
   assert(!tcp_socket(sockets, &options));

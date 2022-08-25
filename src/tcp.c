@@ -302,12 +302,12 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
   return -1;
 }
 
-static int tcp_send_buffered(struct tcp_socket* const socket) {
+int tcp_send_buffered(struct tcp_socket* const socket) {
   while(!data_storage_is_empty(&socket->queue)) {
     ssize_t bytes;
     errno = 0;
 #define data_ socket->queue.frames
-    if(socket->queue.frames->file) {
+    if(data_->file) {
       off_t off = data_->offset;
       safe_execute(bytes = sendfile(socket->core.fd, data_->fd, &off, data_->len - data_->offset), bytes == -1, errno);
     } else {
@@ -321,6 +321,7 @@ static int tcp_send_buffered(struct tcp_socket* const socket) {
         case ECONNRESET: {
           socket->closing_fast = 1;
           data_storage_free(&socket->queue);
+          errno = EPIPE;
           return -2;
         }
         case EAGAIN: {
@@ -346,8 +347,9 @@ int tcp_send(struct tcp_socket* const socket, const struct data_frame* const fra
     errno = EPIPE;
     goto err;
   }
-  int err = tcp_send_buffered(socket);
+  const int err = tcp_send_buffered(socket);
   if(err == -2) {
+    errno = EPIPE;
     goto err;
   }
   if(!socket->dont_autoclean) {
@@ -355,9 +357,11 @@ int tcp_send(struct tcp_socket* const socket, const struct data_frame* const fra
   }
   if(err == -1 || !socket->opened) {
     errno = 0;
-    err = data_storage_add(&socket->queue, frame);
+    if(data_storage_add(&socket->queue, frame) == -1) {
+      goto err;
+    }
     tcp_unlock(socket);
-    return err;
+    return 0;
   }
   struct data_frame data = *frame;
   while(1) {
@@ -476,11 +480,8 @@ static void tcp_socket_onevent(uint32_t events, struct async_event* event) {
     }
     if(!socket->dont_send_buffered) {
       tcp_lock(socket);
-      if(!socket->closing_fast) {
-        (void) tcp_send_buffered(socket);
-        if(!socket->dont_autoclean) {
-          (void) data_storage_resize(&socket->queue, socket->queue.used);
-        }
+      if(!socket->closing_fast && tcp_send_buffered(socket) != -2 && !socket->dont_autoclean) {
+        (void) data_storage_resize(&socket->queue, socket->queue.used);
       }
       tcp_unlock(socket);
     }

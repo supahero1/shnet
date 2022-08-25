@@ -3,7 +3,8 @@ dev
 coverage
 src/old
 tests/old
-cli
 
 src/tls.c
 include/shnet/tls.h
+
+cli/tcp.c

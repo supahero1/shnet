@@ -81,6 +81,8 @@ struct tcp_socket_options {
 
 extern int  tcp_socket(struct tcp_socket* const, const struct tcp_socket_options* const);
 
+extern int  tcp_send_buffered(struct tcp_socket* const);
+
 extern int  tcp_send(struct tcp_socket* const, const struct data_frame* const);
 
 extern uint64_t tcp_read(struct tcp_socket* const, void*, uint64_t);

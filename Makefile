@@ -21,10 +21,15 @@ CFLAGS += -Og -g3
 else
 CFLAGS += -O3
 endif
+CLIBS  :=
+ifeq ($(WITH_LIBUV),1)
+CLIBS  += -luv
+CFLAGS += -DLIBUV
+endif
 ifeq ($(COVERAGE),1)
 CFLAGS += --coverage
 endif
-CLIBS  := -pthread #-lssl -lcrypto
+CLIBS  += -pthread #-lssl -lcrypto
 
 DIR_TOP      := $(shell pwd)
 DIR_IN       := $(DIR_TOP)/src
@@ -39,7 +44,7 @@ DIR_LIB      := /usr/local/lib
 DIR_COVERAGE := $(DIR_TOP)/coverage
 DIR_CLI      := $(DIR_TOP)/cli
 DIR_CLI_OUT  := $(DIR_OUT)/cli
-DIR_BIN      := /usr/bin
+DIR_BIN      := /usr/local/bin
 
 .PHONY: build
 build: | $(DIR_CLI_OUT)
@@ -58,10 +63,10 @@ else
 			-o $(DIR_LIB_OUT)/libshnet.so $(CLIBS)
 endif
 	$(Q)ldconfig $(DIR_LIB_OUT)
-	$(Q)#$(MAKE) -C $(DIR_CLI)
-	$(Q)#$(CC) $(CFLAGS) $(DIR_CLI_OUT)/*.o -lshnet \
-	#		-o $(DIR_CLI_OUT)/shnet -I$(DIR_HEADERS) \
-	#		-L$(DIR_LIB_OUT) $(CLIBS)
+	$(Q)$(MAKE) -C $(DIR_CLI)
+	$(Q)$(CC) $(CFLAGS) $(DIR_CLI_OUT)/*.o -lshnet \
+			-o $(DIR_CLI_OUT)/shnet -I$(DIR_HEADERS) \
+			-L$(DIR_LIB_OUT) $(CLIBS)
 	@echo "Building complete."
 
 .PHONY: install
@@ -71,9 +76,10 @@ ifeq ($(STATIC),1)
 else
 	$(Q)install $(DIR_LIB_OUT)/libshnet.so $(DIR_LIB)/
 endif
+	$(Q)ldconfig $(DIR_LIB)/
 	$(Q)cp -r $(DIR_HEADERS)/shnet $(DIR_INCLUDE)/
 	$(Q)ldconfig $(DIR_LIB_OUT)
-	$(Q)#install $(DIR_CLI_OUT)/shnet $(DIR_BIN)/
+	$(Q)install $(DIR_CLI_OUT)/shnet $(DIR_BIN)/
 	@echo "Installation complete."
 
 .PHONY: test
@@ -96,7 +102,7 @@ endif
 	@echo "Testing complete."
 
 .PHONY: clean
-clean: chmod
+clean:
 	$(Q)$(RM) -r $(DIR_OUT) $(DIR_COVERAGE)
 	$(Q)chmod +x $(DIR_TOP)/unsed_in
 	$(Q)$(DIR_TOP)/unsed_in

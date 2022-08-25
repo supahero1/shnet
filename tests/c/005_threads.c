@@ -38,7 +38,6 @@ void* cb(void* data) {
 void* cb_stop_self(void* data) {
   struct test_info* test = (struct test_info*) data;
   test_wait();
-  pthread_detach(pthread_self());
   pthreads_cancel(test->threads, test->del_num);
   test_sleep(safety_timeout);
   assert(0);
@@ -70,6 +69,9 @@ test_register(void*, shnet_realloc, (void* const a, const size_t b), (a, b))
 test_register(int, pthread_create, (pthread_t* a, const pthread_attr_t* b, void* (*c)(void*), void* d), (a, b, c, d))
 test_register(int, sem_init, (sem_t* a, int b, unsigned int c), (a, b, c))
 test_register(int, pthread_mutex_init, (pthread_mutex_t* restrict a, const pthread_mutexattr_t* restrict b), (a, b))
+
+#define START_NUM (20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0))
+#define STOP_NUM (20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0))
 
 int main() {
   test_begin("threads check");
@@ -161,8 +163,8 @@ int main() {
   
   test_begin("threads stop");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    int num = 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0);
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    int num = STOP_NUM;
     for(int j = 1; j <= num; ++j) {
       (void) pthread_detach(threads.ids[threads.used - j]);
     }
@@ -173,8 +175,8 @@ int main() {
   
   test_begin("threads stop self");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    int num = 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0);
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    int num = STOP_NUM;
     struct test_info test = (struct test_info) {
       .del_num = num,
       .threads = &threads
@@ -196,15 +198,15 @@ int main() {
   
   test_begin("threads stop sync");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    pthreads_cancel_sync(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    pthreads_cancel_sync(&threads, STOP_NUM);
   }
   pthreads_shutdown_sync(&threads);
   test_end();
   
   test_begin("threads stop sync self");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
     assert(!pthreads_start(&threads, cb_stop_sync_self, &threads, 1));
     test_wait();
   }
@@ -213,15 +215,15 @@ int main() {
   
   test_begin("threads stop async");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    pthreads_cancel_async(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    pthreads_cancel_async(&threads, STOP_NUM);
   }
   pthreads_shutdown_sync(&threads);
   test_end();
   
   test_begin("threads stop async self");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
     assert(!pthreads_start(&threads, cb_stop_async_self, &threads, 1));
     test_wait();
   }
@@ -231,16 +233,16 @@ int main() {
   test_begin("threads stress sync 1");
   assert(!pthreads_start(&threads, cb, NULL, thread_count));
   for(int i = 0; i < repeat; ++i) {
-    pthreads_cancel_sync(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
+    pthreads_cancel_sync(&threads, STOP_NUM);
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
   }
   pthreads_shutdown_sync(&threads);
   test_end();
   
   test_begin("threads stress sync 2");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    pthreads_cancel_sync(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    pthreads_cancel_sync(&threads, STOP_NUM);
   }
   pthreads_shutdown_sync(&threads);
   test_end();
@@ -248,16 +250,16 @@ int main() {
   test_begin("threads stress async 1");
   assert(!pthreads_start(&threads, cb, NULL, thread_count));
   for(int i = 0; i < repeat; ++i) {
-    pthreads_cancel_async(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
+    pthreads_cancel_async(&threads, STOP_NUM);
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
   }
   pthreads_shutdown_async(&threads);
   test_end();
   
   test_begin("threads stress async 2");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    pthreads_cancel_async(&threads, 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    pthreads_cancel_async(&threads, STOP_NUM);
   }
   pthreads_shutdown_async(&threads);
   test_end();
@@ -265,14 +267,14 @@ int main() {
   test_begin("threads stress joinable 1");
   assert(!pthreads_start(&threads, cb, NULL, thread_count));
   for(int i = 0; i < repeat; ++i) {
-    const uint32_t count = 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0);
+    const uint32_t count = STOP_NUM;
     pthreads_cancel(&threads, count);
     for(uint32_t i = 0; i < count; ++i) {
       retval = (void*) -123;
       assert(!pthread_join(threads.ids[threads.used + i], &retval));
       assert(retval == PTHREAD_CANCELED);
     }
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
   }
   {
     const uint32_t num = threads.used;
@@ -287,8 +289,8 @@ int main() {
   
   test_begin("threads stress joinable 2");
   for(int i = 0; i < repeat; ++i) {
-    assert(!pthreads_start(&threads, cb, NULL, 20 + ((threads.used != thread_count) ? (rand() % (thread_count - threads.used)) : 0)));
-    const uint32_t count = 20 + ((threads.used != 19) ? (rand() % (threads.used - 19)) : 0);
+    assert(!pthreads_start(&threads, cb, NULL, START_NUM));
+    const uint32_t count = STOP_NUM;
     pthreads_cancel(&threads, count);
     for(uint32_t i = 0; i < count; ++i) {
       retval = (void*) -123;

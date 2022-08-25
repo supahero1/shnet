@@ -151,6 +151,12 @@ error pending on the socket. That is because all errors are eventually resolved
 in the event loop, so resolving them in side functions like these does not make
 sense.
 
+In case of an error, if the data wasn't sent due to the connection being dead,
+`errno` will always be set to `EPIPE` (and nothing else, such as `ECONNRESET`).
+For other errors, other respective codes will be set. If `frame.free_onerr` was
+set, the frame will additionally be freed in the function before returning. If
+the return value is `0`, indicating no errors, `errno` must be `0` too.
+
 The function is asynchronous, like most functions in
 this module. It does not wait for the data to be sent.
 
