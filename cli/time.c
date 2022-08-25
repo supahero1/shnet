@@ -98,6 +98,14 @@ void time_benchmark() {
     options.num == default_num ? " (the default)" : "",
     options.fast
   );
+  if(!options.fast) {
+    print(
+      "Note that the low default values for \"num\" option are necessary so that POSIX\n"
+      "timers don't choke. You can rerun this test with the \"fast\" option to not test\n"
+      "them. You will then likely be able to benchmark thousands or millions of timers.\n"
+      "\n"
+    );
+  }
   DROP_IF_RIDICULOUS(options.num, "num", 0, 2048);
 
   uint64_t time = 0;
