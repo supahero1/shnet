@@ -89,7 +89,7 @@ static char whitespace[] = "\r                                                  
 
 void print(const char* const restrict format, ...) {
   if(format[0] == '\r') {
-    printf(whitespace);
+    printf("%.80s", whitespace);
   }
   va_list args;
   va_start(args, format);

@@ -77,7 +77,7 @@ do { \
 } while(0)
 
 void time_benchmark() {
-  const int default_num = 10000;
+  const int default_num = 2000;
   if(options.num <= 0) {
     options.num = default_num;
   }
@@ -98,7 +98,7 @@ void time_benchmark() {
     options.num == default_num ? " (the default)" : "",
     options.fast
   );
-  DROP_IF_RIDICULOUS(options.num, "num", 0, 63500);
+  DROP_IF_RIDICULOUS(options.num, "num", 0, 2048);
 
   uint64_t time = 0;
 
@@ -117,7 +117,7 @@ void time_benchmark() {
         .sigev_notify_function = posix_timer_callback
       }), posix_timers + i);
       if(err == -1) {
-        print("\ntimer_create(" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below 63500.\n", i, errno);
+        print("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below %d.\n", i, errno, options.num);
         assert(0);
       }
       err = timer_settime(posix_timers[i], 0, &((struct itimerspec) {
@@ -131,7 +131,7 @@ void time_benchmark() {
         }
       }), NULL);
       if(err == -1) {
-        print("\ntimer_settime(" PRId32 ") failed with errno: %d\n", i, errno);
+        print("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
@@ -148,7 +148,7 @@ void time_benchmark() {
       const uint64_t start = time_get_time();
       int err = timer_delete(posix_timers[i]);
       if(err == -1) {
-        print("\ntimer_delete(" PRId32 ") failed with errno: %d\n", i, errno);
+        print("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
@@ -172,7 +172,7 @@ void time_benchmark() {
         .sigev_notify_function = posix_timer_callback_all
       }), posix_timers + i);
       if(err == -1) {
-        print("\ntimer_create(" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below 63500.\n", i, errno);
+        print("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below 63500.\n", i, errno);
         assert(0);
       }
       err = timer_settime(posix_timers[i], 0, &((struct itimerspec) {
@@ -186,7 +186,7 @@ void time_benchmark() {
         }
       }), NULL);
       if(err == -1) {
-        print("\ntimer_settime(" PRId32 ") failed with errno: %d\n", i, errno);
+        print("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
@@ -206,7 +206,7 @@ void time_benchmark() {
       const uint64_t start = time_get_time();
       int err = timer_delete(posix_timers[i]);
       if(err == -1) {
-        print("\ntimer_delete(" PRId32 ") failed with errno: %d\n", i, errno);
+        print("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
@@ -237,7 +237,7 @@ void time_benchmark() {
       const uint64_t start = time_get_time();
       int err = pthread_start(NULL, thread_timer_callback_all, NULL);
       if(err == -1) {
-        print("\npthread_start(" PRId32 ") failed with errno: %d\n", i, errno);
+        print("\npthread_start(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
@@ -275,7 +275,7 @@ void time_benchmark() {
       .ref = shnet_timers + i
     }));
     if(err == -1) {
-      print("\ntime_add_timeout_raw(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
@@ -314,7 +314,7 @@ void time_benchmark() {
       .func = shnet_timer_callback_all
     }));
     if(err == -1) {
-      print("\ntime_add_timeout_raw(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
@@ -353,12 +353,12 @@ void time_benchmark() {
     const uint64_t start = time_get_time();
     int err = uv_timer_init(loop, libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_init(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     err = uv_timer_start(libuv_timers + i, libuv_timer_callback, 999000, 0);
     if(err != 0) {
-      print("\nuv_timer_start(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
@@ -375,7 +375,7 @@ void time_benchmark() {
     const uint64_t start = time_get_time();
     int err = uv_timer_stop(libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_stop(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
@@ -394,12 +394,12 @@ void time_benchmark() {
     const uint64_t start = time_get_time();
     int err = uv_timer_init(loop, libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_init(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     err = uv_timer_start(libuv_timers + i, libuv_timer_callback_all, 0, 0);
     if(err != 0) {
-      print("\nuv_timer_start(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
@@ -420,7 +420,7 @@ void time_benchmark() {
     const uint64_t start = time_get_time();
     int err = uv_timer_stop(libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_stop(" PRId32 ") failed with errno: %d\n", i, errno);
+      print("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
