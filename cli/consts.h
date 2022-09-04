@@ -24,8 +24,6 @@ do { \
   } \
 } while(0)
 
-extern void print(const char* const restrict, ...);
-
 extern void print_time(const uint64_t);
 
 extern void time_benchmark(void);

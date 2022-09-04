@@ -65,23 +65,12 @@ static void libuv_timer_callback_all(uv_timer_t* handle) {
 
 #endif
 
-static uint64_t last_progress = UINT64_MAX;
-
-#define PROGRESS(text) \
-do { \
-  const uint64_t progress = ((uint64_t) i * 1000) / options.num; \
-  if(progress != last_progress) { \
-    last_progress = progress; \
-    print("\r" text " | %.1lf%%", (double) progress / 10.0); \
-  } \
-} while(0)
-
 void time_benchmark() {
   const int default_num = 2000;
   if(options.num <= 0) {
     options.num = default_num;
   }
-  print(
+  printf(
     "time-bench parameters:\n"
     "num : %" PRId32 "%s\n"
     "fast: %" PRIu32 "\n"
@@ -99,11 +88,10 @@ void time_benchmark() {
     options.fast
   );
   if(!options.fast) {
-    print(
+    puts(
       "Note that the low default values for \"num\" option are necessary so that POSIX\n"
       "timers don't choke. You can rerun this test with the \"fast\" option to not test\n"
       "them. You will then likely be able to benchmark thousands or millions of timers.\n"
-      "\n"
     );
   }
   DROP_IF_RIDICULOUS(options.num, "num", 0, 2048);
@@ -114,8 +102,10 @@ void time_benchmark() {
     timer_t* const posix_timers = calloc(options.num, sizeof(timer_t));
     assert(posix_timers);
 
+    printf("Initialising POSIX timers");
+    fflush(stdout);
+
     for(int32_t i = 0; i < options.num; ++i) {
-      PROGRESS("Initialising POSIX timers");
       const uint64_t start = time_get_time();
       int err = timer_create(CLOCK_REALTIME, &((struct sigevent) {
         .sigev_notify = SIGEV_THREAD,
@@ -125,7 +115,7 @@ void time_benchmark() {
         .sigev_notify_function = posix_timer_callback
       }), posix_timers + i);
       if(err == -1) {
-        print("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below %d.\n", i, errno, options.num);
+        printf("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below %d.\n", i, errno, options.num);
         assert(0);
       }
       err = timer_settime(posix_timers[i], 0, &((struct itimerspec) {
@@ -139,38 +129,42 @@ void time_benchmark() {
         }
       }), NULL);
       if(err == -1) {
-        print("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
+        printf("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
       time += end - start;
     }
 
-    print("\rInitialising POSIX timers took ");
+    printf(" took ");
     print_time(time);
     puts("");
     time = 0;
 
+    printf("Deleting POSIX timers");
+    fflush(stdout);
+
     for(int32_t i = 0; i < options.num; ++i) {
-      PROGRESS("Deleting POSIX timers");
       const uint64_t start = time_get_time();
       int err = timer_delete(posix_timers[i]);
       if(err == -1) {
-        print("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
+        printf("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
       time += end - start;
     }
 
-    print("\rDeleting POSIX timers took ");
+    printf(" took ");
     print_time(time);
     puts("");
     time = 0;
     atomic_store(&counter, (uint32_t) options.num);
 
+    printf("Initialising, running, and deleting POSIX timers");
+    fflush(stdout);
+
     for(int32_t i = 0; i < options.num; ++i) {
-      PROGRESS("Initialising (and running) POSIX timers");
       const uint64_t start = time_get_time();
       int err = timer_create(CLOCK_REALTIME, &((struct sigevent) {
         .sigev_notify = SIGEV_THREAD,
@@ -180,7 +174,7 @@ void time_benchmark() {
         .sigev_notify_function = posix_timer_callback_all
       }), posix_timers + i);
       if(err == -1) {
-        print("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below 63500.\n", i, errno);
+        printf("\ntimer_create(%" PRId32 ") failed with errno: %d\nConsider setting the \"num\" option to something below 63500.\n", i, errno);
         assert(0);
       }
       err = timer_settime(posix_timers[i], 0, &((struct itimerspec) {
@@ -194,14 +188,13 @@ void time_benchmark() {
         }
       }), NULL);
       if(err == -1) {
-        print("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
+        printf("\ntimer_settime(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
       time += end - start;
     }
 
-    print("\rWaiting for all POSIX timers to run");
     {
       const uint64_t start = time_get_time();
       test_wait();
@@ -210,23 +203,25 @@ void time_benchmark() {
     }
 
     for(int32_t i = 0; i < options.num; ++i) {
-      PROGRESS("Deleting POSIX timers");
       const uint64_t start = time_get_time();
       int err = timer_delete(posix_timers[i]);
       if(err == -1) {
-        print("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
+        printf("\ntimer_delete(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
       time += end - start;
     }
 
-    print("\rInitialising, running, and deleting POSIX timers took ");
+    printf(" took ");
     print_time(time);
     puts("\n");
     time = 0;
     free(posix_timers);
     atomic_store(&counter, (uint32_t) options.num);
+
+    printf("Initialising, running, and deleting thread timers");
+    fflush(stdout);
 
     /*
     * Initialisation of thread timers takes the same amount of time as
@@ -241,18 +236,16 @@ void time_benchmark() {
     */
 
     for(int32_t i = 0; i < options.num; ++i) {
-      PROGRESS("Initialising (and running) thread timers");
       const uint64_t start = time_get_time();
       int err = pthread_start(NULL, thread_timer_callback_all, NULL);
       if(err == -1) {
-        print("\npthread_start(%" PRId32 ") failed with errno: %d\n", i, errno);
+        printf("\npthread_start(%" PRId32 ") failed with errno: %d\n", i, errno);
         assert(0);
       }
       const uint64_t end = time_get_time();
       time += end - start;
     }
 
-    print("\rWaiting for all thread timers to run and delete themselves");
     {
       const uint64_t start = time_get_time();
       test_wait();
@@ -260,7 +253,7 @@ void time_benchmark() {
       time += end - start;
     }
 
-    print("\rInitialising, running, and deleting thread timers took ");
+    printf(" took ");
     print_time(time);
     puts("\n");
     time = 0;
@@ -273,9 +266,11 @@ void time_benchmark() {
   struct time_timer* const shnet_timers = calloc(options.num, sizeof(struct time_timer));
   assert(shnet_timers);
 
+  printf("Initialising shnet timers");
+  fflush(stdout);
+
   /* Not resizing the array of timers on purpose to make it more fair */
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Initialising shnet timers");
     const uint64_t start = time_get_time();
     int err = time_add_timeout_raw(&timers, &((struct time_timeout) {
       .time = time_get_sec(999),
@@ -283,21 +278,23 @@ void time_benchmark() {
       .ref = shnet_timers + i
     }));
     if(err == -1) {
-      print("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  print("\rInitialising shnet timers took ");
+  printf(" took ");
   print_time(time);
   puts("");
   time = 0;
   time_lock(&timers);
 
+  printf("Deleting shnet timers");
+  fflush(stdout);
+
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Deleting shnet timers");
     const uint64_t start = time_get_time();
     /* This must not fail under any conditions */
     assert(!time_cancel_timeout_raw(&timers, shnet_timers + i));
@@ -306,7 +303,7 @@ void time_benchmark() {
   }
 
   time_unlock(&timers);
-  print("\rDeleting shnet timers took ");
+  printf(" took ");
   print_time(time);
   puts("");
   time = 0;
@@ -314,22 +311,23 @@ void time_benchmark() {
   atomic_store(&counter, (uint32_t) options.num);
   time_lock(&timers);
 
+  printf("Initialising, running, and deleting shnet timers");
+  fflush(stdout);
+
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Initialising shnet timers");
     const uint64_t start = time_get_time();
     int err = time_add_timeout_raw(&timers, &((struct time_timeout) {
       .time = time_immediately,
       .func = shnet_timer_callback_all
     }));
     if(err == -1) {
-      print("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\ntime_add_timeout_raw(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  print("\rWaiting for all shnet timers to run and delete themselves");
   time_unlock(&timers);
   {
     const uint64_t start = time_get_time();
@@ -338,7 +336,7 @@ void time_benchmark() {
     time += end - start;
   }
 
-  print("\rInitialising, running, and deleting shnet timers took ");
+  printf(" took ");
   print_time(time);
 #ifdef LIBUV
   puts("\n");
@@ -356,65 +354,69 @@ void time_benchmark() {
   uv_timer_t* const libuv_timers = calloc(options.num, sizeof(uv_timer_t));
   assert(libuv_timers);
 
+  printf("Initialising libuv timers");
+  fflush(stdout);
+
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Initialising libuv timers");
     const uint64_t start = time_get_time();
     int err = uv_timer_init(loop, libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     err = uv_timer_start(libuv_timers + i, libuv_timer_callback, 999000, 0);
     if(err != 0) {
-      print("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  print("\rInitialising libuv timers took ");
+  printf(" took ");
   print_time(time);
   puts("");
   time = 0;
 
+  printf("Deleting libuv timers");
+  fflush(stdout);
+
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Deleting libuv timers");
     const uint64_t start = time_get_time();
     int err = uv_timer_stop(libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  time_unlock(&timers);
-  print("\rDeleting libuv timers took ");
+  printf(" took ");
   print_time(time);
   puts("");
   time = 0;
   atomic_store(&counter, (uint32_t) options.num);
 
+  printf("Initialising, running, and deleting libuv timers");
+  fflush(stdout);
+
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Initialising (and running) libuv timers");
     const uint64_t start = time_get_time();
     int err = uv_timer_init(loop, libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_init(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     err = uv_timer_start(libuv_timers + i, libuv_timer_callback_all, 0, 0);
     if(err != 0) {
-      print("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_start(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  print("\rWaiting for all libuv timers to run");
   {
     const uint64_t start = time_get_time();
     uv_run(loop, UV_RUN_DEFAULT);
@@ -424,18 +426,17 @@ void time_benchmark() {
   }
 
   for(int32_t i = 0; i < options.num; ++i) {
-    PROGRESS("Deleting libuv timers");
     const uint64_t start = time_get_time();
     int err = uv_timer_stop(libuv_timers + i);
     if(err != 0) {
-      print("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
+      printf("\nuv_timer_stop(%" PRId32 ") failed with errno: %d\n", i, errno);
       assert(0);
     }
     const uint64_t end = time_get_time();
     time += end - start;
   }
 
-  print("\rInitialising, running, and deleting libuv timers took ");
+  printf(" took ");
   print_time(time);
   puts("");
   int err = uv_loop_close(loop);

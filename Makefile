@@ -6,12 +6,20 @@ CLI_PATCH = 0
 
 .EXPORT_ALL_VARIABLES:
 
+.PHONY: build
+build: __build
+
 ifeq ($(VERBOSE),1)
 Q = 
 else
 Q = @
 COVFLAGS = -q
 endif
+
+SHELL  := bash
+
+FMT_OD := "$(shell tput bold)
+FMT_DO :=  $(shell tput sgr0)\n"
 
 CC     := gcc
 CXX    := g++
@@ -29,90 +37,85 @@ endif
 ifeq ($(COVERAGE),1)
 CFLAGS += --coverage
 endif
-CLIBS  += -pthread #-lssl -lcrypto
+CLIBS  += -pthread#-lssl -lcrypto
 
-DIR_TOP      := $(shell pwd)
-DIR_IN       := $(DIR_TOP)/src
-DIR_OUT      := $(DIR_TOP)/bin
-DIR_LIB_OUT  := $(DIR_OUT)/lib
-DIR_TEST     := $(DIR_TOP)/tests
-DIR_TEST_OUT := $(DIR_OUT)/tests
-DIR_DEPS     := $(DIR_OUT)/deps
-DIR_HEADERS  := $(DIR_TOP)/include
-DIR_INCLUDE  := /usr/local/include
-DIR_LIB      := /usr/local/lib
-DIR_COVERAGE := $(DIR_TOP)/coverage
-DIR_CLI      := $(DIR_TOP)/cli
-DIR_CLI_OUT  := $(DIR_OUT)/cli
-DIR_BIN      := /usr/local/bin
+DIR_TOP     := $(shell pwd)
+DIR_OUT     := $(DIR_TOP)/bin
+DIR_TEST    := $(DIR_TOP)/tests
+DIR_DEPS    := $(DIR_OUT)/deps
+DIR_HEADERS := $(DIR_TOP)/include
+DIR_INCLUDE := /usr/local/include
+DIR_LIB     := /usr/local/lib
+DIR_COV     := $(DIR_TOP)/coverage
+DIR_BIN     := /usr/local/bin
 
-.PHONY: build
-build: | $(DIR_CLI_OUT)
+${DIR_OUT} ${DIR_DEPS} ${DIR_INCLUDE}/shnet \
+${DIR_LIB} ${DIR_COV} ${DIR_BIN}:
+	$(Q)mkdir -p $@
+
+.PHONY: _build
+_build: | $(DIR_OUT) $(DIR_DEPS)
 	$(Q)chmod +x $(DIR_TOP)/sed_in
 	$(Q)$(DIR_TOP)/sed_in
-	$(Q)$(MAKE) -C $(DIR_IN)
+	$(Q)$(MAKE) -C $(DIR_TOP)/src
+	$(Q)$(MAKE) -C $(DIR_TOP)/cli
+
+.PHONY: __build
 ifeq ($(STATIC),1)
-	$(Q)$(RM) $(DIR_LIB)/libshnet.so \
-			$(DIR_LIB_OUT)/libshnet.so
-	$(Q)$(AR) rsc $(DIR_LIB_OUT)/libshnet.a \
-			$(DIR_LIB_OUT)/*.o
+__build: _build $(DIR_OUT)/src/libshnet.a \
+         $(DIR_OUT)/cli/shnet.exe
 else
-	$(Q)$(RM) $(DIR_LIB)/libshnet.a \
-			$(DIR_LIB_OUT)/libshnet.a
-	$(Q)$(CC) $(CFLAGS) $(DIR_LIB_OUT)/*.o -shared \
-			-o $(DIR_LIB_OUT)/libshnet.so $(CLIBS)
+__build: _build $(DIR_OUT)/src/libshnet.so \
+				 $(DIR_OUT)/cli/shnet.exe
 endif
-	$(Q)ldconfig $(DIR_LIB_OUT)
-	$(Q)$(MAKE) -C $(DIR_CLI)
-	$(Q)$(CC) $(CFLAGS) $(DIR_CLI_OUT)/*.o -lshnet \
-			-o $(DIR_CLI_OUT)/shnet -I$(DIR_HEADERS) \
-			-L$(DIR_LIB_OUT) $(CLIBS)
-	@echo "Building complete."
+	@printf $(FMT_OD)Building complete.$(FMT_DO)
 
 .PHONY: install
 install: build | $(DIR_LIB) $(DIR_BIN) $(DIR_INCLUDE)/shnet
 ifeq ($(STATIC),1)
-	$(Q)install $(DIR_LIB_OUT)/libshnet.a $(DIR_LIB)/
+	$(Q)$(RM) $(DIR_LIB)/libshnet.so
+	$(Q)install $(DIR_OUT)/src/libshnet.a $(DIR_LIB)/
 else
-	$(Q)install $(DIR_LIB_OUT)/libshnet.so $(DIR_LIB)/
+	$(Q)$(RM) $(DIR_LIB)/libshnet.a
+	$(Q)install $(DIR_OUT)/src/libshnet.so $(DIR_LIB)/
 endif
-	$(Q)ldconfig $(DIR_LIB)/
+	$(Q)ldconfig $(DIR_LIB)
 	$(Q)cp -r $(DIR_HEADERS)/shnet $(DIR_INCLUDE)/
-	$(Q)ldconfig $(DIR_LIB_OUT)
-	$(Q)install $(DIR_CLI_OUT)/shnet $(DIR_BIN)/
-	@echo "Installation complete."
+	$(Q)install $(DIR_OUT)/cli/shnet $(DIR_BIN)/
+	@printf $(FMT_OD)Installation complete.$(FMT_DO)
 
 .PHONY: test
 ifeq ($(COVERAGE),1)
-test: build | $(DIR_COVERAGE)
-	$(Q)$(RM) $(DIR_LIB_OUT)/*.gcda
+test: build | $(DIR_COV)
+	$(Q)$(RM) $(shell find $(DIR_OUT)/src -name *.gcda)
 else
 test: build
 endif
-	$(Q)$(RM) -r $(DIR_TEST_OUT)
-	$(Q)$(MAKE) -C $(DIR_TEST)
-	@echo "Testing complete."
-ifeq ($(COVERAGE),1)
-	$(Q)lcov $(COVFLAGS) -c -d $(DIR_LIB_OUT) -o \
-			$(DIR_LIB_OUT)/coverage.info
-	$(Q)genhtml $(DIR_LIB_OUT)/coverage.info \
-			$(COVFLAGS) -o $(DIR_COVERAGE)
-	@echo "Coverage in file:$(DIR_COVERAGE)/index.html"
+ifneq ($(PRESERVE_TESTS),1)
+	$(Q)$(RM) -r $(DIR_OUT)/tests
 endif
-	@echo "Testing complete."
+	$(Q)$(MAKE) -C $(DIR_TEST)
+ifeq ($(COVERAGE),1)
+	$(Q)lcov $(COVFLAGS) -c -d -o $(DIR_COV)/coverage.info \
+			$(shell find $(DIR_OUT) -name *.gcda -o -name *.gcno)
+	$(Q)genhtml $(DIR_COV)/coverage.info \
+			$(COVFLAGS) -o $(DIR_COV)
+	@printf $(FMT_OD)Coverage in file://$(DIR_COV)/index.html$(FMT_DO)
+endif
+	@printf $(FMT_OD)Testing complete.$(FMT_DO)
 
 .PHONY: clean
 clean:
-	$(Q)$(RM) -r $(DIR_OUT) $(DIR_COVERAGE)
+	$(Q)$(RM) -r $(DIR_DEPS) $(DIR_OUT) $(DIR_COV)
 	$(Q)chmod +x $(DIR_TOP)/unsed_in
 	$(Q)$(DIR_TOP)/unsed_in
-	@echo "Clean complete."
+	@printf $(FMT_OD)Clean complete.$(FMT_DO)
 
 .PHONY: uninstall
 uninstall:
 	$(Q)$(RM) -r $(DIR_INCLUDE)/shnet $(DIR_BIN)/shnet \
 			$(DIR_LIB)/libshnet.so $(DIR_LIB)/libshnet.a
-	@echo "Uninstall complete."
+	@printf $(FMT_OD)Uninstall complete.$(FMT_DO)
 
 .PHONY: help
 help:

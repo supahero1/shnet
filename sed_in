@@ -4,11 +4,25 @@ echo "s/%SHNET_VERSION%/$VERSION/" >> $DIR_TOP/.sed.temp
 echo "s/%SHNET_PATCH%/$PATCH/" >> $DIR_TOP/.sed.temp
 echo "s/%SHNET_CLI_VERSION%/$CLI_VERSION/" >> $DIR_TOP/.sed.temp
 echo "s/%SHNET_CLI_PATCH%/$CLI_PATCH/" >> $DIR_TOP/.sed.temp
-chmod u+x $DIR_TOP/.sed.temp
-result=$(find $DIR_TOP -name "*.in" -not -path "$DIR_TOP/.git/*")
+chmod +x $DIR_TOP/.sed.temp
+result=$(find $DIR_TOP -name "in.*" -not -path "$DIR_TOP/.git/*")
 for file in $result
 do
-  short=${file: : -3}
-  $DIR_TOP/.sed.temp $file > $short
+  my_dirname=$(dirname $file)/
+  my_basename=$(basename $file)
+  my_filename=${my_basename:3}
+  if test -f "${my_dirname}${my_filename}"; then
+    $DIR_TOP/.sed.temp $file > "${my_dirname}.${my_filename}.temp"
+    old_checksum=$(md5sum $my_dirname$my_filename)
+    old_checksum="${old_checksum:0:32}"
+    new_checksum=$(md5sum $my_dirname.$my_filename.temp)
+    new_checksum="${old_checksum:0:32}"
+    if [ "${old_checksum}" != "${new_checksum}" ]; then
+      mv -f $my_dirname.$my_filename.temp $my_dirname$my_filename
+    fi
+    rm -f $my_dirname.$my_filename.temp
+  else
+    $DIR_TOP/.sed.temp $file > "${my_dirname}${my_filename}"
+  fi
 done
 rm -f $DIR_TOP/.sed.temp

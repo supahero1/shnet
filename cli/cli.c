@@ -85,30 +85,15 @@ enum cli_method {
 
 struct options options = {0};
 
-static char whitespace[] = "\r                                                                                ";
-
-void print(const char* const restrict format, ...) {
-  if(format[0] == '\r') {
-    printf("%.81s", whitespace);
-  }
-  va_list args;
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-  if(format[0] == '\r') {
-    fflush(stdout);
-  }
-}
-
 void print_time(const uint64_t n) {
   if(time_us_to_ns(1) > n) {
     printf("%" PRIu64 "ns", n);
   } else if(time_ms_to_ns(1) > n) {
-    printf("%.1lfus", (double) n / time_us_to_ns(1));
+    printf("%" PRIu64 "us", n / time_us_to_ns(1));
   } else if(time_sec_to_ns(1) > n) {
-    printf("%.1lfms", (double) n / time_ms_to_ns(1));
+    printf("%" PRIu64 "ms", n / time_ms_to_ns(1));
   } else {
-    printf("%.1lfsec", (double) n / time_sec_to_ns(1));
+    printf("%" PRIu64 "sec", n / time_sec_to_ns(1));
   }
 }
 

@@ -11,7 +11,7 @@ as expected.
 
 -------------------------------- DETAILED GUIDE --------------------------------
 
-Since shnet is only meant to be ran on Linux, there is no configuration
+Since shnet is only meant to be run on Linux, there is no configuration
 executable. You can build the library right away with:
 
     make
@@ -44,18 +44,28 @@ then):
 
     make test VALGRIND=1
 
-Tests can also be ran to test line coverage of the library. To do that, add
+Tests can also be run to test line coverage of the library. To do that, add
 'COVERAGE=1' to both 'build' and 'test':
 
     make COVERAGE=1
     make test COVERAGE=1
 
+Or, simply:
+
+    make test COVERAGE=1
+
+Since this will also (re)build the library before testing. In fact, any flags
+that you pass to 'make', like 'DEBUG' or 'COVERAGE', will also be passed to any
+other steps in the process.
+
+If you are a developer trying to create new tests or edit current ones, the
+above command alone will always rebuild all tests, which might be annoying.
+To only rebuild modified tests, do:
+
+    make test PRESERVE_TESTS=1
+
 Some tests have certain timing requirements to be met. If you see some failed
 assertions, try rerunning the tests under lower system load.
-
-If the library was not built before tests, the command will do it. Any flags
-specified, like 'DEBUG' or 'COVERAGE', will then be passed to both 'build' and
-'test'.
 
 Next, the library is ready to be installed (to '/usr/local' by default) with:
 
@@ -65,7 +75,7 @@ You can change the output dir for headers and library files with 'DIR_LIB' and
 'DIR_INCLUDE' variables. See the beginning of 'Makefile' file in the top dir for
 more info and variables to change.
 
-If the library was not build beforehand, the command will do it. It will not
+If the library was not built beforehand, the command will do it. It will not
 test the library. Any flags will be passed down to both 'build' and 'install'.
 
 You may remove your installation with:
@@ -89,7 +99,9 @@ linear (i.e. you don't mix building with cleaning up files):
 
     make clean uninstall install test DEBUG=1 VERBOSE=1
 
-The above command will first remove any files created by previous make commands,
+The above will first remove any files created by previous make commands,
 then remove the library and its headers from system directories, followed by
 building, installing and testing the library with debug info, all of that with
 verbose output.
+
+It is impossible to use the same commands more than once in one call to 'make'.
