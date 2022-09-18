@@ -77,8 +77,7 @@ int main() {
   test_end();
   
   test_begin("async stop async");
-  async_loop_push_free(&loop);
-  async_loop_commit(&loop);
+  async_loop_shutdown(&loop, async_free);
   test_end();
   
   test_begin("async stop async free");
@@ -86,11 +85,8 @@ int main() {
   assert(loop2);
   assert(!async_loop(loop2));
   assert(!async_loop_start(loop2));
-  async_loop_push_joinable(loop2);
-  async_loop_push_free(loop2);
-  async_loop_push_ptr_free(loop2);
   pthread_t save = loop2->thread;
-  async_loop_commit(loop2);
+  async_loop_shutdown(loop2, async_joinable | async_free | async_ptr_free);
   pthread_join(save, NULL);
   test_end();
   
@@ -136,7 +132,7 @@ int main() {
   
   test_begin("async manual");
   async_loop_stop(&l);
-  async_loop_commit(&l);
+  async_loop_shutdown(&loop, 0);
   (void) async_loop_thread(&l);
   test_end();
   

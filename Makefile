@@ -96,8 +96,8 @@ ifneq ($(PRESERVE_TESTS),1)
 endif
 	$(Q)$(MAKE) -C $(DIR_TEST)
 ifeq ($(COVERAGE),1)
-	$(Q)lcov $(COVFLAGS) -c -d -o $(DIR_COV)/coverage.info \
-			$(shell find $(DIR_OUT) -name *.gcda -o -name *.gcno)
+	$(Q)lcov $(COVFLAGS) -c -o $(DIR_COV)/coverage.info \
+			-d $(DIR_OUT)/src
 	$(Q)genhtml $(DIR_COV)/coverage.info \
 			$(COVFLAGS) -o $(DIR_COV)
 	@printf $(FMT_OD)Coverage in file://$(DIR_COV)/index.html$(FMT_DO)

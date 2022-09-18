@@ -10,19 +10,16 @@ extern "C" {
 
 #include <shnet/threads.h>
 
-typedef uint16_t async_flag_raw_t;
-#ifdef __cplusplus
-typedef async_flag_raw_t async_flag_t;
-#else
-typedef _Atomic async_flag_raw_t async_flag_t;
-#endif // __cplusplus
+enum async_shutdown {
+  async_joinable = 1,
+  async_free = 2,
+  async_ptr_free = 4
+};
 
 struct async_event {
   int fd;
   uint8_t socket:1;
   uint8_t server:1;
-  uint8_t wakeup:1;
-  async_flag_t flags;
 };
 
 struct async_loop {
@@ -42,17 +39,11 @@ extern int   async_loop(struct async_loop* const);
 
 extern int   async_loop_start(struct async_loop* const);
 
-extern void  async_loop_stop(struct async_loop* const);
+extern void  async_loop_stop(const struct async_loop* const);
 
 extern void  async_loop_free(struct async_loop* const);
 
-extern void  async_loop_push_joinable(struct async_loop* const);
-
-extern void  async_loop_push_free(struct async_loop* const);
-
-extern void  async_loop_push_ptr_free(struct async_loop* const);
-
-extern void  async_loop_commit(struct async_loop* const);
+extern void  async_loop_shutdown(const struct async_loop* const, const enum async_shutdown);
 
 extern int   async_loop_add(const struct async_loop* const, struct async_event* const, const uint32_t);
 

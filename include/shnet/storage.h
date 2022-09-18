@@ -44,6 +44,8 @@ extern void data_storage_finish(const struct data_storage* const);
 
 extern int  data_storage_is_empty(const struct data_storage* const);
 
+extern uint64_t data_storage_size(const struct data_storage* const);
+
 #ifdef __cplusplus
 }
 #endif

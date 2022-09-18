@@ -430,7 +430,7 @@ tcp_socket_nodelay_on(&socket);
 tcp_socket_nodelay_off(&socket);
 ```
 
-Generally, turning off delay (`nodelay_on`) has negative impact on a conncetion,
+Generally, turning off delay (`nodelay_on`) has negative impact on a connection,
 but if its only done for a few messages, it should be fine. For instance, you
 may use it to speed up a TLS handshake by disabling delay for the first few
 handshake messages and then reenabling it after the connection is established.

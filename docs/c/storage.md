@@ -213,3 +213,10 @@ if(storage.used + 4 >= storage.size) {
 ```
 
 The above code intelligently makes room for 4 more data frames.
+
+```c
+uint64_t total = data_storage_size(&storage);
+```
+
+The above function returns the sum of all frames' available bytes. That is,
+if it returns `0`, it is equivalent to saying that the storage is empty.

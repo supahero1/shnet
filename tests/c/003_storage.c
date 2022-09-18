@@ -46,6 +46,7 @@ int main() {
   test_error(shnet_realloc);
   struct data_storage tem = storage;
   assert(data_storage_resize(&storage, 2) == -1);
+  assert(data_storage_size(&tem) == 0);
   assert(memcmp(&storage, &tem, sizeof(storage)) == 0);
   assert(errno == TEST_MAGIC);
   errno = 0;
@@ -59,6 +60,7 @@ int main() {
   assert(storage.size == 0);
   assert(storage.frames == NULL);
   assert(!data_storage_resize(&storage, 1));
+  assert(data_storage_size(&storage) == 0);
   test_end();
   
   test_begin("storage add ptr err");
@@ -142,14 +144,18 @@ int main() {
     .data = ptr,
     .len = 2
   })));
+  assert(data_storage_size(&storage) == 2);
   data_storage_drain(&storage, 1);
 	assert(!data_storage_is_empty(&storage));
+  assert(data_storage_size(&storage) == 1);
   data_storage_finish(&storage);
+  assert(data_storage_size(&storage) == 1);
   assert(storage.frames->offset == 0);
   assert(storage.frames->len == 1);
   assert(storage.frames->data[0] == TEST_MAGIC);
   data_storage_drain(&storage, 1);
   assert(data_storage_is_empty(&storage));
+  assert(data_storage_size(&storage) == 0);
   /* No frames, but it should be aware of that. */
   data_storage_finish(&storage);
   assert(data_storage_is_empty(&storage));
@@ -166,8 +172,10 @@ int main() {
     .len = 1
   })));
   assert(storage.frames->data[0] == TEST_MAGIC);
+  assert(data_storage_size(&storage) == 1);
   data_storage_drain(&storage, 1);
   assert(data_storage_is_empty(&storage));
+  assert(data_storage_size(&storage) == 0);
   test_end();
   
   test_begin("storage freeable readonly");
@@ -347,9 +355,49 @@ int main() {
   assert(storage.frames->file);
   data_storage_drain(&storage, 2);
   assert(data_storage_is_empty(&storage));
-  assert(!close(file));
   test_end();
   
+  test_begin("storage multiple frames");
+  assert(!data_storage_add(&storage, &((struct data_frame) {
+    .fd = file,
+    .len = 3,
+    .offset = 1,
+    .file = 1,
+    .read_only = 1
+  })));
+  ptr = mmap(NULL, 1, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  assert(ptr != MAP_FAILED);
+  assert(!data_storage_add(&storage, &((struct data_frame) {
+    .data = ptr,
+    .len = 1,
+    .mmaped = 1
+  })));
+  test_expect_segfault(ptr);
+  ptr = malloc(1);
+  assert(ptr);
+  assert(!data_storage_add(&storage, &((struct data_frame) {
+    .data = ptr,
+    .len = 1
+  })));
+  assert(data_storage_size(&storage) == 4);
+  data_storage_drain(&storage, 1);
+  assert(!close(file));
+  assert(data_storage_size(&storage) == 3);
+  assert(storage.used == 3);
+  data_storage_drain(&storage, 1);
+  assert(data_storage_size(&storage) == 2);
+  assert(storage.used == 2);
+  assert(storage.size == 3);
+  data_storage_drain(&storage, 1);
+  assert(data_storage_size(&storage) == 1);
+  assert(storage.used == 1);
+  assert(storage.size == 3);
+  data_storage_drain(&storage, 1);
+  assert(data_storage_size(&storage) == 0);
+  assert(storage.used == 0);
+  assert(storage.size == 3);
+  test_end();
+
   test_begin("storage free");
   data_storage_free(&storage);
   assert(data_storage_is_empty(&storage));

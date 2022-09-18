@@ -4,7 +4,7 @@ each of which can be used by the application independently.
 Quick start:
 
 ```
-git clone https://github.com/supahero1/shnet --branch v1.3.3
+git clone https://github.com/supahero1/shnet --branch v1.3.4
 cd shnet
 sudo make install test
 ```

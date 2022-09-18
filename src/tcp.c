@@ -65,9 +65,7 @@ void tcp_socket_free_(struct tcp_socket* const socket) {
   (void) pthread_mutex_destroy(&socket->lock);
   data_storage_free(&socket->queue);
   if(socket->alloc_loop) {
-    async_loop_push_free(socket->loop);
-    async_loop_push_ptr_free(socket->loop);
-    async_loop_commit(socket->loop);
+    async_loop_shutdown(socket->loop, async_free | async_ptr_free);
     socket->loop = NULL;
     socket->alloc_loop = 0;
   }
@@ -291,9 +289,7 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
   
   err_loop:
   if(socket->alloc_loop) {
-    async_loop_push_free(socket->loop);
-    async_loop_push_ptr_free(socket->loop);
-    async_loop_commit(socket->loop);
+    async_loop_shutdown(socket->loop, async_free | async_ptr_free);
     socket->loop = NULL;
     socket->alloc_loop = 0;
   }
@@ -511,9 +507,7 @@ void tcp_server_free(struct tcp_server* const server) {
   (void) close(server->core.fd);
   server->core.fd = -1;
   if(server->alloc_loop) {
-    async_loop_push_free(server->loop);
-    async_loop_push_ptr_free(server->loop);
-    async_loop_commit(server->loop);
+    async_loop_shutdown(server->loop, async_free | async_ptr_free);
     server->loop = NULL;
     server->alloc_loop = 0;
   }
@@ -594,9 +588,7 @@ int tcp_server(struct tcp_server* const server, const struct tcp_server_options*
   server->core.fd = -1;
   err_loop:
   if(server->alloc_loop) {
-    async_loop_push_free(server->loop);
-    async_loop_push_ptr_free(server->loop);
-    async_loop_commit(server->loop);
+    async_loop_shutdown(server->loop, async_free | async_ptr_free);
     server->loop = NULL;
     server->alloc_loop = 0;
   }

@@ -124,7 +124,7 @@ int pthreads_start_explicit(pthreads_t* const threads, const pthread_attr_t* con
   }
   data->arg = arg;
   data->func = func;
-  atomic_store_explicit(&data->count, amount, memory_order_relaxed);
+  atomic_init(&data->count, amount);
   for(uint32_t i = 0; i < amount; ++i, ++threads->used) {
     if(pthread_start_explicit(threads->ids + threads->used, attr, pthreads_thread, data)) {
       pthreads_cancel_sync(threads, i);

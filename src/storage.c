@@ -112,31 +112,43 @@ int data_storage_add(struct data_storage* const storage, const struct data_frame
   return -1;
 }
 
+#define frame storage->frames
+
 void data_storage_drain(struct data_storage* const storage, const uint64_t amount) {
   if(storage->used == 0) {
     assert(amount == 0);
     return;
   }
-  storage->frames->offset += amount;
-  if(storage->frames->offset == storage->frames->len) {
-    data_storage_free_frame(storage->frames);
+  frame->offset += amount;
+  if(frame->offset == frame->len) {
+    data_storage_free_frame(frame);
     --storage->used;
-    (void) memmove(storage->frames, storage->frames + 1, sizeof(*storage->frames) * storage->used);
+    (void) memmove(frame, frame + 1, sizeof(*frame) * storage->used);
   }
 }
 
 void data_storage_finish(const struct data_storage* const storage) {
-  if(storage->used != 0 && !storage->frames->read_only && storage->frames->offset != 0) {
-    storage->frames->len -= storage->frames->offset;
-    (void) memmove(storage->frames->data, storage->frames->data + storage->frames->offset, storage->frames->len);
-    storage->frames->offset = 0;
-    char* const ptr = shnet_realloc(storage->frames->data, storage->frames->len);
+  if(storage->used != 0 && !frame->read_only && frame->offset != 0) {
+    frame->len -= frame->offset;
+    (void) memmove(frame->data, frame->data + frame->offset, frame->len);
+    frame->offset = 0;
+    char* const ptr = shnet_realloc(frame->data, frame->len);
     if(ptr != NULL) {
-      storage->frames->data = ptr;
+      frame->data = ptr;
     }
   }
 }
 
+#undef frame
+
 int data_storage_is_empty(const struct data_storage* const storage) {
   return storage->used == 0;
+}
+
+uint64_t data_storage_size(const struct data_storage* const storage) {
+  uint64_t sum = 0;
+  for(uint32_t i = 0; i < storage->used; ++i) {
+    sum += storage->frames[i].len - storage->frames[i].offset;
+  }
+  return sum;
 }
