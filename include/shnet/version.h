@@ -7,4 +7,4 @@
 #define SHNET_CLI_VERSION 1
 #define SHNET_CLI_PATCH 0
 
-#endif // _shnet_version_h_
+#endif /* _shnet_version_h_ */

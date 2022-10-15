@@ -19,7 +19,7 @@
 
 #define safety_timeout 30000
 
-#endif // SHNET_TEST_VALGRIND
+#endif
 
 struct test_info {
   int del_num;

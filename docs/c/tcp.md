@@ -68,7 +68,10 @@ You have 2 choices:
   the resulting `struct addrinfo` address elsewhere as well:
   
   ```c
-  const struct addrinfo hints = net_get_addr_struct(net_family_ipv4, net_sock_stream, net_proto_tcp, net_flag_numeric_service);
+  const struct addrinfo hints = net_get_addr_struct(net_family_ipv4,
+                                                    net_sock_stream,
+                                                    net_proto_tcp,
+                                                    net_flag_numeric_service);
   struct addrinfo* info = net_get_address("github.com", "443", &hints);
   options.info = info;
   ```
@@ -107,7 +110,7 @@ The above function initialises and connects the socket. It is an
 async function - it does not block waiting for the socket to connect.
 
 The function will fail, setting `errno` to `EINVAL`, if `info` and
-`hostname` and `port` were all `NULL` or if `&options` is `NULL`.
+`hostname` and `port` were all `NULL` or if `&options` was `NULL`.
 
 The function also creates a new event loop if it was not specified.
 You can create your own event loop for the purposes of TCP like so:
@@ -126,6 +129,10 @@ Note the `tcp_async_loop()` instead of the usual `async_loop()`.
 A socket, even if it does not have `on_event` set, must have an
 event loop, because internal code still responds to the socket's
 events. That's why it's automatically created even if not specified.
+
+If you plan on using many sockets and/or servers in your application, it
+is in your best interest to reuse just a few event loops for all of them,
+instead of creating one for each (which will waste lots of resources).
 
 An eventless socket's only restriction is that it may not read data,
 since it has no way of knowing when any will arrive. However, it may
@@ -159,6 +166,15 @@ the return value is `0`, indicating no errors, `errno` must be `0` too.
 
 The function is asynchronous, like most functions in
 this module. It does not wait for the data to be sent.
+
+You can also retrieve the number of bytes that are awaiting to be sent:
+
+```c
+uint64_t bytes = tcp_socket_send_buf_len(&socket);
+```
+
+The return value does not include the number of
+bytes that were sent, but not yet ACKed by the peer.
 
 Next up, you can close the socket:
 
@@ -204,6 +220,12 @@ Of course, in a real app situation you can't really count on either of those.
 You **MUST** assume the worst case scenario (that the socket will be freed now)
 and not access the socket after the function call completes.
 
+You can choose not to free the socket right after the connection is closed,
+for instance because there still may be data in the read buffer, which you
+can use even after the socket is disconnected. The socket will not be freed
+anywhere internally until you call the above function, so you can do whatever
+you want to the socket before that happens.
+
 Combining all of the above together, you can do something like the following:
 
 ```c
@@ -222,6 +244,9 @@ assert(!tcp_send(&socket, &((struct data_frame) {
 tcp_socket_close(&socket);
 tcp_socket_free(&socket);
 ```
+
+Note that the order of the functions matters. For instance, if you
+close the connection before sending, you won't be able to send anymore.
 
 That's pretty much the minimal example featuring this module's
 TCP client. However, that's without any event handlers.
@@ -325,7 +350,7 @@ uint64_t buffer_len = 0;
 
 void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
   switch(event) {
-    case tcp_open: {
+    case tcp_data: {
       while(1) {
         const uint64_t to_read = 4096 - buffer_len;
         const uint64_t read = tcp_read(sock, buffer, to_read);
@@ -341,9 +366,9 @@ void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
 }
 ```
 
-In the above example, if the socket ever receives more than `4095` bytes
-of data, it will fall into an infinite loop. This is only a small example.
-You can freely add more protection, like:
+In the above example, if the socket ever receives more than `4095` bytes of
+data, it will fall into an infinite loop, but if you don't expect more than
+that, you can just close the socket with the reason of an invalid client:
 
 ```c
 if(to_read <= 1) {
@@ -351,6 +376,20 @@ if(to_read <= 1) {
   break;
 }
 ```
+
+Otherwise, you might need to do other tricks
+to make sure the socket is properly drained.
+
+You can get the number of bytes waiting to be read:
+
+```c
+uint64_t bytes = tcp_socket_recv_buf_len(&socket);
+```
+
+..., and then use that number as an argument to `tcp_read()` to drain
+everything in one call. However, note that the number might increase in
+the meantime (between the call to the above function and `tcp_read()`),
+so you must not assume you will always need only 1 read call.
 
 Next, `tcp_free`. This event is the last event ever called on a socket. It only
 exists so that you can `free()` the socket if it was allocated, or do anything
@@ -371,7 +410,7 @@ void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
   }
 }
 
-struct tcp_socket* socket = shnet_calloc(sizeof(struct tcp_socket));
+struct tcp_socket* socket = shnet_calloc(1, sizeof(struct tcp_socket));
 socket->on_event = sock_evt;
 /* Initialise */
 ```
@@ -404,6 +443,8 @@ default, that behavior is countered by this module by automatically cleaning up
 the underlying queue's unused data chunks to decrease memory usage. If you know
 what you are doing, you can set `socket.dont_autoclean` to `1` to disable this
 behavior, possibly bringing some performance gains depending on the usage case.
+The send data storage is located at `socket.queue`. You will likely need to
+periodically clean it up by yourself. See `docs/c/storage.md` for more info.
 
 There are also a few miscellaneous functions that clients can utilise.
 
@@ -454,8 +495,10 @@ own settings using:
 const int idle_time_until_first_probe = 2; /* 2 seconds */
 const int interval_between_probes = 1; /* send probes every 1 second */
 const int retries = 5; /* close the connection after 5 probes */
-tcp_socket_keepalive_on_explicit(&socket, idle_time_until_first_probe,
-  interval_between_probes, retries);
+tcp_socket_keepalive_on_explicit(&socket,
+                                 idle_time_until_first_probe,
+                                 interval_between_probes,
+                                 retries);
 ```
 
 If you wish to reuse a socket for many connections,
@@ -525,9 +568,6 @@ evt(struct tcp_server* serv, struct tcp_socket* sock, enum tcp_event event) {
 
 server.on_event = evt;
 ```
-
-The above handler is actually already perfectly suited for
-accepting new connections, but it can't really free itself.
 
 After a server is initialised, it can be then closed using
 `tcp_server_close(&server)`. This function is, yes, you guessed
@@ -604,8 +644,18 @@ otherwise, you won't have any way of freeing it if something goes south. If
 no internal error happens, `tcp_open` is guaranteed to be dispatched on the
 newly created socket.
 
+You are **NOT** allowed to call any library functions on the `sock` socket
+(meaning any of `tcp_send()`, `tcp_read()`, `tcp_socket_close()`, etc),
+however you are allowed to get general information about the socket using
+the `net` module's functions (eg. `net_socket_get_family(sock->core.fd)`),
+since they are not affecting the memory the socket is occupying in any way.
+
 After its creation, a socket is not bound to its server in any way. The server
 may be closed and none of its child sockets will be affected and vice versa.
 
 If, during a socket's initialisation in `tcp_open`, you don't set `sock->loop`,
 it will automatically be set to `serv->loop` by the underlying code.
+
+The newly created sockets **MUST** have an event callback `on_event` set,
+because otherwise you won't be able to call `tcp_socket_free()` on it, which
+will lead to memory leaks.

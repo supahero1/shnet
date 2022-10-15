@@ -28,4 +28,4 @@ extern void print_time(const uint64_t);
 
 extern void time_benchmark(void);
 
-#endif // _shnet_cli_consts_h_
+#endif /* _shnet_cli_consts_h_ */

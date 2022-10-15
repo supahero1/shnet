@@ -38,4 +38,4 @@ extern void* shnet_realloc(void* const, const size_t);
 }
 #endif
 
-#endif // _shnet_error_h_
+#endif /* _shnet_error_h_ */

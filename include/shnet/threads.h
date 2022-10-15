@@ -111,4 +111,4 @@ extern void  thread_pool_free(struct thread_pool* const);
 }
 #endif
 
-#endif // _shnet_threads_h_
+#endif /* _shnet_threads_h_ */

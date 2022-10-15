@@ -22,7 +22,7 @@
 
 #define safety_timeout 2
 
-#endif // SHNET_TEST_VALGRIND
+#endif
 
 struct time_timers timers = {0};
 

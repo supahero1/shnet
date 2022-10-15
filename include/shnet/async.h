@@ -29,7 +29,8 @@ struct async_loop {
   pthread_t thread;
   struct async_event evt;
   
-  int events_len;
+  uint32_t events_len:31;
+  uint32_t alloc_events:1;
   int fd;
 };
 
@@ -55,4 +56,4 @@ extern int   async_loop_remove(const struct async_loop* const, struct async_even
 }
 #endif
 
-#endif // _shnet_async_h_
+#endif /* _shnet_async_h_ */

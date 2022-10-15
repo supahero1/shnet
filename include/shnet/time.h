@@ -154,4 +154,4 @@ extern void time_close_interval(struct time_timers* const, struct time_timer* co
 }
 #endif
 
-#endif // _shnet_time_h_
+#endif /* _shnet_time_h_ */

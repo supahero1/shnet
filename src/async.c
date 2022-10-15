@@ -16,13 +16,14 @@ void* async_loop_thread(void* async_loop_thread_data) {
   while(1) {
     const int count = epoll_wait(loop->fd, loop->events, loop->events_len, -1);
     for(int i = 0; i < count; ++i) {
-      if(event->fd == loop->evt.fd && mask == EPOLLIN) {
+      if(event->fd == loop->evt.fd) {
+        assert(mask == EPOLLIN);
         eventfd_t flags;
         assert(!eventfd_read(loop->evt.fd, &flags));
         flags >>= 1;
         if(!(flags & async_joinable)) {
           (void) pthread_detach(loop->thread);
-        }
+        } 
         if(flags & async_free) {
           async_loop_free(loop);
         }
@@ -46,9 +47,12 @@ int async_loop(struct async_loop* const loop) {
   if(loop->events_len == 0) {
     loop->events_len = 64;
   }
-  loop->events = shnet_malloc(sizeof(*loop->events) * loop->events_len);
   if(loop->events == NULL) {
-    return -1;
+    loop->events = shnet_malloc(sizeof(*loop->events) * loop->events_len);
+    if(loop->events == NULL) {
+      return -1;
+    }
+    loop->alloc_events = 1;
   }
   safe_execute(loop->fd = epoll_create1(0), loop->fd == -1, errno);
   if(loop->fd == -1) {
@@ -68,7 +72,11 @@ int async_loop(struct async_loop* const loop) {
   err_fd:
   (void) close(loop->fd);
   err_e:
-  free(loop->events);
+  if(loop->alloc_events) {
+    free(loop->events);
+    loop->events = NULL;
+    loop->alloc_events = 0;
+  }
   return -1;
 }
 
@@ -84,8 +92,11 @@ void async_loop_stop(const struct async_loop* const loop) {
 void async_loop_free(struct async_loop* const loop) {
   (void) close(loop->fd);
   (void) close(loop->evt.fd);
-  free(loop->events);
-  loop->events = NULL;
+  if(loop->alloc_events) {
+    free(loop->events);
+    loop->events = NULL;
+    loop->alloc_events = 0;
+  }
 }
 
 void async_loop_shutdown(const struct async_loop* const loop, const enum async_shutdown flags) {

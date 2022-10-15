@@ -69,7 +69,7 @@ int main() {
   assert(!async_loop_start(&loop));
   test_end();
   
-  test_begin("async stop");
+  test_begin("async stop sync");
   async_loop_stop(&loop);
   async_loop_free(&loop);
   assert(!async_loop(&loop));
@@ -129,10 +129,10 @@ int main() {
   assert(!async_loop_mod(&l, events + 0, EPOLLIN));
   test_wait();
   test_end();
-  
+
   test_begin("async manual");
   async_loop_stop(&l);
-  async_loop_shutdown(&loop, 0);
+  async_loop_shutdown(&l, 0);
   (void) async_loop_thread(&l);
   test_end();
   
@@ -142,6 +142,8 @@ int main() {
     close(events[i].fd);
   }
   async_loop_free(&l);
+  assert(l.on_event == onevt);
+  assert(l.events_len == 2);
   test_end();
   
   return 0;

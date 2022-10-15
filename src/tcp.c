@@ -55,7 +55,7 @@ void tcp_socket_keepalive_off(const struct tcp_socket* const socket) {
 }
 
 void tcp_socket_free_(struct tcp_socket* const socket) {
-  if(socket->on_event != NULL) {
+  if(socket->on_event != NULL && socket->opened) { // TODO TEST CASE FOR THIS
     socket->on_event(socket, tcp_deinit);
   }
   if(socket->core.fd != -1) {
@@ -250,9 +250,10 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
       goto err_loop;
     }
   } else {
+    struct addrinfo* info;
     const size_t hostname_len = opt->hostname == NULL ? 0 : (strlen(opt->hostname) + 1);
     const size_t port_len = opt->port == NULL ? 0 : (strlen(opt->port) + 1);
-    struct net_async_address* const async = shnet_malloc(sizeof(*async) + hostname_len + port_len + sizeof(struct addrinfo));
+    struct net_async_address* const async = shnet_malloc(sizeof(*async) + hostname_len + port_len + sizeof(*info));
     if(async == NULL) {
       goto err_loop;
     }
@@ -274,7 +275,7 @@ int tcp_socket(struct tcp_socket* const socket, const struct tcp_socket_options*
     }
     async->data = socket;
     async->callback = tcp_socket_connect_async;
-    struct addrinfo* const info = (struct addrinfo*)((char*)(async + 1) + hostname_len + port_len);
+    info = (struct addrinfo*)((char*)(async + 1) + hostname_len + port_len);
     info->ai_family = opt->family;
     info->ai_socktype = net_sock_stream;
     info->ai_protocol = net_proto_tcp;
@@ -426,6 +427,23 @@ uint64_t tcp_read(struct tcp_socket* const socket, void* data, uint64_t size) {
     data = (char*) data + bytes;
   }
   return all - size;
+}
+
+uint64_t tcp_socket_send_buf_len(const struct tcp_socket* const socket) {
+  uint64_t sum = data_storage_size(&socket->queue);
+  struct tcp_info info;
+  if(!getsockopt(socket->core.fd, IPPROTO_TCP, TCP_INFO, &info, &(socklen_t){ sizeof(info) })) {
+    sum += info.tcpi_notsent_bytes;
+  }
+  return sum;
+}
+
+uint64_t tcp_socket_recv_buf_len(const struct tcp_socket* const socket) {
+  struct tcp_info info;
+  if(getsockopt(socket->core.fd, IPPROTO_TCP, TCP_INFO, &info, &(socklen_t){ sizeof(info) })) {
+    return 0;
+  }
+  return info.tcpi_bytes_received;
 }
 
 #define socket ((struct tcp_socket*) event)
@@ -601,7 +619,7 @@ int tcp_server(struct tcp_server* const server, const struct tcp_server_options*
 }
 
 #define _server ((struct tcp_server*) event)
-#include <stdio.h>
+
 static void tcp_server_onevent(uint32_t events, struct async_event* event) {
   if(events & EPOLLHUP) {
     (void) _server->on_event(_server, NULL, tcp_close);
@@ -613,18 +631,6 @@ static void tcp_server_onevent(uint32_t events, struct async_event* event) {
     int sfd;
     safe_execute(sfd = accept(_server->core.fd, (struct sockaddr*)&addr, (socklen_t[]){ sizeof(addr) }), sfd == -1, errno);
     if(sfd == -1) {
-      switch(errno) {
-        case EPIPE: puts("EPIPE"); break;
-        case ECONNRESET: puts("ECONNRESET"); break;
-        case ECONNABORTED: puts("ECONNABORTED"); break;
-        default: break;
-      }
-      switch(errno) {
-        case EPIPE:
-        case ECONNRESET:
-        case ECONNABORTED: assert(0);
-        default: break;
-      }
       switch(errno) {
         case EINTR:
         case EPIPE:

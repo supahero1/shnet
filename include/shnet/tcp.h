@@ -87,6 +87,10 @@ extern int  tcp_send(struct tcp_socket* const, const struct data_frame* const);
 
 extern uint64_t tcp_read(struct tcp_socket* const, void*, uint64_t);
 
+extern uint64_t tcp_socket_send_buf_len(const struct tcp_socket* const);
+
+extern uint64_t tcp_socket_recv_buf_len(const struct tcp_socket* const);
+
 
 struct tcp_server {
   struct async_event core;
@@ -125,4 +129,4 @@ extern int  tcp_async_loop(struct async_loop* const);
 }
 #endif
 
-#endif // _shnet_tcp_h_
+#endif /* _shnet_tcp_h_ */

@@ -1,11 +1,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <endian.h>
-#include <pthread.h>
-#include <arpa/inet.h>
-#include <linux/in.h>
 #include <linux/ip.h>
+#include <arpa/inet.h>
 
 #include <shnet/net.h>
 #include <shnet/error.h>

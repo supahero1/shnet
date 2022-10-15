@@ -9,7 +9,7 @@
 
 #define safety_timeout ((uint32_t)3000)
 
-#endif // SHNET_TEST_VALGRIND
+#endif
 
 void* assert_0(void* data) {
   assert(0);

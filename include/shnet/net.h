@@ -109,4 +109,4 @@ extern void net_socket_default_options(const int);
 }
 #endif
 
-#endif // _shnet_net_h_
+#endif /* _shnet_net_h_ */

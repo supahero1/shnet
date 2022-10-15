@@ -50,4 +50,4 @@ extern uint64_t data_storage_size(const struct data_storage* const);
 }
 #endif
 
-#endif // _shnet_storage_h_
+#endif /* _shnet_storage_h_ */

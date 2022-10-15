@@ -18,12 +18,12 @@ of context switches in an implementation using threads (and more memory).
 Initialisation:
 
 ```c
-void on_event(struct async_loop* loop, uint32_t events, struct async_event* event) {
+void evt(struct async_loop* loop, uint32_t events, struct async_event* event) {
   /* ... */
 }
 
 struct async_loop loop = {0};
-loop.on_event = on_event;
+loop.on_event = evt;
 loop.events_len = 32;
 
 int err = async_loop(&loop);
@@ -41,6 +41,14 @@ of `64` is set instead. You should use higher values (in the thousands)
 if you plan on using many file descriptors (tens, hundreds of thousands).
 The default is only good for lots of very inactive sockets, or hundreds
 of active ones.
+
+If you don't provide `loop.events`, the underlying code will allocate
+`sizeof(*loop.events) * loop.events_len` bytes of memory for internal usage.
+If you have some spare memory that you want to use here, you can set
+`loop.events` to the pointer and `loop.events_len` to the number of slots
+it has. Note that in this setup, after `async_loop_free(&loop)` is called,
+the memory pointer you set will not be freed. Only memory allocated internally
+by the library will be freed, if any.
 
 An async loop needs a dedicated thread for it to run:
 

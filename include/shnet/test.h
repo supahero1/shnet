@@ -23,7 +23,7 @@ int error_handler(int e, int c) {
   return -1;
 }
 
-#endif // TEST_NO_ERR_HANDLER
+#endif
 
 
 extern void test_seed_random(void);
@@ -100,4 +100,4 @@ do { \
   test_error_set(name, err_save); \
 } while(0)
 
-#endif // _shnet_test_h_
+#endif /* _shnet_test_h_ */
