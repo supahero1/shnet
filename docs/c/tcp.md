@@ -458,6 +458,28 @@ tcp_socket_keepalive_on_explicit(&socket, idle_time_until_first_probe,
   interval_between_probes, retries);
 ```
 
+If you wish to reuse a socket for many connections,
+you may only do so after freeing the socket:
+
+```c
+void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
+  switch(event) {
+    case tcp_close: {
+      tcp_socket_free(sock);
+      break;
+    }
+    case tcp_free: {
+      assert(!tcp_socket(sock, &((struct tcp_socket_options) {
+        .hostname = "127.0.0.1",
+        .port = "13579"
+      })));
+      break;
+    }
+    default: break;
+  }
+}
+```
+
 ## Servers
 
 A TCP server is basically a factory of TCP clients. The clients' lifetime

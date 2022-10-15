@@ -449,6 +449,7 @@ static void tcp_socket_onevent(uint32_t events, struct async_event* event) {
           socket->close_guard = 1;
           tcp_unlock(socket);
           (void) shutdown(socket->core.fd, SHUT_RDWR);
+          events |= EPOLLHUP;
         } else if(socket->closing && data_storage_is_empty(&socket->queue)) {
           socket->close_guard = 1;
           tcp_unlock(socket);
@@ -600,7 +601,7 @@ int tcp_server(struct tcp_server* const server, const struct tcp_server_options*
 }
 
 #define _server ((struct tcp_server*) event)
-
+#include <stdio.h>
 static void tcp_server_onevent(uint32_t events, struct async_event* event) {
   if(events & EPOLLHUP) {
     (void) _server->on_event(_server, NULL, tcp_close);
@@ -613,8 +614,21 @@ static void tcp_server_onevent(uint32_t events, struct async_event* event) {
     safe_execute(sfd = accept(_server->core.fd, (struct sockaddr*)&addr, (socklen_t[]){ sizeof(addr) }), sfd == -1, errno);
     if(sfd == -1) {
       switch(errno) {
+        case EPIPE: puts("EPIPE"); break;
+        case ECONNRESET: puts("ECONNRESET"); break;
+        case ECONNABORTED: puts("ECONNABORTED"); break;
+        default: break;
+      }
+      switch(errno) {
+        case EPIPE:
+        case ECONNRESET:
+        case ECONNABORTED: assert(0);
+        default: break;
+      }
+      switch(errno) {
         case EINTR:
         case EPIPE:
+        case EPERM:
         case EPROTO:
         case ECONNRESET:
         case ECONNABORTED: continue;
