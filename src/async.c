@@ -23,7 +23,7 @@ void* async_loop_thread(void* async_loop_thread_data) {
         flags >>= 1;
         if(!(flags & async_joinable)) {
           (void) pthread_detach(loop->thread);
-        } 
+        }
         if(flags & async_free) {
           async_loop_free(loop);
         }

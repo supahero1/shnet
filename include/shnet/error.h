@@ -8,11 +8,11 @@ extern "C" {
 extern int error_handler(int, int);
 
 /*
-  void* ptr = malloc(size);
-  =============== S A F E   V E R S I O N ===============
-  void* ptr;
-  safe_execute(ptr = malloc(size), ptr == NULL, ENOMEM);
-*/
+ * void* ptr = malloc(size);
+ * =============== S A F E   V E R S I O N ===============
+ * void* ptr;
+ * safe_execute(ptr = malloc(size), ptr == NULL, ENOMEM);
+ */
 #define safe_execute(expression, error_condition, error) \
 do { \
   int error_counter = 0; \

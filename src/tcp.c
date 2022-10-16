@@ -1,13 +1,10 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <assert.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
 #include <linux/tcp.h>
-#include <stdatomic.h>
-#include <sys/ioctl.h>
 #include <sys/sendfile.h>
 
 #include <shnet/tcp.h>
@@ -653,7 +650,7 @@ static void tcp_server_onevent(uint32_t events, struct async_event* event) {
     if(socket == &sock) {
       void* const ptr = shnet_malloc(sizeof(*socket));
       if(ptr == NULL) {
-        goto err_open;
+        goto err_sock;
       }
       socket = ptr;
       sock.free = 1;

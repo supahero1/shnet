@@ -25,7 +25,7 @@ CC     := gcc
 CXX    := g++
 CFLAGS := -Wall -Wextra -flto
 ifeq ($(DEBUG),1)
-CFLAGS += -Og -g3
+CFLAGS += -D_FORTIFY_SOURCE=3 -Og -g3
 else
 CFLAGS += -O3
 endif
