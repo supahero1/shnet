@@ -1,3 +1,4 @@
+#include <preempt.h>
 #include <shnet/test.h>
 
 #include <stdlib.h>
@@ -22,51 +23,6 @@ test_register(int, listen, (int a, int b), (a, b))
 test_register(int, accept, (int a, struct sockaddr* restrict b, socklen_t* restrict c), (a, b, c))
 test_register(ssize_t, recv, (int a, void* b, size_t c, int d), (a, b, c, d))
 test_register(ssize_t, send, (int a, const void* b, size_t c, int d), (a, b, c, d))
-
-int preemption_off = 0;
-
-struct preemption_data {
-  pthread_t* a;
-  const pthread_attr_t* b;
-  void* (*c)(void*);
-  void* d;
-};
-
-struct preemption_data preemption_queue[10];
-int preemption_queue_len = 0;
-
-int (*_pthread_create)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*) = NULL;
-int pthread_create(pthread_t* a, const pthread_attr_t* b, void* (*c)(void*), void* d) {
-  if(_pthread_create == NULL) {
-    _pthread_create = (int (*)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*)) dlsym(RTLD_NEXT, "pthread_create");
-    if(_pthread_create == NULL) {
-      puts(dlerror());
-      assert(!"(not supposed to happen)");
-    }
-  }
-  if(preemption_off) {
-    preemption_queue[preemption_queue_len++] = (struct preemption_data) {
-      .a = a,
-      .b = b,
-      .c = c,
-      .d = d
-    };
-    return 0;
-  }
-  return _pthread_create(a, b, c, d);
-}
-
-void test_preempt_off(void) {
-  preemption_off = 1;
-}
-
-void test_preempt_on(void) {
-  preemption_off = 0;
-  for(int i = 0; i < preemption_queue_len; ++i) {
-    assert(!_pthread_create(preemption_queue[i].a, preemption_queue[i].b, preemption_queue[i].c, preemption_queue[i].d));
-  }
-  preemption_queue_len = 0;
-}
 
 uint8_t old_closing;
 uint8_t old_closing_fast;

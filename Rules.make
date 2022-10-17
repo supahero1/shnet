@@ -5,22 +5,46 @@ else
 BUILD_COMP := $(CXX)
 endif
 
-BUILD_SDIR := $(subst $(DIR_TOP)/,,$(shell pwd))
-BUILD_DEPS := $(DIR_DEPS)/$(BUILD_SDIR)
-BUILD_OUT  := $(DIR_OUT)/$(BUILD_SDIR)
+SHELL   := bash
+BUILD_D := $(shell pwd)
+REL_TOP := $(shell realpath $(BUILD_D) --relative-to $(DIR_TOP))
+REL_OUT := $(REL_TOP)/$(DIR_OUT)
+
+BUILD_SDIR := $(subst $(DIR_TOP)/,,$(BUILD_D))
+BUILD_DEPS := $(REL_OUT)/deps/$(BUILD_SDIR)
+BUILD_OUT  := $(REL_OUT)/$(BUILD_SDIR)
+
+BUILD_INCL := $(BUILD_INCL:%=-I%)
+B_LIBS     := $(shell ( \
+for lib in $(BUILD_LIBS); do \
+	if [[ $$lib == shnet* ]]; then \
+		FPATH=$$(realpath $(BUILD_D) --relative-to \
+					$$(find $(REL_OUT) -name "lib$$lib.*")) \
+  	echo "-L$$(FPATH) -Wl,-rpath,-L$$(FPATH)"; \
+	fi \
+done \
+) | tr '\n' ' ' )
+BUILD_LIBS := $(BUILD_LIBS:%=-l%)
 
 ifneq ($(origin BUILD_SRC),file)
 BUILD_SRC  := $(wildcard *.$(BUILD_LANG))
 endif
-SAVED_SRC  := $(BUILD_SRC)
 DEPS       := $(BUILD_SRC:%=$(BUILD_DEPS)/%.d)
-ifdef BUILD_EXE
+
+.PHONY: only
+only:
+	@printf ">>> START <<<\n\n$(BUILD_LIBS)\n\n$(B_LIBS)\n\n>>>  END  <<<\n"
+
+ifeq ($(BUILD_EXE),1)
 BUILD_SRC  := $(BUILD_SRC:%.$(BUILD_LANG)=%)
 else
 BUILD_SRC  := $(BUILD_SRC:.$(BUILD_LANG)=.o)
 endif
+ifdef BUILD_SO
+BUILD_SRC  += lib$(BUILD_SO).so
+endif
 
-ifdef BUILD_USE
+ifeq ($(BUILD_USE),1)
 ifeq ($(VALGRIND),1)
 BUILD_FLAGS  += -DSHNET_TEST_VALGRIND
 endif
@@ -33,19 +57,15 @@ _BUILD_FILES := $(BUILD_SRC:%=$(BUILD_OUT)/%)
 .PHONY: build_obj
 build_obj: subdirs $(DEPS) $(_BUILD_FILES)
 
-${BUILD_DEPS} ${BUILD_OUT}:
-	$(Q)mkdir -p $@
-
-${BUILD_OUT}/%.o: %.$(BUILD_LANG) | $(BUILD_OUT)
+${BUILD_OUT}/%.o: %.$(BUILD_LANG)
 	$(Q)$(BUILD_COMP) $(CFLAGS) $(BUILD_FLAGS) \
 			-fPIC -c -o $@ $< -I$(DIR_HEADERS)
 
-${BUILD_OUT}/%: %.$(BUILD_LANG) | $(BUILD_OUT)
+${BUILD_OUT}/%: %.$(BUILD_LANG)
 	$(Q)$(BUILD_COMP) $(CFLAGS) $(BUILD_FLAGS) -o $@ $< \
-			-I$(DIR_HEADERS) -L$(DIR_OUT)/src \
-			-Wl,-rpath,$(DIR_OUT)/src $(CLIBS) \
-			$(BUILD_LIBS) -lshnet
-ifdef BUILD_USE
+			-I$(DIR_HEADERS) $(BUILD_INCL) $(_LIBS)$(CLIBS) \
+			$(BUILD_LIBS)
+ifeq ($(BUILD_USE),1)
 ifeq ($(VALGRIND),1)
 	$(Q) valgrind --track-origins=yes --leak-check=full \
 		--show-leak-kinds=all $@ #--gen-suppressions=all
@@ -64,8 +84,7 @@ ${DIR_OUT}/%.a: $$(shell find $$(dir $$@) -name *.o)
 
 ${DIR_OUT}/%.exe: $$(shell find $$(dir $$@) -name *.o)
 	$(Q)$(CC) $(CFLAGS) -o $@ $^ -I$(DIR_HEADERS) \
-			-L$(DIR_OUT)/src -Wl,-rpath,$(DIR_OUT)/src \
-			$(CLIBS) -lshnet
+			$(BUILD_INCL) $(_LIBS)$(CLIBS) $(BUILD_LIBS)
 	$(Q)ln -f $@ $(basename $@)
 
 ${BUILD_DEPS}/%.d: % | $(BUILD_DEPS)
@@ -78,4 +97,4 @@ ifdef BUILD_SUBDIRS
 	$(Q)set -e; for i in $(BUILD_SUBDIRS); do $(MAKE) -C $$i; done
 endif
 
-include $(DEPS)
+#include $(DEPS)
