@@ -1,5 +1,5 @@
 #!/bin/bash
-result=$(find $DIR_TOP -name "in.*" -not -path "$DIR_TOP/.git/*")
+result=$(find . -name "in.*" -not -path "./.git/*")
 for file in $result
 do
   my_dirname=$(dirname $file)/

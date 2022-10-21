@@ -7,7 +7,7 @@ endif
 
 SHELL   := bash
 BUILD_D := $(shell pwd)
-REL_TOP := $(shell realpath $(BUILD_D) --relative-to $(DIR_TOP))
+REL_TOP := $(shell realpath $(DIR_TOP) --relative-to $(BUILD_D))
 REL_OUT := $(REL_TOP)/$(DIR_OUT)
 
 BUILD_SDIR := $(subst $(DIR_TOP)/,,$(BUILD_D))
@@ -17,10 +17,11 @@ BUILD_OUT  := $(REL_OUT)/$(BUILD_SDIR)
 BUILD_INCL := $(BUILD_INCL:%=-I%)
 B_LIBS     := $(shell ( \
 for lib in $(BUILD_LIBS); do \
+	echo "lib$$lib. $(BUILD_OUT)\n"; \
 	if [[ $$lib == shnet* ]]; then \
-		FPATH=$$(realpath $(BUILD_D) --relative-to \
-					$$(find $(REL_OUT) -name "lib$$lib.*")) \
-  	echo "-L$$(FPATH) -Wl,-rpath,-L$$(FPATH)"; \
+		FPATH=$$(find $(BUILD_OUT) -name "lib$$lib.*") \
+		echo "$$FPATH lib$$lib.*\n"; \
+  	echo "-L$$FPATH -Wl,-rpath,-L$$FPATH"; \
 	fi \
 done \
 ) | tr '\n' ' ' )

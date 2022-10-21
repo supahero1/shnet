@@ -6,7 +6,7 @@ CLI_PATCH = 0
 
 SHELL  := bash
 
-FMT_OD := @printf "$(shell tput bold)
+FMT_OD :=@printf "$(shell tput bold)
 FMT_DO :=$(shell tput sgr0)\n"
 
 # DIR
