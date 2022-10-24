@@ -6,11 +6,14 @@ CLI_PATCH = 0
 
 SHELL  := bash
 
+CC     := gcc
+CXX    := g++
+
 FMT_OD :=@printf "$(shell tput bold)
 FMT_DO :=$(shell tput sgr0)\n"
 
 # DIR
-DIR_TOP     := $(shell pwd)
+DIR_TOP     := $(PWD)
 DIR_OUT     ?= bin
 
 DIR_INCLUDE ?= /usr/local/include

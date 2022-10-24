@@ -9,9 +9,6 @@ Q = @
 COVFLAGS = -q
 endif
 
-SHELL  := bash
-CC     := gcc
-CXX    := g++
 CFLAGS := -Wall -Wextra -flto -O3
 ifeq ($(DEBUG),1)
 CFLAGS += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -g3
@@ -28,8 +25,7 @@ CLIBS  += -pthread#-lssl -lcrypto
 
 .PHONY: build
 build:
-	$(Q)chmod u+x sed_in
-	$(Q)./sed_in
+	$(Q)./sed.sh
 	$(Q)mkdir -p $(DIR_OUT)
 	$(Q)$(MAKE) -C src
 	$(Q)$(MAKE) -C src -f Library.make
@@ -74,8 +70,7 @@ endif
 .PHONY: clean
 clean:
 	$(Q)$(RM) -r $(DIR_OUT) coverage
-	$(Q)chmod u+x unsed_in
-	$(Q)./unsed_in
+	$(Q)./unsed.sh
 	$(FMT_OD)Clean complete.$(FMT_DO)
 
 .PHONY: uninstall
