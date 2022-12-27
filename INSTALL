@@ -35,6 +35,12 @@ default. Build a static one with:
 If you built a static release, you must also add 'STATIC=1' to the installation
 command mentioned below.
 
+You can decide where to put the build files. By default, it will be the 'bin'
+directory at the root of the compilation. You can change that by setting
+'DIR_OUT' to some other directory's name, it doesn't need to exist. This has
+the benefit that you can have multiple versions of the library, perhaps all with
+different flags or other settings.
+
 After building, tests can be run with:
 
     make test
@@ -54,13 +60,19 @@ Or, simply:
 
     make test COVERAGE=1
 
-Since this will also (re)build the library before testing. In fact, any flags
-that you pass to 'make', like 'DEBUG' or 'COVERAGE', will also be passed to any
-other steps in the process.
+Since this will also build the library before testing.
 
-If you are a developer trying to create new tests or edit current ones, the
-above command alone will always rebuild all tests, which might be annoying.
-To only rebuild modified tests, do:
+Any flags that you pass to 'make', like 'DEBUG' or 'COVERAGE', will also be
+passed to any other steps in the process.
+
+If you've already built the library without coverage turned on, you will first
+need to clean the current files:
+
+    make clean
+
+If you are a developer trying to create new tests or edit current ones, the test
+command alone will always rebuild all tests, which might be annoying. To only
+rebuild modified tests, do:
 
     make test PRESERVE_TESTS=1
 
@@ -72,11 +84,10 @@ Next, the library is ready to be installed (to '/usr/local' by default) with:
     make install
 
 You can change the output dir for headers and library files with 'DIR_LIB' and
-'DIR_INCLUDE' variables. See the beginning of 'Makefile' file in the top dir for
-more info and variables to change.
+'DIR_INCLUDE' variables. See the 'Consts.make' file in the top dir to see some
+variables that you can change.
 
-If the library was not built beforehand, the command will do it. It will not
-test the library. Any flags will be passed down to both 'build' and 'install'.
+If the library was not built before installing, it will be.
 
 You may remove your installation with:
 
@@ -94,8 +105,8 @@ add:
 
     make <command> VERBOSE=1
 
-Additionally, you may chain multiple commands, as long as the commands are
-linear (i.e. you don't mix building with cleaning up files):
+Additionally, you may chain multiple commands, but remember that they are
+executed in the order you put them in:
 
     make clean uninstall install test DEBUG=1 VERBOSE=1
 

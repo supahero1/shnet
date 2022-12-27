@@ -1,6 +1,7 @@
-BUILD_SRC  := cli.c time.c #$(wildcard *.c)
-BUILD_TYPE := $(BUILD_)
+BUILD_SRC  := $(filter-out tcp.c, $(wildcard *.c))
+BUILD_TYPE := $(BUILD_EXE)
+BUILD_NAME  = shnet
+BUILD_ALL   = 1
 BUILD_LIBS := rt shnet
-BUILD_EXE  := 1
 
 include $(DIR_TOP)/Rules.make

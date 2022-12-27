@@ -7,6 +7,9 @@
 #include <shnet/tcp.h>
 //#include <shnet/tls.h>
 
+#include <iostream>
+
 int main() {
-  return 0;
+    std::cout << "cpp: ok" << std::endl;
+    return 0;
 }
