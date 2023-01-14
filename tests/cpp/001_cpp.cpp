@@ -1,3 +1,4 @@
+#include <shnet/test.h>
 #include <shnet/error.h>
 #include <shnet/storage.h>
 #include <shnet/threads.h>
@@ -9,7 +10,11 @@
 
 #include <iostream>
 
-int main() {
+
+int
+main()
+{
     std::cout << "cpp: ok" << std::endl;
+
     return 0;
 }

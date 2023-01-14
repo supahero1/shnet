@@ -25,10 +25,16 @@ written to the standard output to notify the user what is being tested and
 when it's finished:
 
 ```c
-int main() {
-  test_begin("xyz() subsection A");
-  /* ... test ... */
-  test_end();
+int
+main()
+{
+	test_begin("xyz() subsection A");
+
+	/* ... test ... */
+
+	test_end();
+
+	return 0;
 }
 
 /* Standard output:
@@ -39,19 +45,20 @@ int main() {
 
 ## Error handling
 
-The module defines a very simple `error_handler()`:
+The module defines a very simple `error_handler()` that allows an infinite
+number of `EINTR` errors to pass, as well as no errors (code `0`). The rest
+are handled as if they can't be resolved.
 
-```c
-int error_handler(int e, int c) {
-  if(e == EINTR || e == 0) return 0;
-  return -1;
-}
-```
+If a test suite needs it's own error handling function, it can simply define
+one. The declaration of the function is weak - it can be overwritten.
 
 ## Randomness
 
 If the usage of `rand()` is desired, it can be seeded
 with current time using `test_seed_random()`.
+
+Additionally (configured in `Makefile`'s), all tests receive a
+preprocessor macro `__RANDOM__` filled with a random 16bit number.
 
 ## Waiting and sleeping
 
@@ -114,10 +121,25 @@ a function, it first needs to be "registered":
 
 ```c
 /*
-test_register(ret type, name, (args with types and names), (args with only names))
+test_register(
+	return type,
+	function name,
+	(args with types and names),
+	(args with only names),
+	(test arguments to mock with)
+)
 */
-test_register(int, pipe, (int a[2]), (a))
+test_register(
+	int,
+	pipe,
+	(int a[2]),
+	(a),
+	(NULL)
+)
 ```
+
+The mock argument values can be pretty much anything,
+excluding the "usual" values the arguments might take.
 
 The erroneous behavior consists of returning a predefined
 value, setting errno to an arbitrary value, and eventually
@@ -149,19 +171,20 @@ Calling an overrided function is not thread-safe too, unless it
 already threw an error and `test_error()` & `test_error_set()`
 have not been called since.
 
-To make sure that a function was overrided successfully,
-`test_error_check()` may be used like so:
+There are also a bunch of predefined `test_register` macros for functions
+that commonly appear across tests. The syntax for them is `test_use_xxx()`.
+A few examples include"
 
 ```c
-test_register(int, pipe, (int a[2]), (a))
+test_use_shnet_malloc()
 
-int main() {
-  test_error_check(int, pipe, ((int*) 0xdeadbeef));
-  
-  return 0;
-}
+test_use_pipe()
 ```
 
-If the override was successful, then no matter what the arguments given are (the
-third argument to the `test_error_check()` macro), nothing will happen. The
-arguments are necessary so that the compiler does not throw warnings or errors.
+These calls before `main()` in the global scope will
+register the functions "shnet_malloc" and "pipe", and
+mock test them to make sure the overriding has succeeded.
+
+There are many more of these - for a full list see the header file `test.h`.
+If there isn't a macro for a function, you will need to explicitly use
+`test_register()` as specified above.

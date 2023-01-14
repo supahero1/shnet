@@ -1,3 +1,5 @@
+.vscode
+
 bin
 coverage
 src/old

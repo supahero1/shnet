@@ -4,6 +4,9 @@ PATCH = 3
 CLI_VERSION = 1
 CLI_PATCH = 0
 
+PROJECT_NAME = shnet
+PROJECT_NAME_UP = $(shell echo "$(PROJECT_NAME)" | tr "[:lower:]" "[:upper:]")
+
 SHELL = bash
 
 FMT_OD :=@printf "$(shell tput bold)

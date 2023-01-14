@@ -1,9 +1,9 @@
 #!/bin/bash
 echo "#!/usr/bin/sed -f" > .sed.temp
-echo "s/%SHNET_VERSION%/$VERSION/" >> .sed.temp
-echo "s/%SHNET_PATCH%/$PATCH/" >> .sed.temp
-echo "s/%SHNET_CLI_VERSION%/$CLI_VERSION/" >> .sed.temp
-echo "s/%SHNET_CLI_PATCH%/$CLI_PATCH/" >> .sed.temp
+echo "s/%${PROJECT_NAME_UP}_VERSION%/$VERSION/" >> .sed.temp
+echo "s/%${PROJECT_NAME_UP}_PATCH%/$PATCH/" >> .sed.temp
+echo "s/%${PROJECT_NAME_UP}_CLI_VERSION%/$CLI_VERSION/" >> .sed.temp
+echo "s/%${PROJECT_NAME_UP}_CLI_PATCH%/$CLI_PATCH/" >> .sed.temp
 chmod u+x .sed.temp
 result=$(find . -name "in.*" -not -path "./.git*")
 for file in $result

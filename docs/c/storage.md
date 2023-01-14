@@ -19,14 +19,11 @@ be handled in different ways, sometimes optimising their usage:
 
 There are also various data types one can operate on:
 
-- `malloc()` pointer
-- `mmap()` pointer
-- File descriptor*
+- `malloc()` pointer,
+- `mmap()` pointer,
+- A file descriptor supporting `mmap()`-like operations.
 
-All of these are taken care of in this module using one structure,
-instead of creating lots of distinct data handling modules.
-
-**[*]** - Supporting `mmap()`-like operations.
+All of these are taken care of in this module using one structure.
 
 ## Dependencies
 
@@ -42,22 +39,27 @@ struct data_storage storage = {0};
 data_storage_free(&storage);
 ```
 
-A storage consists of *frames* which carry information about given memory
-region:
+A storage consists of *frames* which carry
+information about given memory region:
 
 ```c
-struct data_frame {
-  union {
-    char* data;
-    int fd;
-  };
-  uint64_t len:61;
-  uint64_t read_only:1;
-  uint64_t dont_free:1;
-  uint64_t free_onerr:1;
-  uint64_t offset:61;
-  uint64_t mmaped:1;
-  uint64_t file:1;
+struct data_frame
+{
+	union
+	{
+		char* data;
+		int fd;
+	};
+
+	uint64_t len:61;
+	uint64_t read_only:1;
+	uint64_t dont_free:1;
+	uint64_t free_onerr:1;
+
+	uint64_t offset:61;
+	uint64_t mmaped:1;
+	uint64_t file:1;
+	uint64_t _unused:1;
 };
 ```
 
@@ -101,16 +103,20 @@ touch it (but the array of frames will be `free()`'d overall).
 You can insert a frame like this:
 
 ```c
-int err = data_storage_add(&storage, &((struct data_frame) {
-  .data = some_pointer,
-  .len = how_many_bytes_in_the_pointer,
-  .free_onerr = 0
-  /* ... other properties ... */
-}));
+int err = data_storage_add(&storage, &(
+(struct data_frame)
+{
+	.data = some_pointer,
+	.len = how_many_bytes_in_the_pointer,
+	.free_onerr = 0
+	/* ... other properties ... */
+}
+));
 
-if(err) {
-  /* Likely no memory. 'some_pointer' would
-  be freed if 'free_onerr' was 1. */
+if(err)
+{
+	/* Likely no memory. 'some_pointer' would
+	be freed if 'free_onerr' was 1. */
 }
 ```
 
@@ -119,11 +125,14 @@ If you want to use the `offset` property, you **MUST NOT** decrease the
 read 256 so that your offset is 256, you **MUST** do the following:
 
 ```c
-err = data_storage_add(&storage, &((struct data_frame) {
-  .data = some_pointer,
-  .len = 4096,
-  .offset = 256
-}));
+err = data_storage_add(&storage, &(
+(struct data_frame)
+{
+	.data = some_pointer,
+	.len = 4096,
+	.offset = 256
+}
+));
 ```
 
 Playing clever by setting `offset` to `0`, `len` to `4096 - 256`
@@ -134,22 +143,30 @@ and `data` to `some_pointer + 256` **WILL NOT** work.
 Data can be used like so:
 
 ```c
-do {
-  uint64_t used;
-  if(!storage.frames->file) {
-    used = send_some_memory(to,
-      storage.frames->data + storage.frames->offset,
-      storage.frames->len - storage.frames->offset
-    );
-  } else {
-    used = sendfile_some_memory(to,
-      storage.frames->fd,
-      storage.frames->offset,
-      storage.frames->len
-    );
-  }
-  data_storage_drain(&storage, used);
-} while(!data_storage_is_empty(&storage)/* && used */);
+do
+{
+	uint64_t used;
+
+	if(!storage.frames->file)
+	{
+		used = send_some_memory(to,
+			storage.frames->data + storage.frames->offset,
+			storage.frames->len - storage.frames->offset
+		);
+	}
+	else
+	{
+		used = sendfile_some_memory(to,
+			storage.frames->fd,
+			storage.frames->offset,
+			storage.frames->len
+		);
+	}
+
+	data_storage_drain(&storage, used);
+}
+while(!data_storage_is_empty(&storage)/* && used */);
+
 data_storage_finish(&storage);
 ```
 
@@ -191,7 +208,8 @@ always be empty, so the function wouldn't do anything.)
 The array of frames can be resized to fit the application's needs:
 
 ```c
-uint32_t new_size = storage.used;
+uint32_t new_size = storage.used /* + some_new_space */;
+
 int no_mem = data_storage_resize(&storage, new_size);
 ```
 
@@ -204,19 +222,22 @@ You can access the absolute size of the array of frames by using `storage.size`.
 Any data between `storage.used` and `storage.size` is unused.
 
 ```c
-if(storage.used + 4 >= storage.size) {
-  no_mem = data_storage_resize(&storage, storage.used + 4);
-  if(no_mem) {
-    /* ... */
-  }
+if(
+	storage.used + 4 >= storage.size &&
+	data_storage_resize(&storage, storage.used + 4)
+)
+{
+	/* oopsie, no mem */
 }
 ```
 
 The above code intelligently makes room for 4 more data frames.
 
-```c
-uint64_t total = data_storage_size(&storage);
-```
+You can access `storage.bytes` to get the total number of bytes
+available in the storage. On every drain, this number will be
+lowered, and on every insertion it will be increased. If it's
+`0`, that's an equivalent of saying there are no frames.
 
-The above function returns the sum of all frames' available bytes. That is,
-if it returns `0`, it is equivalent to saying that the storage is empty.
+You can free a frame by yourself using `data_frame_free(&frame)` and
+`data_frame_free_err(&frame)`. They will only free the given frame if
+`dont_free` and `free_onerr` were set to `0` and `1` respectively.

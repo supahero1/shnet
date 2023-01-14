@@ -23,7 +23,7 @@ BUILD_INCL := $(BUILD_INCL:%=-I%)
 endif
 LIBS_UNPR  := $(shell echo $$( \
 for lib in $(BUILD_LIBS); do \
-	if [[ $$lib == shnet* ]]; then \
+	if [[ $$lib == $(PROJECT_NAME)* ]]; then \
 		FILE=$$(find $(REL_OUT) -name "lib$$lib.*"); \
 		if [ ! -z "$$FILE" ]; then \
 			echo "$$(dirname $$FILE)"; \
@@ -48,7 +48,7 @@ DEPS := $(BUILD_SRC:%=$(BUILD_DEPS)/%.d)
 BUILD_FLAGS += $(CFLAGS)
 ifeq ($(BUILD_USE),1)
 ifeq ($(VALGRIND),1)
-BUILD_FLAGS += -DSHNET_TEST_VALGRIND
+BUILD_FLAGS += -D$(PROJECT_NAME_UP)_TEST_VALGRIND
 endif
 endif
 
@@ -128,6 +128,6 @@ ${BUILD_OUT}/%.exe: $$(shell find $$(dir $$@) -name *.o) | $(BUILD_OUT)
 
 ${BUILD_DEPS}/%.d: % | $(BUILD_DEPS)
 	$(Q)$(BUILD_COMP) -MM $(BUILD_INCLUDES) -MF $@ \
-	 	-MT $(BUILD_OUT)/$(basename $(notdir $<)).o $<
+		-MT $(BUILD_OUT)/$(basename $(notdir $<)).o $< $(BUILD_FLAGS)
 
 include $(DEPS)

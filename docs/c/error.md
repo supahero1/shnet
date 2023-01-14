@@ -9,7 +9,7 @@ after the application attempts to fix any errors hurts performance.
 
 Additionally, even if the application has some way of attempting to fix errors
 (freeing memory, file descriptors, etc.), it might not be aesthetic to add big
-`if` statements after every function to report the error, or even worse, make
+`if` statements after every function to report the error, or even worse,
 a `while` loop to continuously retry.
 
 Moreover, some applications might not want to continue if any error occurs. For
@@ -26,30 +26,36 @@ None.
 
 ## Usage
 
-The application must define a function `int error_handler(int, int)` which takes
-in an `errno` code, returns `0` if it wants the caller to retry the problematic
-function, or any other value to make the caller stop. Not defining the function
-will throw a compiler error. The function **MUST NOT** change `errno`, i.e. it
-might do it, but it must be the same on exit as on start of the function. If you
-are calling any function from within the error handler that may change `errno`,
-be sure to save the original `errno` at the start of the function and restore it
-before returning.
+You can define the error handling function `int error_handler(int, int)`
+somewhere in your code, an example implementation is below. Furthermore,
+a default is provided, which retries all `EINTR` and `0` error codes, and
+fails on any other ones.
 
 ```c
-int error_handler(int err, int count) {
-  switch(err) {
-    case ENOMEM: {
-      free_memory();
-      return 0; /* Continue */
-    }
-    case EINTR: return 0;
-    /* ... cases for other errors ... */
-    default: return -1; /* Fail by default */
-  }
+int
+error_handler(int err, int count)
+{
+	switch(err)
+	{
+
+	case ENOMEM:
+	{
+		free_memory();
+
+		return 0; /* Continue */
+	}
+
+	case EINTR: return 0;
+
+	/* ... cases for other errors ... */
+
+	default: return -1; /* Fail by default */
+
+	}
 }
 ```
 
-The module also defines a macro `safe_execute(expr, bool, err_code)`. The
+This module also defines a macro `safe_execute(expr, bool, err_code)`. The
 `expr` is evaluated at first. Then, if `bool` is true (anything other than `0`),
 `error_handler` is called with the given `err_code` (which doesn't need to be a
 constant - might as well be `errno`) and an error count denoting how many times
@@ -65,13 +71,18 @@ expressions like `x++`.
 The following:
 
 ```c
-while(1) {
-  void* ptr = malloc(1024);
-  if(!ptr) {
-    free_memory();
-    continue;
-  }
-  break;
+while(1)
+{
+	void* ptr = malloc(1024);
+
+	if(!ptr)
+	{
+		free_memory();
+
+		continue;
+	}
+
+	break;
 }
 ```
 
@@ -79,15 +90,19 @@ Can be written as the following using this module:
 
 ```c
 void* ptr;
+
 /*
  * Can't declare the variable inside of the macro.
  * It won't be visible outside, because the macro
  * implements a scope.
  */
 safe_execute(ptr = malloc(1024), ptr == NULL, errno);
-if(!ptr) {
-  /* Impossible with the above code */
+
+if(!ptr)
+{
+	/* Impossible with how error_handler() is written above */
 }
+
 /* use ptr */
 ```
 
@@ -100,6 +115,7 @@ This:
 
 ```c
 safe_execute(void* ptr = ..., ..., ...);
+
 /* use ptr */
 ```
 
@@ -111,21 +127,34 @@ the application doesn't want to spin waiting for memory to
 become available, it can do the following to break out:
 
 ```c
-int error_handler(int err, int count) {
-  switch(err) {
-    case ENOMEM: {
-      /* Assuming it returns 0 on success, other on failure */
-      return try_free_memory();
-    }
-    /* ... cases for other errors ... */
-    default: return -1; /* Fail by default */
-  }
+int
+error_handler(int err, int count)
+{
+	switch(err)
+	{
+
+	case ENOMEM:
+	{
+		/* Assuming it returns 0 on success, other on failure */
+
+		return try_free_memory();
+	}
+
+	/* ... cases for other errors ... */
+
+	default: return -1; /* Fail by default */
+
+	}
 }
 
+
 void* ptr;
+
 safe_execute(ptr = malloc(1024), ptr == NULL, errno);
-if(!ptr) {
-  /* Oops */
+
+if(!ptr)
+{
+	/* Oops */
 }
 ```
 
@@ -142,25 +171,43 @@ can be used in conjunction with the `error_handler()` from above:
 
 ```c
 void* ptr;
+
 safe_execute(ptr = malloc(1024), ptr == NULL, errno);
+
 assert(ptr);
 ```
+
+This is not the same as if only using the assertion, because your application
+might allocate excess memory that it doesn't ever clean up, and when it comes
+to allocating another chunk, you first need to do a cleanup, after which you
+can do the allocation and make sure it succeeded.
 
 If you want to give up retrying after X times, you can use the second argument:
 
 ```c
-int error_handler(int err, int count) {
-  switch(err) {
-    case ENOMEM: {
-      if(count == 2) {
-        /* Failed 3 times, no hope */
-        return -1;
-      }
-      free_memory();
-      return 0;
-    }
-    default: return -1;
-  }
+int
+error_handler(int err, int count)
+{
+	switch(err)
+	{
+
+	case ENOMEM:
+	{
+		if(count == 2)
+		{
+			/* Failed 3 times, no hope */
+
+			return -1;
+		}
+
+		free_memory();
+
+		return 0;
+	}
+
+	default: return -1;
+
+	}
 }
 ```
 
@@ -178,11 +225,14 @@ ruin everything. Later on, the test module `<shnet/test.h>` can be used to
 trigger errors in these functions:
 
 ```c
-void* shnet_malloc(const size_t);
+void*
+shnet_malloc(const size_t);
 
-void* shnet_calloc(const size_t, const size_t);
+void*
+shnet_calloc(const size_t, const size_t);
 
-void* shnet_realloc(void* const, const size_t);
+void*
+shnet_realloc(void* const, const size_t);
 ```
 
 There are a lot of other functions that Valgrind overrides too, but these ones

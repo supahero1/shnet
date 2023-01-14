@@ -55,7 +55,7 @@ You have 2 choices:
 
 - Let the underlying code do all the dirty job for you by simply initialising
   `hostname`, `port`, `family` (optional), and `flags` (optional) to something:
-  
+
   ```c
   options.hostname = "github.com";
   options.port = "443";
@@ -63,10 +63,10 @@ You have 2 choices:
   /* Not required on newer kernels. */
   options.flags = net_flag_numeric_service;
   ```
-  
+
 - Do a DNS lookup by yourself. This has the advantage that you may then reuse
   the resulting `struct addrinfo` address elsewhere as well:
-  
+
   ```c
   const struct addrinfo hints = net_get_addr_struct(net_family_ipv4,
                                                     net_sock_stream,
@@ -88,7 +88,7 @@ void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
     default: break;
   }
 }
- 
+
 struct tcp_socket socket = {0};
 socket.on_event = sock_evt;
 ```
@@ -260,7 +260,7 @@ void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
     default: break;
   }
 }
- 
+
 struct tcp_socket socket = {0};
 socket.on_event = sock_evt;
 ```
@@ -276,10 +276,10 @@ Use this event to initialise any data you want the socket to carry:
 ```c
 struct game_client {
   struct tcp_socket tcp;
-  
+
   float x;
   float y;
-  
+
   uint8_t* packets;
 };
 
@@ -298,7 +298,7 @@ void sock_evt(struct tcp_socket* sock, enum tcp_event event) {
     default: break;
   }
 }
- 
+
 struct game_client client = {0};
 client.tcp.on_event = sock_evt;
 int err = tcp_socket(&client.socket, /* ... */);
