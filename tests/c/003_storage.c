@@ -1,4 +1,5 @@
 #include <shnet/test.h>
+#include <shnet/storage.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -6,8 +7,6 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
-
-#include <shnet/storage.h>
 
 
 test_use_shnet_malloc()
@@ -20,21 +19,13 @@ main()
 {
 	const uint8_t TEST_MAGIC = __RANDOM__ & 127;
 
-
-	test_error_set_retval(shnet_malloc, NULL);
-	test_error_set_errno(shnet_malloc, TEST_MAGIC);
-
-	test_error_set_retval(shnet_realloc, NULL);
-	test_error_set_errno(shnet_realloc, TEST_MAGIC);
-
-	test_error_set_retval(mmap, MAP_FAILED);
+	test_error_errno(shnet_malloc) = TEST_MAGIC;
+	test_error_errno(shnet_realloc) = TEST_MAGIC;
 
 
 	test_begin("storage init");
 
 	struct data_storage storage = {0};
-
-	assert(!data_storage_resize(&storage, 1));
 
 	data_storage_free(&storage);
 
@@ -49,19 +40,23 @@ main()
 
 	data_storage_free(&storage);
 
-	assert(!data_storage_resize(&storage, 1));
-
 	test_end();
 
 
 	test_begin("storage resize err");
 
-	test_error(shnet_realloc);
+	test_error_count(shnet_realloc) = 2;
+	test_error_delay(shnet_realloc) = 0;
 
-	struct data_storage tem = storage;
+	assert(data_storage_add(&storage, &(
+	(struct data_frame) {
+		.data = NULL,
+		.len = 1,
+		.dont_free = 1,
+		.read_only = 1
+	}
+	)));
 
-	assert(data_storage_resize(&storage, 2) == -1);
-	assert(memcmp(&storage, &tem, sizeof(struct data_storage)) == 0);
 	assert(errno == TEST_MAGIC);
 
 	errno = 0;
@@ -69,27 +64,7 @@ main()
 	test_end();
 
 
-	test_begin("storage resize 0");
-
-	assert(storage.used == 0);
-	assert(storage.size == 1);
-
-	assert(!data_storage_resize(&storage, 0));
-	assert(storage.used == 0);
-	assert(storage.size == 0);
-	assert(storage.frames == NULL);
-
-	assert(!data_storage_resize(&storage, 1));
-	assert(storage.bytes == 0);
-	assert(storage.used == 0);
-	assert(storage.size == 1);
-
-	test_end();
-
-
 	test_begin("storage add ptr err");
-
-	tem = storage;
 
 	char* ptr = malloc(1);
 
@@ -104,9 +79,7 @@ main()
 		.free_onerr = 1,
 		.dont_free = 1
 	}
-	)) == -1);
-
-	assert(memcmp(&storage, &tem, sizeof(storage)) == 0);
+	)));
 
 	errno = 0;
 
@@ -120,8 +93,6 @@ main()
 
 	assert(ptr != MAP_FAILED);
 
-	tem = storage;
-
 	test_error(shnet_malloc);
 
 	assert(data_storage_add(&storage, &(
@@ -132,9 +103,8 @@ main()
 		.free_onerr = 1,
 		.dont_free = 1
 	}
-	)) == -1);
+	)));
 
-	assert(memcmp(&storage, &tem, sizeof(storage)) == 0);
 	assert(errno == TEST_MAGIC);
 
 	test_expect_segfault(ptr);
@@ -147,13 +117,11 @@ main()
 	test_begin("storage add file err 1");
 
 	test_error(mmap);
-	test_error_set_errno(mmap, TEST_MAGIC);
+	test_error_errno(mmap) = TEST_MAGIC;
 
 	int sfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	assert(sfd != -1);
-
-	tem = storage;
 
 	assert(data_storage_add(&storage, &(
 	(struct data_frame) {
@@ -163,9 +131,8 @@ main()
 		.free_onerr = 1,
 		.dont_free = 1
 	}
-	)) == -1);
+	)));
 
-	assert(memcmp(&storage, &tem, sizeof(storage)) == 0);
 	assert(errno == TEST_MAGIC);
 	assert(close(sfd) == -1);
 	assert(errno == EBADF);
@@ -181,8 +148,6 @@ main()
 
 	assert(sfd != -1);
 
-	tem = storage;
-
 	test_error(shnet_malloc);
 
 	assert(data_storage_add(&storage, &(
@@ -193,9 +158,8 @@ main()
 		.free_onerr = 1,
 		.dont_free = 1
 	}
-	)) == -1);
+	)));
 
-	assert(memcmp(&storage, &tem, sizeof(storage)) == 0);
 	assert(errno == TEST_MAGIC);
 	assert(close(sfd) == -1);
 	assert(errno == EBADF);
@@ -627,32 +591,47 @@ main()
 	)));
 
 	assert(storage.bytes == 4);
-	assert(storage.used == 3);
-	assert(storage.size == 3);
 
 	data_storage_drain(&storage, 1);
 	assert(storage.bytes == 3);
-	assert(storage.used == 3);
-	assert(storage.size == 3);
 
 	data_storage_drain(&storage, 1);
 	assert(close(file) == -1);
 	assert(storage.bytes == 2);
-	assert(storage.used == 2);
-	assert(storage.size == 3);
 	assert(storage.frames->data[0] == TEST_MAGIC);
 
 	data_storage_drain(&storage, 1);
 	assert(storage.bytes == 1);
-	assert(storage.used == 1);
-	assert(storage.size == 3);
 	assert(storage.frames->data[0] == TEST_FILE_MAGIC);
 
 	data_storage_drain(&storage, 1);
 	assert(storage.bytes == 0);
-	assert(storage.used == 0);
-	assert(storage.size == 3);
 	assert(data_storage_is_empty(&storage));
+
+	test_end();
+
+
+	test_begin("storage stress");
+
+	data_storage_free(&storage);
+
+	for(int i = 0; i < 64; ++i)
+	{
+		assert(!data_storage_add(&storage, &(
+		(struct data_frame) {
+			.data = NULL,
+			.len = 1,
+			.read_only = 1,
+			.dont_free = 1,
+			.free_onerr = 0
+		}
+		)));
+	}
+
+	for(int i = 0; i < 64; ++i)
+	{
+		data_storage_drain(&storage, 1);
+	}
 
 	test_end();
 
@@ -663,8 +642,6 @@ main()
 	assert(data_storage_is_empty(&storage));
 	assert(storage.frames == NULL);
 	assert(storage.bytes == 0);
-	assert(storage.used == 0);
-	assert(storage.size == 0);
 
 	free(_dir);
 	free(dir);

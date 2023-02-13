@@ -1,7 +1,7 @@
+#include <shnet/error.h>
+
 #include <errno.h>
 #include <stdlib.h>
-
-#include <shnet/error.h>
 
 
 int

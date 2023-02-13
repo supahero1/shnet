@@ -29,19 +29,22 @@ Q = @
 COVFLAGS = -q
 endif
 
-CFLAGS  = -Wall -Wextra -flto -O3
+BASE_FLAGS = -Wall -Wextra -flto -O3
 
 ifeq ($(DEBUG),1)
-CFLAGS += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -g3
+BASE_FLAGS += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -g3
 endif
 
 ifeq ($(COVERAGE),1)
-CFLAGS += --coverage
+BASE_FLAGS += --coverage
 endif
 
 CLIBS = -pthread#-lssl -lcrypto
 
 ifeq ($(WITH_LIBUV),1)
-CFLAGS += -DLIBUV
+BASE_FLAGS += -DLIBUV
 CLIBS  += -luv
 endif
+
+CFLAGS   = $(BASE_FLAGS)
+CXXFLAGS = $(BASE_FLAGS)

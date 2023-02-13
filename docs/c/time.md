@@ -17,7 +17,7 @@ pointer to an item it wants to delete. The pointer is updated
 internally by the heap when elements are moved. To learn more
 about this modified heap, see `src/archive/refheap.c`,
 `docs/archive/refheap.md`, `tests/archive/refheap.c`,
-and the benchmark below. This is kind of a compromise 
+and the benchmark below. This is kind of a compromise
 between heaps and AVL trees.
 
 On top of that, timers are small in size, and intervals (which
@@ -26,8 +26,9 @@ don't need to be as big as them to share the same heap.
 
 ## Dependencies
 
-- `error.md`
-- `threads.md`
+- [`error.md`](./error.md)
+
+- [`threads.md`](./threads.md)
 
 ## Basic knowledge
 
@@ -74,9 +75,6 @@ err = time_start(&timers);
 The thread can be manipulated as specified in `threads.md` via `timers.thread`:
 
 ```c
-/* pthread_cancel(timers.thread) */
-time_stop(&timers);
-
 /* pthread_cancel_sync(timers.thread) */
 time_stop_sync(&timers);
 
@@ -120,45 +118,25 @@ Simply substitute `timeout` with `interval` and you are ready to go.
 
 ### Timeouts
 
-When a timer is cancelled, and thus deleted from its underlying heap, the heap
-is not shrunk. To do so, or to set the heap's size to any arbitrary value, use:
-
-```c
-uint32_t new_size = timers.timeouts_used;
-err = time_resize_timeouts(&timers, new_size);
-```
-
-The above shrinks the heap holding timeouts to the
-smallest size possible (so that there's no spare space).
-
-However, the heap is counting indexes from `1` and not `0`, so
-the following does not actually make space for 1 timeout, but 0:
-
-```c
-err = time_resize_timeouts(&timers, 1);
-```
-
-This will correctly create 1 free space for a
-timeout relatively to the current number of them:
-
-```c
-err = time_resize_timeouts(&timers, timers.timeouts_used + 1);
-```
-
 A timer can be added to the time manager like so:
 
 ```c
-void timer_cb(void* data) {
+void
+timer_cb(void* data)
+{
   /* ... do something cool with the data ... */
 }
+
 
 uint64_t expiration = time_get_sec(1);
 void* data = &timers;
 
-struct time_timeout timeout = (struct time_timeout) {
-  .func = timer_cb,
-  .data = data,
-  .time = expiration /* absolute time */
+struct time_timeout timeout =
+(struct time_timeout)
+{
+	.func = timer_cb,
+	.data = data,
+	.time = expiration /* absolute time */
 };
 
 err = time_add_timeout(&timers, &timeout);
@@ -175,8 +153,7 @@ it's processed, so not necessarily **now**), **DO NOT** put small integers like
 Additionally, if you want to launch a few timers with `time_immediately` as
 their time, but still want to order them somehow, **DO NOT** add any arbitrary
 values like `1` to their time. Instead, use `time_step`, which is the smallest
-distinguishable time difference (currently 2 nanoseconds due to internals of
-the library).
+distinguishable time difference the library can handle.
 
 Timers are executed in the time manager's thread. Thus, to not delay other
 timers, if the function does a lot of stuff, it might be worth considering
@@ -184,8 +161,9 @@ to create multiple time managers or offload the execution to a thread pool
 or by creating a new thread.
 
 Timers are executed under a non-cancellable environment. Any cancellation
-requests for the time manager's thread will be handled after the current
-timer is dealt with as to not corrupt it.
+requests for the time manager's thread will be handled after the current timer
+is dealt with as to not corrupt it. You can change that explicitly from the
+timer's callback, see [threads.md](./threads.md).
 
 Timers are executed outside of their time manager's lock.
 
@@ -194,8 +172,11 @@ timer specified in `time_add_timeout` even if a lock is held.
 
 ```c
 time_lock(&timers);
+
 assert(!time_add_timeout_raw(&timers, &timeout));
+
 usleep(999999999);
+
 time_unlock(&timers);
 ```
 
@@ -210,12 +191,14 @@ manager before it is run, another member of a timer must be set:
 ```c
 struct time_timer timer;
 
-timeout = (struct time_timeout) {
-  .func = timer_cb,
-  .data = data,
-  .time = expiration,
-  
-  .ref = &timer /* <-- */
+timeout =
+(struct time_timeout)
+{
+	.func = timer_cb,
+	.data = data,
+	.time = expiration,
+
+	.ref = &timer /* <-- */
 };
 ```
 
@@ -228,8 +211,10 @@ After calling `time_add_timeout()` for the above timeout, it can be cancelled:
 
 ```c
 err = time_cancel_timeout(&timers, &timer);
-if(err) {
-  /* Already cancelled or already executed */
+
+if(err)
+{
+	/* Already cancelled or already executed */
 }
 ```
 
@@ -241,14 +226,19 @@ application can change any members of a timer (**excluding** `ref`):
 
 ```c
 struct time_timeout* timeout_ = time_open_timeout(&timers, &timer);
-if(timeout) {
-  timeout_.time = time_immediately;
-  timeout_.func = pthread_exit;
-  timeout_.data = NULL;
-  time_close_timeout(&timers, &timer);
-} else {
-  /* Already cancelled or already executed. */
-  /* DO NOT use time_close_timeout(&timers, &timer) here! */
+
+if(timeout)
+{
+	timeout_.time = time_immediately;
+	timeout_.func = pthread_exit;
+	timeout_.data = NULL;
+
+	time_close_timeout(&timers, &timer);
+}
+else
+{
+	/* Already cancelled or already executed. */
+	/* DO NOT use time_close_timeout(&timers, &timer) here! */
 }
 ```
 
@@ -260,6 +250,25 @@ It is not possible to open a timeout currently being executed, because it
 is marked as executed before, not after execution. Besides, it wouldn't
 make sense to do so (and if you think otherwise, your application design
 is probably broken). However, it is possible with intervals.
+
+Opening a timer explicitly under a lock should look like this:
+
+```c
+time_lock(&timers);
+
+timeout_ = time_open_timeout_raw(&timers, &timer);
+
+if(timeout)
+{
+	/* Cool */
+
+	time_close_timeout(&timers, &timer);
+}
+
+time_unlock(&timers);
+```
+
+Which is basically the same as the locked variant.
 
 ### Intervals
 
@@ -281,23 +290,26 @@ a 64bit value, there's no need to worry about it overflowing to 0.
 ```c
 struct time_timer timer;
 
-struct time_interval interval = (struct time_interval) {
-  .func = timer_cb,
-  .data = data,
-  
-  /* 1 second from now,
-     then every 50ms */
-  .base_time = time_get_sec(1),
-  .interval = time_ms_to_ns(50),
-  /* the same as above:
-  .base_time = time_get_time(),
-  .interval = time_ms_to_ns(50),
-  .count = 20,
-  */
-  
-  .ref = &timer
+struct time_interval interval =
+(struct time_interval)
+{
+	.func = timer_cb,
+	.data = data,
+
+	/* 1 second from now,
+		then every 50ms */
+  	.base_time = time_get_sec(1),
+  	.interval = time_ms_to_ns(50),
+
+  	/* the same as above:
+  		.base_time = time_get_time(),
+  		.interval = time_ms_to_ns(50),
+  		.count = 20,
+  	*/
+
+	.ref = &timer
 };
-``` 
+```
 
 Any delays are corrected automatically by the underlying code. For instance,
 if an interval is to be executed `20ms` from now, but it expires in `30ms` from

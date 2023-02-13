@@ -222,3 +222,6 @@ if(a)
 	break; /* that's the way */
 }
 ```
+
+In documentation files, code blocks must have at
+least one newline before and after their occurence.

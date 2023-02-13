@@ -1,16 +1,12 @@
-#ifndef _DEFAULT_SOURCE
-#define _DEFAULT_SOURCE
-#endif
+#include <shnet/error.h>
+#include <shnet/storage.h>
 
 #include <errno.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <assert.h>
 #include <sys/mman.h>
-
-#include <shnet/error.h>
-#include <shnet/storage.h>
 
 
 static void
@@ -72,7 +68,7 @@ data_storage_free(struct data_storage* const storage)
 }
 
 
-int
+static int
 data_storage_resize(struct data_storage* const storage, const uint32_t new_len)
 {
 	if(new_len == storage->size)
@@ -106,16 +102,20 @@ int
 data_storage_add(struct data_storage* const storage,
 	const struct data_frame* const frame)
 {
-	if(
-		storage->used >= storage->size &&
-		data_storage_resize(storage, storage->used + 1)
-	) {
-		return -1;
-	}
-
 	if(frame->offset == frame->len)
 	{
 		return 0;
+	}
+
+	const uint32_t new_size = storage->used + 1;
+
+	if(
+		new_size > storage->size &&
+		data_storage_resize(storage, (new_size << 1) | 1) &&
+		data_storage_resize(storage, new_size)
+	)
+	{
+		return -1;
 	}
 
 	if(!frame->read_only)
@@ -212,7 +212,13 @@ data_storage_drain(struct data_storage* const storage, const uint64_t amount)
 
 		--storage->used;
 
-		(void) memmove(frame, frame + 1, sizeof(*frame) * storage->used);
+		(void) memmove(frame, frame + 1,
+			sizeof(struct data_frame) * storage->used);
+
+		if(storage->used < (storage->size >> 2))
+		{
+			(void) data_storage_resize(storage, storage->used << 1);
+		}
 	}
 }
 

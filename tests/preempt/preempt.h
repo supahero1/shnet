@@ -5,20 +5,22 @@
 extern "C" {
 #endif
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <pthread.h>
 
 
 struct preemption_data
 {
-  pthread_t* a;
+	pthread_t* a;
 
-  const pthread_attr_t* b;
+	const pthread_attr_t* b;
 
-  void* (*c)(void*);
+	void* (*c)(void*);
 
-  void* d;
+	void* d;
 };
 
 

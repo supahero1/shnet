@@ -3,8 +3,10 @@ SHELL := bash
 BUILD_LANG ?= c
 ifeq ($(BUILD_LANG),c)
 BUILD_COMP := $(CC)
+BUILD_FLAGS += $(CFLAGS)
 else
 BUILD_COMP := $(CXX)
+BUILD_FLAGS += $(CXXFLAGS)
 endif
 
 BUILD_TYPE ?= $(BUILD_O)
@@ -45,7 +47,6 @@ BUILD_SRC := $(wildcard *.$(BUILD_LANG))
 endif
 DEPS := $(BUILD_SRC:%=$(BUILD_DEPS)/%.d)
 
-BUILD_FLAGS += $(CFLAGS)
 ifeq ($(BUILD_USE),1)
 ifeq ($(VALGRIND),1)
 BUILD_FLAGS += -D$(PROJECT_NAME_UP)_TEST_VALGRIND

@@ -29,7 +29,8 @@ None.
 You can define the error handling function `int error_handler(int, int)`
 somewhere in your code, an example implementation is below. Furthermore,
 a default is provided, which retries all `EINTR` and `0` error codes, and
-fails on any other ones.
+fails on any other ones. It's defined weakly, so that your own definition
+can overwrite it, if needed.
 
 ```c
 int

@@ -17,11 +17,6 @@ extern "C" {
 
 #include <shnet/error.h>
 
-
-#ifndef __RANDOM__
-#define __RANDOM__ 0
-#endif
-
 #define TEST_FILE_MAGIC 's'
 
 
@@ -70,22 +65,22 @@ test_expect_no_segfault(const void* const);
 
 
 
-#define test_error_get_errno(name) _test_fail_##name##_errno
-#define test_error_set_errno(name, code) test_error_get_errno(name) = code
+#define test_error_errno(name)	_test_fail_errno_##name
+#define test_error_retval(name)	_test_fail_retval_##name
+#define test_error_delay(name)	_test_fail_delay_##name
+#define test_error_count(name)	_test_fail_count_##name
 
-#define test_error_get_retval(name) _test_fail_##name##_retval
-#define test_error_set_retval(name, code) test_error_get_retval(name) = code
+#define test_error(name)	\
+test_error_delay(name) = 0;	\
+test_error_count(name) = 1
 
-#define test_error_get(name) _test_fail_##name##_count
-#define test_error_set(name, num) test_error_get(name) = num
-#define test_error(name) test_error_set(name, 1)
+#define test_real(name) _test_real_##name
 
-#define test_real(name) _test_##name##_real
-
-#define test_register(ret, name, types, args, arg_vals)						\
-int test_error_set(name, 0);												\
-int test_error_set_errno(name, ECANCELED);									\
-ret test_error_set_retval(name, (ret) -1);									\
+#define test_register(ret, name, types, args, arg_vals, retval, _errno)		\
+int test_error_count(name) = 0;												\
+int test_error_delay(name) = 0;												\
+int test_error_errno(name) = _errno;										\
+ret test_error_retval(name) = (ret) retval;									\
 ret (*test_real(name)) types = NULL;										\
 																			\
 ret name types																\
@@ -106,10 +101,20 @@ ret name types																\
 		}																	\
 	}																		\
 																			\
-	if(test_error_get(name) != 0 && !--test_error_get(name))				\
+	if(test_error_delay(name) != 0)											\
 	{																		\
-		errno = test_error_get_errno(name);									\
-		return test_error_get_retval(name);									\
+		--test_error_delay(name);											\
+																			\
+		return test_real(name) args ;										\
+	}																		\
+																			\
+	if(test_error_count(name) != 0)											\
+	{																		\
+		--test_error_count(name);											\
+																			\
+		errno = test_error_errno(name);										\
+																			\
+		return test_error_retval(name);										\
 	}																		\
 																			\
 	return test_real(name) args ;											\
@@ -119,29 +124,26 @@ __attribute__((constructor))												\
 static void																	\
 _test_##name##_init (void)													\
 {																			\
-	int err_save = test_error_get(name);									\
+	int save_count = test_error_count(name);								\
+	int save_delay = test_error_delay(name);								\
+	int save_errno = test_error_errno(name);								\
+	ret save_retval = test_error_retval(name);								\
+	int cur_errno = errno;													\
 																			\
 	test_error(name);														\
-																			\
-	ret retval_save = test_error_get_retval(name);							\
-																			\
-	test_error_set_retval(name, (ret) -0xdababe);							\
-																			\
-	int errno_save = errno;													\
-	int err_errno_save = test_error_get_errno(name);						\
-																			\
-	test_error_set_errno(name, -0xdebeba);									\
+	test_error_errno(name) = -0xdebeba;										\
+	test_error_retval(name) = (ret) -0xdababe;								\
 																			\
 	assert(name arg_vals == (ret) -0xdababe);								\
 	assert(errno == -0xdebeba);												\
 																			\
-	test_error_set_retval(name, retval_save);								\
-																			\
-	errno = errno_save;														\
-																			\
-	test_error_set_errno(name, err_errno_save);								\
-	test_error_set(name, err_save);											\
+	errno = cur_errno;														\
+	test_error_retval(name) = save_retval;									\
+	test_error_errno(name) = save_errno;									\
+	test_error_delay(name) = save_delay;									\
+	test_error_count(name) = save_count;									\
 }
+
 
 #define test_use_shnet_malloc()	\
 test_register(					\
@@ -149,8 +151,11 @@ test_register(					\
 	shnet_malloc,				\
 	(const size_t a),			\
 	(a),						\
-	(0xbad)						\
+	(0xbad),					\
+	NULL,						\
+	ENOMEM						\
 )
+
 
 #define test_use_shnet_calloc()			\
 test_register(							\
@@ -158,26 +163,35 @@ test_register(							\
 	shnet_calloc,						\
 	(const size_t a, const size_t b),	\
 	(a, b),								\
-	(0xbad, 0xbad)						\
+	(0xbad, 0xbad),						\
+	NULL,								\
+	ENOMEM								\
 )
 
-#define test_use_shnet_realloc()		\
-test_register(							\
-	void*,								\
-	shnet_realloc,						\
-	(void* const a, const size_t b),	\
-	(a, b),								\
-	((void*) 0xbad, 0xbad)				\
+
+#define test_use_shnet_realloc()			\
+test_register(								\
+	void*,									\
+	shnet_realloc,							\
+	(void* const a, const size_t b),		\
+	(a, b),									\
+	((void*) 0xbad, 0xbad),					\
+	NULL,									\
+	ENOMEM									\
 )
 
-#define test_use_pipe() \
-test_register(			\
-	int,				\
-	pipe,				\
-	(int a[2]),			\
-	(a),				\
-	(NULL)				\
+
+#define test_use_pipe() 		\
+test_register(					\
+	int,						\
+	pipe,						\
+	(int a[2]),					\
+	(a),						\
+	(NULL),						\
+	-1,							\
+	ENFILE						\
 )
+
 
 #define test_use_mmap()									\
 test_register(											\
@@ -185,8 +199,48 @@ test_register(											\
 	mmap,												\
 	(void* a, size_t b, int c, int d, int e, off_t f),	\
 	(a, b, c, d, e, f),									\
-	((void*) 0xbad, 0xbad, 0xbad, 0xbad, 0xbad, 0xbad)	\
+	((void*) 0xbad, 0xbad, 0xbad, 0xbad, 0xbad, 0xbad),	\
+	MAP_FAILED,											\
+	ENOMEM												\
 )
+
+
+#define test_use_pthread_create()											\
+test_register(																\
+	int,																	\
+	pthread_create,															\
+	(pthread_t* a, const pthread_attr_t* b, void* (*c)(void*), void* d),	\
+	(a, b, c, d),															\
+	((void*) 0xbad, (void*) 0xbad, (void*) 0xbad, (void*) 0xbad),			\
+	ENOMEM,																	\
+	0																		\
+)
+
+
+#define test_use_sem_init()				\
+test_register(							\
+	int,								\
+	sem_init,							\
+	(sem_t* a, int b, unsigned int c),	\
+	(a, b, c),							\
+	((void*) 0xbad, 0xbad, 0xbad),		\
+	-1,									\
+	EINVAL								\
+)
+
+
+#define test_use_pthread_mutex_init()			\
+test_register(									\
+	int,										\
+	pthread_mutex_init,							\
+	(pthread_mutex_t* restrict a,				\
+	const pthread_mutexattr_t* restrict b),		\
+	(a, b),										\
+	((void*) 0x1bad, (void*) 0x2bad),			\
+	ENOMEM,										\
+	0											\
+)
+
 
 #ifdef __cplusplus
 }

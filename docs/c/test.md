@@ -45,12 +45,12 @@ main()
 
 ## Error handling
 
-The module defines a very simple `error_handler()` that allows an infinite
-number of `EINTR` errors to pass, as well as no errors (code `0`). The rest
-are handled as if they can't be resolved.
+The error module by default defines a very simple `error_handler()` that allows
+an infinite number of `EINTR` errors to pass, as well as no errors (code `0`).
+The rest are handled as if they can't be resolved.
 
 If a test suite needs it's own error handling function, it can simply define
-one. The declaration of the function is weak - it can be overwritten.
+one. The default definition of the function is weak - it can be overwritten.
 
 ## Randomness
 
@@ -141,35 +141,31 @@ test_register(
 The mock argument values can be pretty much anything,
 excluding the "usual" values the arguments might take.
 
-The erroneous behavior consists of returning a predefined
-value, setting errno to an arbitrary value, and eventually
-also defining after how many calls to return the error:
+The erroneous behavior consists of returning a predefined value, setting errno
+to an arbitrary value, erroring out a number of times in a row, and having a
+delay before starting to error the given function.
 
 ```c
-test_error_get_errno(pipe);
-test_error_set_errno(pipe, ENFILE);
+test_error_errno(pipe) = ENFILE;
 
-test_error_get_retval(pipe);
-test_error_set_retval(pipe, -1);
+test_error_retval(pipe) = -1;
 
-/* Throw the retval and errno at first call */
+/* Throw the retval and errno at first call only */
 test_error(pipe);
 
 /* Specify after how many calls to throw */
-test_error_set(pipe, 1); /* Same as above */
-/* First call is normal, second errors out */
-test_error_set(pipe, 2);
+test_error_delay(pipe) = 0; /* Same as above */
 
-/* Retrieve in how many calls to throw. 0 = never */
-test_error_get(pipe);
+/* First call is normal, second errors out */
+test_error_delay(pipe) = 1;
+
+/* The number of times to fail */
+test_error_count(pipe) = 2; /* Fail twice in a row after the given delay */
 ```
 
 Note that the above calls are all not thread-safe, and also that
 `test_register()` is limited to the scope it was defined in. The
 best idea is to call the function at the top-level, before `main()`.
-Calling an overrided function is not thread-safe too, unless it
-already threw an error and `test_error()` & `test_error_set()`
-have not been called since.
 
 There are also a bunch of predefined `test_register` macros for functions
 that commonly appear across tests. The syntax for them is `test_use_xxx()`.
@@ -185,6 +181,6 @@ These calls before `main()` in the global scope will
 register the functions "shnet_malloc" and "pipe", and
 mock test them to make sure the overriding has succeeded.
 
-There are many more of these - for a full list see the header file `test.h`.
-If there isn't a macro for a function, you will need to explicitly use
-`test_register()` as specified above.
+There are many more of these - for a full list see the header
+file `test.h`. If there isn't a macro for a function, you will
+need to explicitly use `test_register()` as specified above.

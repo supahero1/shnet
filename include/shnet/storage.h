@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 
-
 #include <stdint.h>
 
 
@@ -50,10 +49,6 @@ data_frame_free_err(const struct data_frame* const);
 
 extern void
 data_storage_free(struct data_storage* const);
-
-
-extern int
-data_storage_resize(struct data_storage* const, const uint32_t);
 
 
 extern int

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 
+
 static struct preemption_data queue[10];
 
 static int queue_len = 0;

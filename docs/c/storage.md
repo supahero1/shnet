@@ -27,7 +27,7 @@ All of these are taken care of in this module using one structure.
 
 ## Dependencies
 
-- `error.md`
+- [`error.md`](./error.md)
 
 ## Usage
 
@@ -182,7 +182,7 @@ frames (and so the code breaks out of the loop in the example), or `0`
 otherwise.
 
 Another function used in the above example is `data_storage_finish()`.
-Its job is to try to optimise the first frame in the queue.
+Its job is to decrease memory footprint of the first frame in the queue.
 
 If a frame was not marked as read-only at the time of passing it to
 `data_storage_add()`, a new memory region will be allocated for it to make it
@@ -199,39 +199,16 @@ to try to optimise the final state of the storage.
 It is also legal to call the function when there are no
 frames in the storage. It will simply do nothing then.
 
+The function should probably only be used when the frames are really big in
+size, so that they don't completely clobber up the system. An example would
+be static file hosting, where the files could potentially be hundreds of MB
+in size. In that scenario, getting rid of unused memory would be mandatory.
+
 Assume in the above example the `&& used` code was not commented. In this
 case, if no bytes are consumed, but there are still pending frames, the
 usage of `data_storage_finish()` can decrease memory usage of the first
 frame. (Otherwise, after breaking out of the loop, the storage would
 always be empty, so the function wouldn't do anything.)
-
-The array of frames can be resized to fit the application's needs:
-
-```c
-uint32_t new_size = storage.used /* + some_new_space */;
-
-int no_mem = data_storage_resize(&storage, new_size);
-```
-
-In the above example, the storage's array of frames is resized to its real size.
-This might prove important to you, because when frames are removed (using
-`data_storage_drain()`), the array of frames isn't `realloc()`'ed to the new
-smaller size. Thus, the above function can be used to optimise your code - it
-either makes space for a lot of new frames, or cleans up after a lot of frames.
-You can access the absolute size of the array of frames by using `storage.size`.
-Any data between `storage.used` and `storage.size` is unused.
-
-```c
-if(
-	storage.used + 4 >= storage.size &&
-	data_storage_resize(&storage, storage.used + 4)
-)
-{
-	/* oopsie, no mem */
-}
-```
-
-The above code intelligently makes room for 4 more data frames.
 
 You can access `storage.bytes` to get the total number of bytes
 available in the storage. On every drain, this number will be
@@ -240,4 +217,4 @@ lowered, and on every insertion it will be increased. If it's
 
 You can free a frame by yourself using `data_frame_free(&frame)` and
 `data_frame_free_err(&frame)`. They will only free the given frame if
-`dont_free` and `free_onerr` were set to `0` and `1` respectively.
+`dont_free` or `free_onerr` were set to `0` and `1` respectively.
