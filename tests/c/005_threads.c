@@ -306,6 +306,10 @@ main()
 
 	pthreads_free(&threads);
 
+	/*
+	 * Make sure no unexpected threads are still up.
+	 */
+	test_sleep(safety_timeout);
 
 	return 0;
 }

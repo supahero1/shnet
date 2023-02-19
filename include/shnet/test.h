@@ -242,6 +242,42 @@ test_register(									\
 )
 
 
+#define test_use_eventfd()		\
+test_register(					\
+	int,						\
+	eventfd,					\
+	(unsigned int a, int b),	\
+	(a, b),						\
+	(0xbad, 0xbad),				\
+	-1,							\
+	ENOMEM						\
+)
+
+
+#define test_use_epoll_create1()	\
+test_register(						\
+	int,							\
+	epoll_create1,					\
+	(int a),						\
+	(a),							\
+	(0xbad),						\
+	-1,								\
+	ENOMEM							\
+)
+
+
+#define test_use_epoll_ctl()						\
+test_register(										\
+	int,											\
+	epoll_ctl,										\
+	(int a, int b, int c, struct epoll_event* d),	\
+	(a, b, c, d),									\
+	(0xbad, 0xbad, 0xbad, (void*) 0xbad),			\
+	-1,												\
+	ENOMEM											\
+)
+
+
 #ifdef __cplusplus
 }
 #endif
