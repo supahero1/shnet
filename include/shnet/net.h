@@ -14,150 +14,155 @@ extern "C" {
 enum net_consts
 {
 	/* FAMILIES */
-	net_family_any = AF_UNSPEC,
-	net_family_ipv4 = AF_INET,
-	net_family_ipv6 = AF_INET6,
+	NET_FAMILY_ANY = AF_UNSPEC,
+	NET_FAMILY_IPV4 = AF_INET,
+	NET_FAMILY_IPV6 = AF_INET6,
 
 	/* SOCKTYPES */
-	net_sock_any = 0,
-	net_sock_stream = SOCK_STREAM,
-	net_sock_datagram = SOCK_DGRAM,
-	net_sock_raw = SOCK_RAW,
-	net_sock_seqpacket = SOCK_SEQPACKET,
+	NET_SOCK_ANY = 0,
+	NET_SOCK_STREAM = SOCK_STREAM,
+	NET_SOCK_DATAGRAM = SOCK_DGRAM,
+	NET_SOCK_RAW = SOCK_RAW,
+	NET_SOCK_SEQPACKET = SOCK_SEQPACKET,
 
 	/* PROTOCOLS */
-	net_proto_any = 0,
-	net_proto_tcp = IPPROTO_TCP,
-	net_proto_udp = IPPROTO_UDP,
-	net_proto_udp_lite = IPPROTO_UDPLITE,
+	NET_PROTO_ANY = 0,
+	NET_PROTO_TCP = IPPROTO_TCP,
+	NET_PROTO_UDP = IPPROTO_UDP,
+	NET_PROTO_UDP_LITE = IPPROTO_UDPLITE,
 
 	/* FLAGS */
-	net_flag_wants_server = AI_PASSIVE,
-	net_flag_wants_canonical_name = AI_CANONNAME,
-	net_flag_numeric_hostname = AI_NUMERICHOST,
-	net_flag_numeric_service = AI_NUMERICSERV,
-	net_flag_wants_own_ip_version = AI_ADDRCONFIG,
-	net_flag_wants_all_addresses = AI_ALL,
-	net_flag_wants_mapped_ipv4 = AI_V4MAPPED,
+	NET_FLAG_WANTS_SERVER = AI_PASSIVE,
+	NET_FLAG_WANTS_CANONICAL_NAME = AI_CANONNAME,
+	NET_FLAG_NUMERIC_HOSTNAME = AI_NUMERICHOST,
+	NET_FLAG_NUMERIC_SERVICE = AI_NUMERICSERV,
+	NET_FLAG_WANTS_OWN_IP_VERSION = AI_ADDRCONFIG,
+	NET_FLAG_WANTS_ALL_ADDRESSES = AI_ALL,
+	NET_FLAG_WANTS_MAPPED_IPV4 = AI_V4MAPPED,
 
 	/* CONSTANTS */
-	net_const_ipv4_strlen = INET_ADDRSTRLEN,
-	net_const_ipv6_strlen = INET6_ADDRSTRLEN,
-	net_const_ip_max_strlen = net_const_ipv6_strlen,
-	net_const_ipv4_size = sizeof(struct sockaddr_in),
-	net_const_ipv6_size = sizeof(struct sockaddr_in6),
-	net_const_ip_max_size = net_const_ipv6_size
+	NET_CONST_IPV4_STRLEN = INET_ADDRSTRLEN,
+	NET_CONST_IPV6_STRLEN = INET6_ADDRSTRLEN,
+	NET_CONST_IP_MAX_STRLEN = NET_CONST_IPV6_STRLEN,
+	NET_CONST_IPV4_SIZE = sizeof(struct sockaddr_in),
+	NET_CONST_IPV6_SIZE = sizeof(struct sockaddr_in6),
+	NET_CONST_IP_MAX_SIZE = NET_CONST_IPV6_SIZE
 };
 
 
-
-extern struct addrinfo
-net_get_addr_struct(const int, const int, const int, const int);
-
-
-extern struct addrinfo*
-net_get_address(const char* const,
-	const char* const, const struct addrinfo* const);
-
+typedef struct sockaddr_storage net_address_t;
 
 
 struct net_async_address
 {
 	char* hostname;
 	char* port;
+
 	struct addrinfo* hints;
+
 	void* data;
 	void (*callback)(struct net_async_address*, struct addrinfo*);
 };
 
 
+
+extern struct addrinfo
+net_get_addr_struct(int family, int socktype, int protocol, int flags);
+
+
+extern struct addrinfo*
+net_get_address_sync(const char* hostname,
+	const char* port, const struct addrinfo* hints);
+
+
 extern int
-net_get_address_async(struct net_async_address* const);
+net_get_address_async(struct net_async_address* addr);
 
 
 extern void
-net_free_address(struct addrinfo* const);
+net_free_address(struct addrinfo* info);
 
 
 
 extern void
-net_address_to_string(const void* const, char* const);
+net_address_to_string(const void* addr, char* buffer);
 
 
 extern sa_family_t
-net_address_to_family(const void* const);
+net_address_to_family(const void* addr);
 
 
 extern uint16_t
-net_address_to_port(const void* const);
+net_address_to_port(const void* addr);
 
 
-extern void* net_address_to_ip(const void* const);
+extern void*
+net_address_to_ip(const void* addr);
 
-
-
-extern int
-net_socket_get(const struct addrinfo* const);
 
 
 extern int
-net_socket_bind(const int, const struct addrinfo* const);
+net_socket_get(const struct addrinfo* info);
 
 
 extern int
-net_socket_connect(const int, const struct addrinfo* const);
+net_socket_bind(int sfd, const struct addrinfo* info);
 
 
 extern int
-net_socket_setopt_true(const int, const int, const int);
+net_socket_connect(int sfd, const struct addrinfo* info);
 
 
 extern int
-net_socket_setopt_false(const int, const int, const int);
-
-
-extern void
-net_socket_reuse_addr(const int);
-
-
-extern void
-net_socket_dont_reuse_addr(const int);
-
-
-extern void
-net_socket_reuse_port(const int);
-
-
-extern void
-net_socket_dont_reuse_port(const int);
+net_socket_setopt_true(int sfd, int level, int option_name);
 
 
 extern int
-net_socket_get_family(const int);
+net_socket_setopt_false(int sfd, int level, int option_name);
+
+
+extern void
+net_socket_reuse_addr(int sfd);
+
+
+extern void
+net_socket_dont_reuse_addr(int sfd);
+
+
+extern void
+net_socket_reuse_port(int sfd);
+
+
+extern void
+net_socket_dont_reuse_port(int sfd);
 
 
 extern int
-net_socket_get_socktype(const int);
+net_socket_get_family(int sfd);
 
 
 extern int
-net_socket_get_protocol(const int);
+net_socket_get_socktype(int sfd);
+
+
+extern int
+net_socket_get_protocol(int sfd);
 
 
 extern void
-net_socket_get_peer_address(const int, void* const);
+net_socket_get_peer_address(int sfd, void* addr);
 
 
 extern void
-net_socket_get_local_address(const int, void* const);
+net_socket_get_local_address(int sfd, void* addr);
 
 
 extern void
-net_socket_dont_block(const int);
+net_socket_dont_block(int sfd);
 
 
 extern void
-net_socket_default_options(const int);
+net_socket_default_options(int sfd);
 
 
 #ifdef __cplusplus

@@ -3,13 +3,9 @@
 The goals of this module are:
 1. Rename constants to be more intuitive,
 2. Use the `error` module to create "safe" versions of
-	 some networking routines like `connect()` or `bind()`,
+	some networking routines like `connect()` or `bind()`,
 3. Remove ipv4 vs ipv6 dependency of some functions,
 4. Implement an asynchronous DNS lookup functionality.
-
-Not all constants and functions are covered. This module
-is more of a bridge between the library and the operating
-system rather than the application and the library.
 
 ## Dependencies
 

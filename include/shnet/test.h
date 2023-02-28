@@ -27,7 +27,7 @@ test_seed_random(void);
 
 
 extern void
-test_begin(const char* const);
+test_begin(const char* str);
 
 
 extern void
@@ -52,16 +52,16 @@ test_mutex_wake(void);
 
 
 extern void
-test_sleep(const uint64_t);
+test_sleep(uint64_t ms);
 
 
 
 extern void
-test_expect_segfault(const void* const);
+test_expect_segfault(const void* ptr);
 
 
 extern void
-test_expect_no_segfault(const void* const);
+test_expect_no_segfault(const void* ptr);
 
 
 

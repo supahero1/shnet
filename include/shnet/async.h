@@ -13,68 +13,62 @@ extern "C" {
 
 enum async_shutdown
 {
-	async_sync = 1,
-	async_free = 2,
-	async_ptr_free = 4
+	ASYNC_SYNC = 1,
+	ASYNC_FREE = 2,
+	ASYNC_PTR_FREE = 4
 };
 
 
-struct async_event
-{
-	int fd;
+struct async_loop;
 
-	uint8_t socket:1;
-	uint8_t server:1;
-};
+
+typedef void (*async_loop_event_t)(struct async_loop*, int*, uint32_t);
 
 
 struct async_loop
 {
 	struct epoll_event* events;
-	void (*on_event)(struct async_loop*, uint32_t, struct async_event*);
-
-	pthread_t thread;
-
-	struct async_event evt;
+	async_loop_event_t on_event;
 
 	uint32_t events_len;
 
-	int fd;
+	pthread_t thread;
+
+	int event_fd;
+	int epoll_fd;
 };
 
 
 extern void*
-async_loop_thread(void*);
+async_loop_thread(void* async_loop);
 
 
 extern int
-async_loop(struct async_loop* const);
+async_loop(struct async_loop* loop);
 
 
 extern int
-async_loop_start(struct async_loop* const);
+async_loop_start(struct async_loop* loop);
 
 
 extern void
-async_loop_free(struct async_loop* const);
+async_loop_free(struct async_loop* loop);
 
 
 extern void
-async_loop_shutdown(const struct async_loop* const, const enum async_shutdown);
+async_loop_shutdown(const struct async_loop* loop, enum async_shutdown flags);
 
 
 extern int
-async_loop_add(const struct async_loop* const,
-	struct async_event* const, const uint32_t);
+async_loop_add(const struct async_loop* loop, int* event_fd, uint32_t events);
 
 
 extern int
-async_loop_mod(const struct async_loop* const,
-	struct async_event* const, const uint32_t);
+async_loop_mod(const struct async_loop* loop, int* event_fd, uint32_t events);
 
 
 extern int
-async_loop_remove(const struct async_loop* const, struct async_event* const);
+async_loop_remove(const struct async_loop* loop, int* event_fd);
 
 
 #ifdef __cplusplus

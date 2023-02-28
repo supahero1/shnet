@@ -50,11 +50,11 @@ shnet_calloc(const size_t num, const size_t size)
 
 
 void*
-shnet_realloc(void* const in, const size_t size)
+shnet_realloc(void* const __ptr, const size_t size)
 {
 	void* ptr;
 
-	safe_execute(ptr = realloc(in, size), ptr == NULL, ENOMEM);
+	safe_execute(ptr = realloc(__ptr, size), ptr == NULL, ENOMEM);
 
 	return ptr;
 }

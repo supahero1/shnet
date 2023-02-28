@@ -13,6 +13,7 @@ struct data_frame
 	union
 	{
 		char* data;
+
 		int fd;
 	};
 
@@ -40,31 +41,31 @@ struct data_storage
 
 
 extern void
-data_frame_free(const struct data_frame* const);
+data_frame_free(const struct data_frame* frame);
 
 
 extern void
-data_frame_free_err(const struct data_frame* const);
+data_frame_free_err(const struct data_frame* frame);
 
 
 extern void
-data_storage_free(struct data_storage* const);
+data_storage_free(struct data_storage* storage);
 
 
 extern int
-data_storage_add(struct data_storage* const, const struct data_frame* const);
+data_storage_add(struct data_storage* storage, const struct data_frame* frame);
 
 
 extern void
-data_storage_drain(struct data_storage* const, const uint64_t);
+data_storage_drain(struct data_storage* storage, uint64_t amount);
 
 
 extern void
-data_storage_finish(const struct data_storage* const);
+data_storage_finish(const struct data_storage* storage);
 
 
 extern int
-data_storage_is_empty(const struct data_storage* const);
+data_storage_is_empty(const struct data_storage* storage);
 
 
 #ifdef __cplusplus

@@ -147,12 +147,12 @@ with `data` as its argument in 1 second from now.
 
 If you want a timeout to be fired "insta-asynchronously" (instantly, but once
 it's processed, so not necessarily **now**), **DO NOT** put small integers like
-`0` as `time`. Instead, use the constant `time_immediately`. For intervals, use
+`0` as `time`. Instead, use the constant `TIME_IMMEDIATELY`. For intervals, use
 `time_get_time()`, see below.
 
-Additionally, if you want to launch a few timers with `time_immediately` as
+Additionally, if you want to launch a few timers with `TIME_IMMEDIATELY` as
 their time, but still want to order them somehow, **DO NOT** add any arbitrary
-values like `1` to their time. Instead, use `time_step`, which is the smallest
+values like `1` to their time. Instead, use `TIME_STEP`, which is the smallest
 distinguishable time difference the library can handle.
 
 Timers are executed in the time manager's thread. Thus, to not delay other
@@ -229,7 +229,7 @@ struct time_timeout* timeout_ = time_open_timeout(&timers, &timer);
 
 if(timeout)
 {
-	timeout_.time = time_immediately;
+	timeout_.time = TIME_IMMEDIATELY;
 	timeout_.func = pthread_exit;
 	timeout_.data = NULL;
 
@@ -317,10 +317,10 @@ now, the next expiration will be in `40ms` from now to account for the delay.
 
 `struct time_timer` is the same for both timeouts and intervals.
 
-**DO NOT** set `base_time` to `time_immediately` to make the interval
+**DO NOT** set `base_time` to `TIME_IMMEDIATELY` to make the interval
 be executed semi-instantly. Set it to `time_get_time()` instead.
 
-If you do set it to `time_immediately`, the interval will be on a rampage,
+If you do set it to `TIME_IMMEDIATELY`, the interval will be on a rampage,
 executing constantly in a loop. However, this might be desirable if you plan
 on cancelling the interval anyway, so that the extra call to fetch current
 time in `time_get_time()` is redundant.

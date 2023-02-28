@@ -27,26 +27,27 @@ pthread_async_off(void);
 
 
 extern int
-pthread_start(pthread_t* const, void* (*)(void*), void* const);
+pthread_start(pthread_t* id, void* (*func)(void*), void* data);
 
 
 extern int
-pthread_start_explicit(pthread_t* const,
-	const pthread_attr_t* const, void* (*)(void*), void* const);
+pthread_start_explicit(pthread_t* id,
+	const pthread_attr_t* attr, void* (*func)(void*), void* data);
 
 
 extern void
-pthread_cancel_sync(const pthread_t);
+pthread_cancel_sync(pthread_t id);
 
 
 extern void
-pthread_cancel_async(const pthread_t);
+pthread_cancel_async(pthread_t id);
 
 
 
 typedef struct
 {
 	pthread_t* ids;
+
 	uint32_t used;
 	uint32_t size;
 }
@@ -70,33 +71,33 @@ struct pthreads_data
 
 
 extern int
-pthreads_start(pthreads_t* const,
-	void* (*)(void*), void* const, const uint32_t);
+pthreads_start(pthreads_t* threads,
+	void* (*func)(void*), void* data, uint32_t amount);
 
 
 extern int
-pthreads_start_explicit(pthreads_t* const, const pthread_attr_t* const,
-	void* (*)(void*), void* const, const uint32_t);
+pthreads_start_explicit(pthreads_t* threads, const pthread_attr_t* attr,
+	void* (*func)(void*), void* data, uint32_t amount);
 
 
 extern void
-pthreads_cancel_sync(pthreads_t* const, const uint32_t);
+pthreads_cancel_sync(pthreads_t* threads, uint32_t amount);
 
 
 extern void
-pthreads_cancel_async(pthreads_t* const, const uint32_t);
+pthreads_cancel_async(pthreads_t* threads, uint32_t amount);
 
 
 extern void
-pthreads_shutdown_sync(pthreads_t* const);
+pthreads_shutdown_sync(pthreads_t* threads);
 
 
 extern void
-pthreads_shutdown_async(pthreads_t* const);
+pthreads_shutdown_async(pthreads_t* threads);
 
 
 extern void
-pthreads_free(pthreads_t* const);
+pthreads_free(pthreads_t* threads);
 
 
 
@@ -122,47 +123,47 @@ struct thread_pool
 
 
 extern void*
-thread_pool_thread(void*);
+thread_pool_thread(void* pool);
 
 
 extern int
-thread_pool(struct thread_pool* const);
+thread_pool(struct thread_pool* pool);
 
 
 extern void
-thread_pool_lock(struct thread_pool* const);
+thread_pool_lock(struct thread_pool* pool);
 
 
 extern void
-thread_pool_unlock(struct thread_pool* const);
+thread_pool_unlock(struct thread_pool* pool);
 
 
 extern int
-thread_pool_add_raw(struct thread_pool* const, void (*)(void*), void* const);
+thread_pool_add_raw(struct thread_pool* pool, void (*func)(void*), void* data);
 
 
 extern int
-thread_pool_add(struct thread_pool* const, void (*)(void*), void* const);
+thread_pool_add(struct thread_pool* pool, void (*func)(void*), void* data);
 
 
 extern void
-thread_pool_try_work_raw(struct thread_pool* const);
+thread_pool_try_work_raw(struct thread_pool* pool);
 
 
 extern void
-thread_pool_try_work(struct thread_pool* const);
+thread_pool_try_work(struct thread_pool* pool);
 
 
 extern void
-thread_pool_work_raw(struct thread_pool* const);
+thread_pool_work_raw(struct thread_pool* pool);
 
 
 extern void
-thread_pool_work(struct thread_pool* const);
+thread_pool_work(struct thread_pool* pool);
 
 
 extern void
-thread_pool_free(struct thread_pool* const);
+thread_pool_free(struct thread_pool* pool);
 
 
 #ifdef __cplusplus

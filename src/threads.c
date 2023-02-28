@@ -37,8 +37,8 @@ pthread_async_off()
 
 
 int
-pthread_start_explicit(pthread_t* id,
-	const pthread_attr_t* const attr, void* (*func)(void*), void* const data)
+pthread_start_explicit(pthread_t* id, const pthread_attr_t* const attr,
+	void* (*func)(void*), void* const data)
 {
 	int err;
 	pthread_t tid;
@@ -135,7 +135,7 @@ pthreads_resize(pthreads_t* const threads, const uint32_t new_size)
 	}
 
 	void* const ptr =
-		shnet_realloc(threads->ids, sizeof(pthread_t) * new_size);
+		shnet_realloc(threads->ids, sizeof(*threads->ids) * new_size);
 
 	if(ptr == NULL)
 	{
@@ -170,8 +170,7 @@ pthreads_start_explicit(pthreads_t* const threads,
 		return -1;
 	}
 
-	struct pthreads_data* const data =
-		shnet_malloc(sizeof(struct pthreads_data));
+	struct pthreads_data* const data = shnet_malloc(sizeof(*data));
 
 	if(data == NULL)
 	{
@@ -375,10 +374,8 @@ pthreads_free(pthreads_t* const threads)
 
 
 void*
-thread_pool_thread(void* thread_pool_thread_data)
+thread_pool_thread(void* pool)
 {
-	struct thread_pool* const pool = thread_pool_thread_data;
-
 	while(1)
 	{
 		thread_pool_work(pool);
@@ -452,7 +449,7 @@ thread_pool_resize_raw(struct thread_pool* const pool, const uint32_t new_size)
 	}
 
 	void* const ptr =
-		shnet_realloc(pool->queue, sizeof(struct thread_pool_job) * new_size);
+		shnet_realloc(pool->queue, sizeof(*pool->queue) * new_size);
 
 	if(ptr == NULL)
 	{
@@ -547,7 +544,7 @@ thread_pool_try_work_common(struct thread_pool* const pool, const int lock)
 	--pool->used;
 
 	(void) memmove(pool->queue, pool->queue + 1,
-		sizeof(struct thread_pool_job) * pool->used);
+		sizeof(*pool->queue) * pool->used);
 
 	if(pool->used < (pool->size >> 2))
 	{

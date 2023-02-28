@@ -58,3 +58,8 @@ uninstall:
 .PHONY: help
 help:
 	$(Q)cat INSTALL
+
+.PHONY: replace
+replace:
+	rm -fr /usr/local/include/shnet
+	cp -r include/shnet /usr/local/include/

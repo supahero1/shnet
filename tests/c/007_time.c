@@ -636,7 +636,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately,
+		.time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -669,7 +669,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately,
+		.time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -683,7 +683,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -707,7 +707,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -715,7 +715,7 @@ main()
 		(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -739,7 +739,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -747,7 +747,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -771,7 +771,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -779,7 +779,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -796,7 +796,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -814,14 +814,14 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	})));
 
 	assert(!time_add_timeout_raw(&timers, &(
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	})));
 
 	time_unlock(&timers);
@@ -846,7 +846,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately,
+		.time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -855,7 +855,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -879,7 +879,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -887,7 +887,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -911,7 +911,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -919,7 +919,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -943,7 +943,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -951,7 +951,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -967,7 +967,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -985,7 +985,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -993,7 +993,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 	time_unlock(&timers);
@@ -1018,7 +1018,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately,
+		.time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1027,7 +1027,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -1051,7 +1051,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -1059,7 +1059,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -1083,7 +1083,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -1091,7 +1091,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -1114,7 +1114,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -1122,7 +1122,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -1138,7 +1138,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -1155,7 +1155,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -1163,7 +1163,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 	time_unlock(&timers);
@@ -1514,7 +1514,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1529,7 +1529,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1555,7 +1555,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1565,7 +1565,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1591,7 +1591,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1601,7 +1601,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1627,7 +1627,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1637,7 +1637,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1654,7 +1654,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -1673,7 +1673,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -1685,7 +1685,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref3,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref3
 	}
 	)));
@@ -1711,7 +1711,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1721,7 +1721,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1747,7 +1747,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1757,7 +1757,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1783,7 +1783,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1793,7 +1793,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1819,7 +1819,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1829,7 +1829,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1846,7 +1846,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -1865,7 +1865,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -1875,7 +1875,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref3,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref3
 	}
 	)));
@@ -1901,7 +1901,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1911,7 +1911,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1937,7 +1937,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1947,7 +1947,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -1973,7 +1973,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -1983,7 +1983,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -2009,7 +2009,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref1
 	}
 	)));
@@ -2019,7 +2019,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref2,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref2
 	}
 	)));
@@ -2036,7 +2036,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2055,7 +2055,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2065,7 +2065,7 @@ main()
 	{
 		.func = wake_int,
 		.data = &ref3,
-		.base_time = time_immediately + time_step,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP,
 		.ref = &ref3
 	}
 	)));
@@ -2088,7 +2088,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2105,7 +2105,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2113,7 +2113,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2138,7 +2138,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2146,7 +2146,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2170,7 +2170,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2178,7 +2178,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2202,7 +2202,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2210,7 +2210,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2233,7 +2233,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2241,7 +2241,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2257,7 +2257,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2275,7 +2275,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2283,7 +2283,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2308,7 +2308,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2316,7 +2316,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2340,7 +2340,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2348,7 +2348,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2372,7 +2372,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2380,7 +2380,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2404,7 +2404,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2412,7 +2412,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2428,7 +2428,7 @@ main()
 	(struct time_interval)
 	{
 		.func = assert_0,
-		.base_time = time_immediately + time_step * 2,
+		.base_time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2446,7 +2446,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2454,7 +2454,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2479,7 +2479,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2487,7 +2487,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2511,7 +2511,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2519,7 +2519,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2543,7 +2543,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2551,7 +2551,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2575,7 +2575,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.time = time_immediately
+		.time = TIME_IMMEDIATELY
 	}
 	)));
 
@@ -2583,7 +2583,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2604,7 +2604,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2624,7 +2624,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2633,7 +2633,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2660,7 +2660,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2669,7 +2669,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2695,7 +2695,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2704,7 +2704,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2730,7 +2730,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2739,7 +2739,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2765,7 +2765,7 @@ main()
 	{
 		.func = cancel,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2774,7 +2774,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2790,7 +2790,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2810,7 +2810,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2819,7 +2819,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2846,7 +2846,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2855,7 +2855,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2881,7 +2881,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2890,7 +2890,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2916,7 +2916,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2925,7 +2925,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2951,7 +2951,7 @@ main()
 	{
 		.func = cancel_1,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -2960,7 +2960,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -2976,7 +2976,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = assert_0,
-		.time = time_immediately + time_step * 2,
+		.time = TIME_IMMEDIATELY + TIME_STEP * 2,
 		.ref = &ref1
 	}
 	)));
@@ -2996,7 +2996,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -3005,7 +3005,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -3032,7 +3032,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -3041,7 +3041,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -3067,7 +3067,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -3076,7 +3076,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -3102,7 +3102,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -3111,7 +3111,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 
@@ -3137,7 +3137,7 @@ main()
 	{
 		.func = cancel_2,
 		.data = &data,
-		.base_time = time_immediately,
+		.base_time = TIME_IMMEDIATELY,
 		.ref = &ref2
 	}
 	)));
@@ -3146,7 +3146,7 @@ main()
 	(struct time_timeout)
 	{
 		.func = wake,
-		.time = time_immediately + time_step
+		.time = TIME_IMMEDIATELY + TIME_STEP
 	}
 	)));
 

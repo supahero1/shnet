@@ -7,16 +7,16 @@
 
 
 void
-onevt(struct async_loop* loop, uint32_t events, struct async_event* event)
+onevt(struct async_loop* loop, int* event_fd, uint32_t events)
 {
 	(void) loop;
 
 	uint64_t out;
 
-	assert(!eventfd_read(event->fd, &out));
+	assert(!eventfd_read(*event_fd, &out));
 
 	assert(events == EPOLLIN);
-	assert(out == (uintptr_t) event);
+	assert(out == (uintptr_t) event_fd);
 
 	test_wake();
 }
@@ -104,7 +104,7 @@ main()
 
 	test_begin("async stop sync");
 
-	async_loop_shutdown(&loop, async_sync);
+	async_loop_shutdown(&loop, ASYNC_SYNC);
 	async_loop_free(&loop);
 
 	assert(!async_loop(&loop));
@@ -115,7 +115,7 @@ main()
 
 	test_begin("async stop async");
 
-	async_loop_shutdown(&loop, async_free);
+	async_loop_shutdown(&loop, ASYNC_FREE);
 
 	test_end();
 
@@ -129,7 +129,7 @@ main()
 	assert(!async_loop(loop2));
 	assert(!async_loop_start(loop2));
 
-	async_loop_shutdown(loop2, async_free | async_ptr_free);
+	async_loop_shutdown(loop2, ASYNC_FREE | ASYNC_PTR_FREE);
 
 	test_end();
 
@@ -143,14 +143,14 @@ main()
 	assert(!async_loop(&l));
 	assert(!async_loop_start(&l));
 
-	struct async_event events[5] = {0};
+	int event_fds[5] = {0};
 
 	for(int i = 0; i < 5; ++i)
 	{
-		events[i].fd = eventfd(0, EFD_NONBLOCK);
+		event_fds[i] = eventfd(0, EFD_NONBLOCK);
 
-		assert(events[i].fd != -1);
-		assert(!async_loop_add(&l, events + i, EPOLLIN | EPOLLET));
+		assert(event_fds[i] != -1);
+		assert(!async_loop_add(&l, event_fds + i, EPOLLIN | EPOLLET));
 	}
 
 	test_end();
@@ -160,7 +160,7 @@ main()
 
 	for(int i = 0; i < 5; ++i)
 	{
-		assert(!eventfd_write(events[i].fd, (uintptr_t)(events + i)));
+		assert(!eventfd_write(event_fds[i], (uintptr_t)(event_fds + i)));
 	}
 
 	for(int i = 0; i < 5; ++i)
@@ -173,12 +173,12 @@ main()
 
 	test_begin("async event 2");
 
-	assert(!async_loop_mod(&l, events + 0, 0));
-	assert(!eventfd_write(events[0].fd, 1));
+	assert(!async_loop_mod(&l, event_fds + 0, 0));
+	assert(!eventfd_write(event_fds[0], 1));
 
 	for(int i = 1; i < 5; ++i)
 	{
-		assert(!eventfd_write(events[i].fd, (uintptr_t)(events + i)));
+		assert(!eventfd_write(event_fds[i], (uintptr_t)(event_fds + i)));
 	}
 
 	for(int i = 0; i < 4; ++i)
@@ -191,8 +191,8 @@ main()
 
 	test_begin("async event 3");
 
-	assert(!eventfd_write(events[0].fd, (uintptr_t) events - 1));
-	assert(!async_loop_mod(&l, events + 0, EPOLLIN));
+	assert(!eventfd_write(event_fds[0], (uintptr_t) event_fds - 1));
+	assert(!async_loop_mod(&l, event_fds + 0, EPOLLIN));
 
 	test_wait();
 
@@ -201,7 +201,7 @@ main()
 
 	test_begin("async manual");
 
-	async_loop_shutdown(&l, async_sync);
+	async_loop_shutdown(&l, ASYNC_SYNC);
 	async_loop_shutdown(&l, 0);
 
 	(void) async_loop_thread(&l);
@@ -213,8 +213,8 @@ main()
 
 	for(int i = 0; i < 5; ++i)
 	{
-		assert(!async_loop_remove(&l, events + i));
-		close(events[i].fd);
+		assert(!async_loop_remove(&l, event_fds + i));
+		close(event_fds[i]);
 	}
 
 	async_loop_free(&l);

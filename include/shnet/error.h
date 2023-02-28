@@ -8,7 +8,7 @@ extern "C" {
 
 __attribute__((weak))
 extern int
-error_handler(int, int);
+error_handler(int error, int count);
 
 
 /*
@@ -38,19 +38,22 @@ do                                                                      \
 while(0)
 
 
+#define shnet_fallthrough() __attribute__((fallthrough))
+
+
 #include <stddef.h>
 
 
 extern void*
-shnet_malloc(const size_t);
+shnet_malloc(size_t size);
 
 
 extern void*
-shnet_calloc(const size_t, const size_t);
+shnet_calloc(size_t num, size_t size);
 
 
 extern void*
-shnet_realloc(void* const, const size_t);
+shnet_realloc(void* ptr, size_t new_size);
 
 
 #ifdef __cplusplus

@@ -18,10 +18,14 @@ Initialisation:
 
 ```c
 void
-evt(struct async_loop* loop, uint32_t events, struct async_event* event)
+evt(struct async_loop* loop, int* event_fd, uint32_t events)
 {
 	/* ... */
 }
+
+/*
+async_loop_event_t ptr = evt;
+*/
 
 struct async_loop loop = {0};
 loop.on_event = evt;
@@ -29,6 +33,8 @@ loop.events_len = 32;
 
 int err = async_loop(&loop);
 ```
+
+`async_loop_event_t` is a shortened type describing the event callback type.
 
 The `async_loop_free()` function does not
 reset `loop.on_event` and `loop.events_len`.
@@ -57,11 +63,11 @@ used.
 The function accepts flags as it's second argument.
 You can choose for the shutdown to:
 
-- `async_sync` - return synchronously only after everything has been dealt with,
+- `ASYNC_SYNC` - return synchronously only after everything has been dealt with,
 
-- `async_free` - free the structure during the shutdown,
+- `ASYNC_FREE` - free the structure during the shutdown,
 
-- `async_ptr_free` - free the pointer (`&loop`) during the shutdown.
+- `ASYNC_PTR_FREE` - free the pointer (`&loop`) during the shutdown.
 
 You can also omit any flags. In that case, the loop will
 only be stopped, and no further action will be taken:
@@ -77,25 +83,22 @@ To specify multiple flags, OR them together.
 The loop will only be terminated when all events have been
 dealt with. It cannot be stopped while it is dealing with them.
 
-This module operates on `struct async_event`'s
-rather than pure file descriptors:
+This module operates on pure file descriptors with no abstraction:
 
 ```c
-struct async_event event = {0};
-event.fd = open(...);
+int event_fd = open(...);
 
-int err = async_loop_add(&loop, &event, EPOLLET | EPOLLIN);
+int err = async_loop_add(&loop, &event_fd, EPOLLET | EPOLLIN);
 
 /* ... */
 
-struct async_event event2 = {0};
-event2.fd = event.fd;
+int event_fd2 = event.fd;
 
 /* Set new pointer for it, along with new event mask */
-err = async_loop_mod(&loop, &event2, EPOLLOUT);
+err = async_loop_mod(&loop, &event_fd2, EPOLLOUT);
 
 /* ... */
-err = async_loop_remove(&loop, &event2/*or &event, because same fd*/);
+err = async_loop_remove(&loop, &event_fd2/*or &event_fd, because same fd*/);
 ```
 
 The event's pointer **MUST NOT** change after being added while the loop is
@@ -103,3 +106,33 @@ running, unless you account for that by stopping the loop, modifying the event
 to set the new pointer, and restarting the loop. The pointer will be passed to
 the loop's `on_event` handler and it is the only mean of carrying in user data
 (besides of the file descriptor).
+
+You can then encapsulate the file descriptor for easy usage:
+
+```c
+struct my_data
+{
+	int fd;
+
+	void* other_data;
+};
+
+
+struct my_data some_data = {/*...*/};
+
+
+(void) async_loop_add(&loop, &some_data.fd, EPOLLET | EPOLLIN);
+
+
+void
+async_loop_event(struct async_loop* loop, int* event_fd, uint32_t events)
+{
+	struct my_data* data = (struct my_data*) event_fd;
+
+	/* operate on the data */
+}
+```
+
+The location in memory of `some_data` must not change, because otherwise
+the dereference will become invalid. The mechanism of changing the pointer
+is long and tedius as specified above, and so should be avoided.

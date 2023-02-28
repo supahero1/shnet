@@ -9,43 +9,43 @@
 
 
 void*
-async_loop_thread(void* async_loop_thread_data)
+async_loop_thread(void* async_loop)
 {
 	pthread_cancel_off();
 
-	struct async_loop* const loop = async_loop_thread_data;
+	struct async_loop* const loop = async_loop;
 
 	while(1)
 	{
 		const int count =
-			epoll_wait(loop->fd, loop->events, loop->events_len, -1);
+			epoll_wait(loop->epoll_fd, loop->events, loop->events_len, -1);
 
 		for(int i = 0; i < count; ++i)
 		{
-			struct async_event* const event = loop->events[i].data.ptr;
+			int* const event = loop->events[i].data.ptr;
 			const uint32_t mask = loop->events[i].events;
 
-			if(event->fd == loop->evt.fd)
+			if(*event == loop->event_fd)
 			{
 				assert(mask == EPOLLIN);
 
 				eventfd_t flags;
 
-				assert(!eventfd_read(loop->evt.fd, &flags));
+				assert(!eventfd_read(loop->event_fd, &flags));
 
 				flags >>= 1;
 
-				if(!(flags & async_sync))
+				if(!(flags & ASYNC_SYNC))
 				{
 					(void) pthread_detach(loop->thread);
 				}
 
-				if(flags & async_free)
+				if(flags & ASYNC_FREE)
 				{
 					async_loop_free(loop);
 				}
 
-				if(flags & async_ptr_free)
+				if(flags & ASYNC_PTR_FREE)
 				{
 					free(loop);
 				}
@@ -54,7 +54,7 @@ async_loop_thread(void* async_loop_thread_data)
 			}
 			else
 			{
-				loop->on_event(loop, mask, event);
+				loop->on_event(loop, event, mask);
 			}
 		}
 	}
@@ -87,36 +87,40 @@ async_loop(struct async_loop* const loop)
 		return -1;
 	}
 
-	safe_execute(loop->fd = epoll_create1(0), loop->fd == -1, errno);
+	safe_execute(
+		loop->epoll_fd = epoll_create1(0), loop->epoll_fd == -1, errno
+	);
 
-	if(loop->fd == -1)
+	if(loop->epoll_fd == -1)
 	{
-		goto err_e;
+		goto err_events;
 	}
 
-	safe_execute(loop->evt.fd = eventfd(0, EFD_NONBLOCK), loop->evt.fd == -1, errno);
+	safe_execute(
+		loop->event_fd = eventfd(0, EFD_NONBLOCK), loop->event_fd == -1, errno
+	);
 
-	if(loop->evt.fd == -1)
+	if(loop->event_fd == -1)
 	{
-		goto err_fd;
+		goto err_epoll_fd;
 	}
 
-	if(async_loop_add(loop, &loop->evt, EPOLLIN) == -1)
+	if(async_loop_add(loop, &loop->event_fd, EPOLLIN) == -1)
 	{
-		goto err_efd;
+		goto err_event_fd;
 	}
 
 	return 0;
 
-	err_efd:
+	err_event_fd:
 
-	(void) close(loop->evt.fd);
+	(void) close(loop->event_fd);
 
-	err_fd:
+	err_epoll_fd:
 
-	(void) close(loop->fd);
+	(void) close(loop->epoll_fd);
 
-	err_e:
+	err_events:
 
 	async_loop_free_common(loop);
 
@@ -134,8 +138,8 @@ async_loop_start(struct async_loop* const loop)
 void
 async_loop_free(struct async_loop* const loop)
 {
-	(void) close(loop->fd);
-	(void) close(loop->evt.fd);
+	(void) close(loop->epoll_fd);
+	(void) close(loop->event_fd);
 	async_loop_free_common(loop);
 }
 
@@ -144,9 +148,9 @@ void
 async_loop_shutdown(const struct async_loop* const loop,
 	const enum async_shutdown flags)
 {
-	assert(!eventfd_write(loop->evt.fd, 1 | (flags << 1)));
+	assert(!eventfd_write(loop->event_fd, 1 | (flags << 1)));
 
-	if(flags & async_sync)
+	if(flags & ASYNC_SYNC)
 	{
 		(void) pthread_join(loop->thread, NULL);
 	}
@@ -155,18 +159,18 @@ async_loop_shutdown(const struct async_loop* const loop,
 
 static int
 async_loop_modify(const struct async_loop* const loop,
-	struct async_event* const event, const int method, const uint32_t events)
+	int* const event_fd, const int method, const uint32_t events)
 {
 	int err;
 
-	safe_execute(err = epoll_ctl(loop->fd, method, event->fd, &(
+	safe_execute(err = epoll_ctl(loop->epoll_fd, method, *event_fd, &(
 	(struct epoll_event)
 	{
 		.events = events,
 		.data =
 		(epoll_data_t)
 		{
-			.ptr = event
+			.ptr = event_fd
 		}
 	}
 	)), err, errno);
@@ -177,23 +181,22 @@ async_loop_modify(const struct async_loop* const loop,
 
 int
 async_loop_add(const struct async_loop* const loop,
-	struct async_event* const event, const uint32_t events)
+	int* const event_fd, const uint32_t events)
 {
-	return async_loop_modify(loop, event, EPOLL_CTL_ADD, events);
+	return async_loop_modify(loop, event_fd, EPOLL_CTL_ADD, events);
 }
 
 
 int
 async_loop_mod(const struct async_loop* const loop,
-	struct async_event* const event, const uint32_t events)
+	int* const event_fd, const uint32_t events)
 {
-	return async_loop_modify(loop, event, EPOLL_CTL_MOD, events);
+	return async_loop_modify(loop, event_fd, EPOLL_CTL_MOD, events);
 }
 
 
 int
-async_loop_remove(const struct async_loop* const loop,
-	struct async_event* const event)
+async_loop_remove(const struct async_loop* const loop, int* const event_fd)
 {
-	return async_loop_modify(loop, event, EPOLL_CTL_DEL, 0);
+	return async_loop_modify(loop, event_fd, EPOLL_CTL_DEL, 0);
 }

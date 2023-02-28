@@ -84,7 +84,7 @@ data_storage_resize(struct data_storage* const storage, const uint32_t new_len)
 	}
 
 	void* const ptr =
-		shnet_realloc(storage->frames, sizeof(struct data_frame) * new_len);
+		shnet_realloc(storage->frames, sizeof(*storage->frames) * new_len);
 
 	if(ptr == NULL)
 	{
@@ -213,7 +213,7 @@ data_storage_drain(struct data_storage* const storage, const uint64_t amount)
 		--storage->used;
 
 		(void) memmove(frame, frame + 1,
-			sizeof(struct data_frame) * storage->used);
+			sizeof(*frame) * storage->used);
 
 		if(storage->used < (storage->size >> 2))
 		{

@@ -350,7 +350,7 @@ time_resize_timeouts_raw(struct time_timers* const timers,
 	}
 
 	void* const ptr =
-		shnet_realloc(timers->timeouts, sizeof(struct time_timeout) * new_size);
+		shnet_realloc(timers->timeouts, sizeof(*timers->timeouts) * new_size);
 
 	if(ptr == NULL)
 	{
@@ -664,8 +664,8 @@ time_resize_intervals_raw(struct time_timers* const timers,
 		return 0;
 	}
 
-	void* const ptr = shnet_realloc(timers->intervals,
-		sizeof(struct time_interval) * new_size);
+	void* const ptr =
+		shnet_realloc(timers->intervals, sizeof(*timers->intervals) * new_size);
 
 	if(ptr == NULL)
 	{
@@ -691,7 +691,7 @@ time_add_interval_common(struct time_timers* const timers,
 	const uint32_t new_size = timers->intervals_used + 1;
 
 	if(
-		new_size >= timers->intervals_size &&
+		new_size > timers->intervals_size &&
 		time_resize_intervals_raw(timers, (new_size << 1) | 1) &&
 		time_resize_intervals_raw(timers, new_size)
 	)

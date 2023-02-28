@@ -25,7 +25,7 @@ net_get_addr_struct(const int family, const int socktype,
 
 
 struct addrinfo*
-net_get_address(const char* const hostname,
+net_get_address_sync(const char* const hostname,
 	const char* const port, const struct addrinfo* const hints)
 {
 	struct addrinfo* addr;
@@ -59,7 +59,7 @@ net_get_address_thread(void* net_get_address_thread_data)
 
 	addr->callback(
 		addr,
-		net_get_address(addr->hostname, addr->port, addr->hints)
+		net_get_address_sync(addr->hostname, addr->port, addr->hints)
 	);
 
 	(void) pthread_detach(pthread_self());
@@ -86,22 +86,43 @@ net_free_address(struct addrinfo* const info)
 void
 net_address_to_string(const void* const addr, char* const buffer)
 {
-	if(net_address_to_family(addr) == net_family_ipv4)
+	const sa_family_t family = net_address_to_family(addr);
+
+	switch(family)
+	{
+
+	case NET_FAMILY_IPV4:
 	{
 		(void) inet_ntop(
-			net_family_ipv4,
+			NET_FAMILY_IPV4,
 			&((struct sockaddr_in*) addr)->sin_addr.s_addr,
 			buffer,
-			net_const_ipv4_size
+			NET_CONST_IPV4_SIZE
 		);
+
+		break;
 	}
 
-	(void) inet_ntop(
-		net_family_ipv6,
-		((struct sockaddr_in6*) addr)->sin6_addr.s6_addr,
-		buffer,
-		net_const_ipv6_size
-	);
+	case NET_FAMILY_IPV6:
+	{
+		(void) inet_ntop(
+			NET_FAMILY_IPV6,
+			((struct sockaddr_in6*) addr)->sin6_addr.s6_addr,
+			buffer,
+			NET_CONST_IPV6_SIZE
+		);
+
+		break;
+	}
+
+	default:
+	{
+		errno = ENOTSUP;
+
+		break;
+	}
+
+	}
 }
 
 
@@ -115,24 +136,58 @@ net_address_to_family(const void* const addr)
 uint16_t
 net_address_to_port(const void* const addr)
 {
-	if(net_address_to_family(addr) == net_family_ipv4)
+	const sa_family_t family = net_address_to_family(addr);
+
+	switch(family)
+	{
+
+	case NET_FAMILY_IPV4:
 	{
 		return ntohs(((struct sockaddr_in*) addr)->sin_port);
 	}
 
-	return ntohs(((struct sockaddr_in6*) addr)->sin6_port);
+	case NET_FAMILY_IPV6:
+	{
+		return ntohs(((struct sockaddr_in6*) addr)->sin6_port);
+	}
+
+	default:
+	{
+		errno = ENOTSUP;
+
+		return 0;
+	}
+
+	}
 }
 
 
 void*
 net_address_to_ip(const void* const addr)
 {
-	if(net_address_to_family(addr) == net_family_ipv4)
+	const sa_family_t family = net_address_to_family(addr);
+
+	switch(family)
+	{
+
+	case NET_FAMILY_IPV4:
 	{
 		return &((struct sockaddr_in*) addr)->sin_addr.s_addr;
 	}
 
-	return ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr;
+	case NET_FAMILY_IPV6:
+	{
+		return ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr;
+	}
+
+	default:
+	{
+		errno = ENOTSUP;
+
+		return 0;
+	}
+
+	}
 }
 
 
@@ -156,14 +211,12 @@ int
 net_socket_bind(const int sfd, const struct addrinfo* const info)
 {
 	int err;
-	socklen_t len = net_const_ipv4_size;
 
-	if(info->ai_family == net_family_ipv6)
-	{
-		len = net_const_ipv6_size;
-	}
-
-	safe_execute(err = bind(sfd, info->ai_addr, len), err == -1, errno);
+	safe_execute(
+		err = bind(sfd, info->ai_addr, info->ai_addrlen),
+		err == -1,
+		errno
+	);
 
 	return err;
 }
@@ -173,14 +226,12 @@ int
 net_socket_connect(const int sfd, const struct addrinfo* const info)
 {
 	int err;
-	socklen_t len = net_const_ipv4_size;
 
-	if(info->ai_family == net_family_ipv6)
-	{
-		len = net_const_ipv6_size;
-	}
-
-	safe_execute(err = connect(sfd, info->ai_addr, len), err == -1, errno);
+	safe_execute(
+		err = connect(sfd, info->ai_addr, info->ai_addrlen),
+		err == -1,
+		errno
+	);
 
 	return err;
 }
@@ -193,7 +244,7 @@ net_socket_setopt_true(const int sfd, const int level, const int option_name)
 	int true = 1;
 
 	safe_execute(
-		err = setsockopt(sfd, level, option_name, &true, sizeof(int)),
+		err = setsockopt(sfd, level, option_name, &true, sizeof(true)),
 		err == -1,
 		errno
 	);
@@ -209,7 +260,7 @@ net_socket_setopt_false(const int sfd, const int level, const int option_name)
 	int false = 0;
 
 	safe_execute(
-		err = setsockopt(sfd, level, option_name, &false, sizeof(int)),
+		err = setsockopt(sfd, level, option_name, &false, sizeof(false)),
 		err == -1,
 		errno
 	);
@@ -250,13 +301,9 @@ int
 net_socket_get_family(const int sfd)
 {
 	int ret;
-	socklen_t optlen =
-	(socklen_t)
-	{
-		sizeof(int)
-	};
 
-	(void) getsockopt(sfd, SOL_SOCKET, SO_DOMAIN, &ret, &optlen);
+	(void) getsockopt(sfd, SOL_SOCKET, SO_DOMAIN,
+		&ret, &(socklen_t){ sizeof(ret) });
 
 	return ret;
 }
@@ -266,13 +313,9 @@ int
 net_socket_get_socktype(const int sfd)
 {
 	int ret;
-	socklen_t optlen =
-	(socklen_t)
-	{
-		sizeof(int)
-	};
 
-	(void) getsockopt(sfd, SOL_SOCKET, SO_TYPE, &ret, &optlen);
+	(void) getsockopt(sfd, SOL_SOCKET, SO_TYPE,
+		&ret, &(socklen_t){ sizeof(ret) });
 
 	return ret;
 }
@@ -282,41 +325,27 @@ int
 net_socket_get_protocol(const int sfd)
 {
 	int ret;
-	socklen_t optlen =
-	(socklen_t)
-	{
-		sizeof(int)
-	};
 
-	(void) getsockopt(sfd, SOL_SOCKET, SO_PROTOCOL, &ret, &optlen);
+	(void) getsockopt(sfd, SOL_SOCKET, SO_PROTOCOL,
+		&ret, &(socklen_t){ sizeof(ret) });
 
 	return ret;
 }
 
 
 void
-net_socket_get_peer_address(const int sfd, void* const address)
+net_socket_get_peer_address(const int sfd, void* const addr)
 {
-	socklen_t len =
-	(socklen_t)
-	{
-		sizeof(struct sockaddr_storage)
-	};
-
-	(void) getpeername(sfd, address, &len);
+	(void) getpeername(sfd, addr,
+		&(socklen_t){ sizeof(struct sockaddr_storage) });
 }
 
 
 void
-net_socket_get_local_address(const int sfd, void* const address)
+net_socket_get_local_address(const int sfd, void* const addr)
 {
-	socklen_t len =
-	(socklen_t)
-	{
-		sizeof(struct sockaddr_storage)
-	};
-
-	(void) getsockname(sfd, address, &len);
+	(void) getsockname(sfd, addr,
+		&(socklen_t){ sizeof(struct sockaddr_storage) });
 }
 
 

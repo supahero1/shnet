@@ -12,30 +12,34 @@ extern "C" {
 
 enum tcp_event
 {
-	tcp_open,
-	tcp_data,
-	tcp_can_send,
-	tcp_readclose,
-	tcp_close,
-	tcp_deinit,
-	tcp_free
+	TCP_OPEN,
+	TCP_DATA,
+	TCP_CAN_SEND,
+	TCP_READCLOSE,
+	TCP_CLOSE,
+	TCP_DEINIT,
+	TCP_FREE
 };
 
 
-typedef struct tcp_socket* (*tcp_socket_event_t)(
-	struct tcp_socket*, enum tcp_event);
+enum tcp_type
+{
+	TCP_CLIENT,
+	TCP_SERVER
+};
+
+
+struct tcp_socket;
+
+
+typedef struct tcp_socket* (*tcp_event_t)(struct tcp_socket*, enum tcp_event);
 
 
 struct tcp_socket
 {
-	struct async_event core;
-	pthread_mutex_t lock;
+	int fd;
 
-	tcp_socket_event_t on_event;
-	struct async_loop* loop;
-
-	struct data_storage queue;
-
+	uint8_t type:1;
 	uint8_t alloc_loop:1;
 	uint8_t opened:1;
 	uint8_t confirmed_free:1;
@@ -43,137 +47,25 @@ struct tcp_socket
 	uint8_t close_guard:1;
 	uint8_t closing_fast:1;
 	uint8_t free_ptr:1;
-	uint8_t dont_send_buffered:1;
 	/* TLS Extensions */
 	uint8_t alloc_ctx:1;
 	uint8_t alloc_ssl:1;
 	uint8_t tls_close_guard:1;
 	uint8_t init_fin:1;
 	uint8_t shutdown_once:1;
-};
 
+	pthread_mutex_t lock;
+	struct data_storage queue;
 
-extern void
-tcp_lock(struct tcp_socket* const);
+	tcp_event_t on_event;
 
-
-extern void
-tcp_unlock(struct tcp_socket* const);
-
-
-extern void
-tcp_socket_cork_on(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_cork_off(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_nodelay_on(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_nodelay_off(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_keepalive_on_explicit(const struct tcp_socket* const,
-	const int, const int, const int);
-
-
-extern void
-tcp_socket_keepalive_on(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_keepalive_off(const struct tcp_socket* const);
-
-
-extern void
-tcp_socket_free_(struct tcp_socket* const);
-
-
-extern void
-tcp_socket_free(struct tcp_socket* const);
-
-
-extern void
-tcp_socket_close(struct tcp_socket* const);
-
-
-extern void
-tcp_socket_force_close(struct tcp_socket* const);
-
-
-struct tcp_socket_options
-{
-	struct addrinfo* info;
-	const char* hostname;
-	const char* port;
-	int family;
-	int flags;
-};
-
-
-extern int
-tcp_socket(struct tcp_socket* const, const struct tcp_socket_options* const);
-
-
-extern int
-tcp_send_buffered(struct tcp_socket* const);
-
-
-extern int
-tcp_send(struct tcp_socket* const, const struct data_frame* const);
-
-
-extern uint64_t
-tcp_read(struct tcp_socket* const, void*, uint64_t);
-
-
-extern uint64_t
-tcp_send_len(const struct tcp_socket* const);
-
-
-extern uint64_t
-tcp_recv_len(const struct tcp_socket* const);
-
-
-
-typedef struct tcp_socket* (*tcp_server_event_t)(
-	struct tcp_server*, struct tcp_socket*, enum tcp_event);
-
-
-struct tcp_server
-{
-	struct async_event core;
-
-	tcp_server_event_t on_event;
 	struct async_loop* loop;
-
-	uint8_t alloc_loop:1;
-	/* TLS Extensions */
-	uint8_t alloc_ctx:1;
 };
 
 
-extern uint16_t
-tcp_server_get_port(const struct tcp_server* const);
-
-
-extern void
-tcp_server_free(struct tcp_server* const);
-
-
-extern void
-tcp_server_close(struct tcp_server* const);
-
-
-struct tcp_server_options
+struct tcp_options
 {
 	struct addrinfo* info;
-
 	const char* hostname;
 	const char* port;
 
@@ -184,17 +76,101 @@ struct tcp_server_options
 };
 
 
-extern int
-tcp_server(struct tcp_server* const, const struct tcp_server_options* const);
-
+extern void
+tcp_lock(struct tcp_socket* socket);
 
 
 extern void
-tcp_onevent(struct async_loop*, uint32_t, struct async_event*);
+tcp_unlock(struct tcp_socket* socket);
+
+
+extern uint16_t
+tcp_get_local_port(const struct tcp_socket* server);
+
+
+extern void
+tcp_cork_on(const struct tcp_socket* client);
+
+
+extern void
+tcp_cork_off(const struct tcp_socket* client);
+
+
+extern void
+tcp_nodelay_on(const struct tcp_socket* client);
+
+
+extern void
+tcp_nodelay_off(const struct tcp_socket* client);
+
+
+extern void
+tcp_keepalive_on_explicit(const struct tcp_socket* client,
+	int idle_time, int reprobe_time, int retries);
+
+
+extern void
+tcp_keepalive_on(const struct tcp_socket* client);
+
+
+extern void
+tcp_keepalive_off(const struct tcp_socket* client);
+
+
+extern void
+tcp_free_common(struct tcp_socket* socket);
+
+
+extern void
+tcp_free(struct tcp_socket* socket);
+
+
+extern void
+tcp_close(struct tcp_socket* socket);
+
+
+extern void
+tcp_terminate(struct tcp_socket* client);
 
 
 extern int
-tcp_async_loop(struct async_loop* const);
+tcp_send_buffered(struct tcp_socket* client);
+
+
+extern int
+tcp_send(struct tcp_socket* client, const struct data_frame* frame);
+
+
+extern uint64_t
+tcp_read(struct tcp_socket* client, void* out, uint64_t out_len);
+
+
+extern uint64_t
+tcp_send_len(const struct tcp_socket* client);
+
+
+extern uint64_t
+tcp_recv_len(const struct tcp_socket* socket);
+
+
+extern struct tcp_socket*
+tcp_get_server(struct tcp_socket* client);
+
+
+extern int
+tcp_client(struct tcp_socket* client, const struct tcp_options* options);
+
+
+extern int
+tcp_server(struct tcp_socket* server, const struct tcp_options* options);
+
+
+extern void
+tcp_onevent(struct async_loop*, int*, uint32_t);
+
+
+extern int
+tcp_async_loop(struct async_loop* loop);
 
 
 #ifdef __cplusplus
