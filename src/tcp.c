@@ -514,7 +514,8 @@ tcp_socket_recv_buf_len(const struct tcp_socket* const socket)
 
 
 static int
-tcp_connect(struct tcp_socket* const socket, const struct tcp_options* const options)
+tcp_connect(struct tcp_socket* const socket,
+	const struct tcp_options* const options)
 {
 	uint8_t ers = 0;
 	const struct addrinfo* info = options->info;
@@ -924,9 +925,9 @@ struct tcp_server_data
 
 
 struct tcp_socket*
-tcp_get_server(struct tcp_socket* const client)
+tcp_get_server(const struct tcp_socket* const client)
 {
-	struct tcp_server_data* const data = (struct tcp_server_data*) client;
+	const struct tcp_server_data* const data = (struct tcp_server_data*) client;
 
 	return data->server;
 }
