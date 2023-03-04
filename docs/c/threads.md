@@ -17,6 +17,10 @@ the 2 above and implements a thread-safe queue of jobs to do.
 
 ## Dependencies
 
+None.
+
+## Dev dependencies
+
 - [`error.md`](./error.md)
 
 ## Thread

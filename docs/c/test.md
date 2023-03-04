@@ -12,6 +12,10 @@ a suitable environment for testing.
 
 None.
 
+## Dev dependencies
+
+None.
+
 ## Marking boundaries of a test
 
 Since infinite loops are not very uncommon in new code, sometimes it could be a
@@ -184,3 +188,23 @@ mock test them to make sure the overriding has succeeded.
 There are many more of these - for a full list see the header
 file `test.h`. If there isn't a macro for a function, you will
 need to explicitly use `test_register()` as specified above.
+
+## Preventing thread creation
+
+In order to simulate the effects of "disabling preemption", which without
+changing the scheduler to one of the real-time ones is not possible, this
+module creates a kind of a polyfill for that behavior by disabling creation
+of new threads on demand:
+
+```c
+test_preempt_off();
+
+/* No new threads will spawn here */
+
+test_preempt_on();
+
+/*
+ * All of the threads, if any, created during this critical section above,
+ * will be created now, in the same order in which they were called.
+ */
+```

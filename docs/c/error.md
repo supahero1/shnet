@@ -24,6 +24,10 @@ All of the above issues are addressed by this module.
 
 None.
 
+## Dev dependencies
+
+None.
+
 ## Usage
 
 You can define the error handling function `int error_handler(int, int)`

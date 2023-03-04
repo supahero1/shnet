@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <linux/ip.h>
 #include <arpa/inet.h>
 
@@ -86,7 +87,7 @@ net_free_address(struct addrinfo* const info)
 void
 net_address_to_string(const void* const addr, char* const buffer)
 {
-	const sa_family_t family = net_address_to_family(addr);
+	const net_family_t family = net_address_to_family(addr);
 
 	switch(family)
 	{
@@ -115,6 +116,13 @@ net_address_to_string(const void* const addr, char* const buffer)
 		break;
 	}
 
+	case NET_FAMILY_UNIX:
+	{
+		(void) strncpy(buffer, ((struct sockaddr_un*) addr)->sun_path, 108);
+
+		break;
+	}
+
 	default:
 	{
 		errno = ENOTSUP;
@@ -126,7 +134,7 @@ net_address_to_string(const void* const addr, char* const buffer)
 }
 
 
-sa_family_t
+net_family_t
 net_address_to_family(const void* const addr)
 {
 	return ((struct sockaddr*) addr)->sa_family;
@@ -136,7 +144,7 @@ net_address_to_family(const void* const addr)
 uint16_t
 net_address_to_port(const void* const addr)
 {
-	const sa_family_t family = net_address_to_family(addr);
+	const net_family_t family = net_address_to_family(addr);
 
 	switch(family)
 	{
@@ -165,7 +173,7 @@ net_address_to_port(const void* const addr)
 void*
 net_address_to_ip(const void* const addr)
 {
-	const sa_family_t family = net_address_to_family(addr);
+	const net_family_t family = net_address_to_family(addr);
 
 	switch(family)
 	{
@@ -180,11 +188,16 @@ net_address_to_ip(const void* const addr)
 		return ((struct sockaddr_in6*) addr)->sin6_addr.s6_addr;
 	}
 
+	case NET_FAMILY_UNIX:
+	{
+		return ((struct sockaddr_un*) addr)->sun_path;
+	}
+
 	default:
 	{
 		errno = ENOTSUP;
 
-		return 0;
+		return NULL;
 	}
 
 	}
@@ -193,12 +206,12 @@ net_address_to_ip(const void* const addr)
 
 
 int
-net_socket_get(const struct addrinfo* const info)
+net_socket_get(const struct addrinfo* const hints)
 {
 	int err;
 
 	safe_execute(
-		err = socket(info->ai_family, info->ai_socktype, info->ai_protocol),
+		err = socket(hints->ai_family, hints->ai_socktype, hints->ai_protocol),
 		err == -1,
 		errno
 	);
@@ -297,10 +310,10 @@ net_socket_dont_reuse_port(const int sfd)
 }
 
 
-int
+net_family_t
 net_socket_get_family(const int sfd)
 {
-	int ret;
+	net_family_t ret;
 
 	(void) getsockopt(sfd, SOL_SOCKET, SO_DOMAIN,
 		&ret, &(socklen_t){ sizeof(ret) });

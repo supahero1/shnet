@@ -1,3 +1,3 @@
-BUILD_SUBDIRS = preempt c cpp
+BUILD_SUBDIRS = c cpp
 
 include $(DIR_TOP)/Rules.make

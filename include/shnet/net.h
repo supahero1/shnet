@@ -7,6 +7,7 @@ extern "C" {
 
 #include <netdb.h>
 #include <stdint.h>
+#include <sys/un.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -17,6 +18,7 @@ enum net_consts
 	NET_FAMILY_ANY = AF_UNSPEC,
 	NET_FAMILY_IPV4 = AF_INET,
 	NET_FAMILY_IPV6 = AF_INET6,
+	NET_FAMILY_UNIX = AF_UNIX,
 
 	/* SOCKTYPES */
 	NET_SOCK_ANY = 0,
@@ -41,16 +43,27 @@ enum net_consts
 	NET_FLAG_WANTS_MAPPED_IPV4 = AI_V4MAPPED,
 
 	/* CONSTANTS */
-	NET_CONST_IPV4_STRLEN = INET_ADDRSTRLEN,
-	NET_CONST_IPV6_STRLEN = INET6_ADDRSTRLEN,
-	NET_CONST_IP_MAX_STRLEN = NET_CONST_IPV6_STRLEN,
+
+	NET_CONST_IPV4_STRLEN = 16,
+	NET_CONST_IPV6_STRLEN = 46,
+	NET_CONST_UNIX_STRLEN = 109,
+	NET_CONST_IP_MAX_STRLEN = NET_CONST_UNIX_STRLEN,
+
 	NET_CONST_IPV4_SIZE = sizeof(struct sockaddr_in),
 	NET_CONST_IPV6_SIZE = sizeof(struct sockaddr_in6),
-	NET_CONST_IP_MAX_SIZE = NET_CONST_IPV6_SIZE
+	NET_CONST_UNIX_SIZE = sizeof(struct sockaddr_un),
+	NET_CONST_ADDR_MAX_SIZE = sizeof(struct sockaddr_storage)
 };
 
 
+struct net_async_address;
+
+
 typedef struct sockaddr_storage net_address_t;
+
+typedef sa_family_t net_family_t;
+
+typedef void (*net_async_t)(struct net_async_address*, struct addrinfo*);
 
 
 struct net_async_address
@@ -61,7 +74,7 @@ struct net_async_address
 	struct addrinfo* hints;
 
 	void* data;
-	void (*callback)(struct net_async_address*, struct addrinfo*);
+	net_async_t callback;
 };
 
 
@@ -88,7 +101,7 @@ extern void
 net_address_to_string(const void* addr, char* buffer);
 
 
-extern sa_family_t
+extern net_family_t
 net_address_to_family(const void* addr);
 
 
@@ -102,7 +115,7 @@ net_address_to_ip(const void* addr);
 
 
 extern int
-net_socket_get(const struct addrinfo* info);
+net_socket_get(const struct addrinfo* hints);
 
 
 extern int
@@ -137,7 +150,7 @@ extern void
 net_socket_dont_reuse_port(int sfd);
 
 
-extern int
+extern net_family_t
 net_socket_get_family(int sfd);
 
 

@@ -4,10 +4,13 @@ This directory contains documentation of all actively used modules in the
 library. Documentation of WIP modules might not be here yet. Symbols that
 aren't supposed to be used by the application might not be documented.
 
-Each module has a list of dependencies somewhere at the top of its
-documentation (or it doesn't, meaning it's a leaf). You should get
-to know them first or otherwise you might not underestand what the
-documentation explains.
+Each module has a list of dependencies somewhere at the top of its documentation
+(or it doesn't, meaning it's a leaf). You should get to know them first or
+otherwise you might not underestand what the documentation explains.
+
+Additionally, alongside "application" dependencies, there will be developer's
+dependencies, that each developer working directly with the library's code must
+know.
 
 **Unless specified otherwise...**
 
@@ -225,3 +228,10 @@ if(a)
 
 In documentation files, code blocks must have at
 least one newline before and after their occurence.
+
+The above spacing requirements don't have to be always enforced, especially when
+the amount of whitespace is strikingly less pleasant to the eye than having a
+little less spaces. There should be relatively few cases like that though. One
+example of that occuring is when lots of very similar in meaning but different
+in type statements are next to each other. Bundling these together results in
+better image than having them split apart for no reason.

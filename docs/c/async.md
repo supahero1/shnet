@@ -10,6 +10,10 @@ of context switches in an implementation using threads (and more memory).
 
 ## Dependencies
 
+None.
+
+## Dev dependencies
+
 - [`error.md`](./error.md)
 
 ## Usage

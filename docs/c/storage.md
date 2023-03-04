@@ -27,6 +27,10 @@ All of these are taken care of in this module using one structure.
 
 ## Dependencies
 
+None.
+
+## Dev dependencies
+
 - [`error.md`](./error.md)
 
 ## Usage

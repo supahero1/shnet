@@ -1,6 +1,0 @@
-BUILD_TYPE  := $(BUILD_LIB)
-BUILD_FLAGS := -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -g3
-BUILD_LIBS  := dl
-BUILD_NAME  := $(PROJECT_NAME)_preempt
-
-include $(DIR_TOP)/Rules.make

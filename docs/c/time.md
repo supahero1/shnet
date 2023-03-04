@@ -26,9 +26,11 @@ don't need to be as big as them to share the same heap.
 
 ## Dependencies
 
-- [`error.md`](./error.md)
-
 - [`threads.md`](./threads.md)
+
+## Dev dependencies
+
+- [`error.md`](./error.md)
 
 ## Basic knowledge
 
@@ -49,8 +51,7 @@ function. Returns `uint64_t` in nanoseconds.
 One can write `time_get_x(uint64_t)` instead
 of `time_get_time() + time_x_to_ns(uint64_t)`.
 
-No time caching is done. All time
-fetching functions return fresh values.
+No time caching is done. All time fetching functions return fresh values.
 
 ## Initialisation
 

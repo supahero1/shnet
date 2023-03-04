@@ -5,6 +5,10 @@
 extern "C" {
 #endif
 
+#if defined(_PTHREAD_H) || defined(_DLFCN_H)
+#error shnet/test.h must be included first.
+#endif
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -14,6 +18,7 @@ extern "C" {
 #include <stdio.h>
 #include <assert.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include <shnet/error.h>
 
@@ -62,6 +67,15 @@ test_expect_segfault(const void* ptr);
 
 extern void
 test_expect_no_segfault(const void* ptr);
+
+
+
+extern void
+test_preempt_off(void);
+
+
+extern void
+test_preempt_on(void);
 
 
 

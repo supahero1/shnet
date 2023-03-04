@@ -158,3 +158,99 @@ test_expect_no_segfault(const void* const ptr)
 {
 	_test_var = *(char*)ptr;
 }
+
+
+
+struct _test_preemption_data
+{
+	pthread_t* a;
+
+	const pthread_attr_t* b;
+
+	void* (*c)(void*);
+
+	void* d;
+};
+
+
+static struct _test_preemption_data _test_thread_queue[64];
+
+static int _test_thread_queue_len = 0;
+static int _test_preemption_off = 0;
+
+static int
+(*_test_pthread_create_real)(pthread_t*,
+	const pthread_attr_t*, void* (*)(void*), void*) = NULL;
+
+static pthread_once_t _test_preempt_once = PTHREAD_ONCE_INIT;
+
+
+static int
+_test_pthread_create(pthread_t* a,
+	const pthread_attr_t* b, void* (*c)(void*), void* d)
+{
+	if(_test_preemption_off)
+	{
+		_test_thread_queue[_test_thread_queue_len++] =
+		(struct _test_preemption_data)
+		{
+			.a = a,
+			.b = b,
+			.c = c,
+			.d = d
+		};
+
+		return 0;
+	}
+
+	return _test_pthread_create_real(a, b, c, d);
+}
+
+
+static void
+_test_preempt_init(void)
+{
+	void* libc = dlopen("libc.so.6", RTLD_LAZY);
+
+	if(!libc)
+	{
+		fprintf(stderr, "Error loading the C library: %s\n", dlerror());
+		abort();
+	}
+
+	_test_pthread_create_real = dlsym(libc, "pthread_create");
+
+	assert(_test_pthread_create_real);
+
+	*(void**)(&pthread_create) = _test_pthread_create;
+
+	(void) dlclose(libc);
+}
+
+
+void
+test_preempt_off(void)
+{
+	(void) pthread_once(&_test_preempt_once, _test_preempt_init);
+
+	_test_preemption_off = 1;
+}
+
+
+void
+test_preempt_on(void)
+{
+	_test_preemption_off = 0;
+
+	for(int i = 0; i < _test_thread_queue_len; ++i)
+	{
+		assert(!_test_pthread_create_real(
+			_test_thread_queue[i].a,
+			_test_thread_queue[i].b,
+			_test_thread_queue[i].c,
+			_test_thread_queue[i].d
+		));
+	}
+
+	_test_thread_queue_len = 0;
+}

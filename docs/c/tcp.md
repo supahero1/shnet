@@ -1,21 +1,25 @@
 # TCP
 
-This module is an abstraction layer of Linux TCP sockets. It implements
-both client and server. In benchmarks, it's around the speed of iPerf3.
+This module is an abstraction layer for Linux TCP sockets. It implements
+both client and server. In benchmarks, it's around the native speed.
 
 For examples of usage, see `tests/c/009_tcp.c`.
 
 ## Dependencies
 
-- `error.md`
-- `storage.md`
-- `threads.md`
-- `async.md`
-- `net.md`
+- [`storage.md`](./storage.md)
+- [`async.md`](./async.md)
+- [`net.md`](./net.md)
+
+## Dev dependencies
+
+- [`error.md](./error.md)
+- [`threads.md](./threads.md)
 
 ## Rules
 
 This module was made with a few assumptions that you must follow:
+
 1. A socket may only be in 1 event loop at a time,
 2. A socket may only be used by at most 1 user thread
 (besides from within event loop, i.e. from event handler).

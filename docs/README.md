@@ -22,6 +22,12 @@ BUILD_SUBDIRS = path/to/the/folder/containing/new/makefile
 include $(DIR_TOP)/Rules.make
 ```
 
+Or, if the root folder is above, put the following code in one of the targets:
+
+```make
+	$(Q)$(MAKE) -C <folder_name>
+```
+
 Coming back to the initial Makefile. By default, it will gather all files with
 a `.c` extension to then be built. You can only build one kind of an extension
 in a directory. If you'd like to build C++ files, you can use `BUILD_LANG`:
