@@ -1,9 +1,7 @@
-#include <shnet/net.h>
 #include <shnet/tcp.h>
 #include <shnet/error.h>
 
 #include <errno.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -107,7 +105,7 @@ tcp_free_common(struct tcp_socket* const socket)
 {
 	if(socket->on_event && socket->opened)
 	{ // TODO TEST CASE FOR THIS
-		socket->on_event(socket, TCP_DEINIT);
+		(void) socket->on_event(socket, TCP_DEINIT);
 	}
 
 	if(socket->fd != -1)
@@ -139,7 +137,7 @@ tcp_free_common(struct tcp_socket* const socket)
 
 	if(socket->on_event)
 	{
-		socket->on_event(socket, TCP_FREE);
+		(void) socket->on_event(socket, TCP_FREE);
 	}
 
 	if(free_ptr)
@@ -174,7 +172,7 @@ tcp_free_internal(struct tcp_socket* const socket)
 {
 	if(socket->on_event)
 	{
-		socket->on_event(socket, TCP_CLOSE);
+		(void) socket->on_event(socket, TCP_CLOSE);
 	}
 
 	tcp_lock(socket);
@@ -203,11 +201,26 @@ tcp_close(struct tcp_socket* const socket)
 
 	socket->closing = 1;
 
-	if(socket->opened && data_storage_is_empty(&socket->queue))
+	if(
+		socket->opened &&
+		data_storage_is_empty(&socket->queue) &&
+		!socket->close_guard
+	)
 	{
 		socket->close_guard = 1;
 
-		(void) shutdown(socket->fd, SHUT_WR);
+		int how;
+
+		if(socket->type == TCP_CLIENT)
+		{
+			how = SHUT_WR;
+		}
+		else
+		{
+			how = SHUT_RDWR;
+		}
+
+		(void) shutdown(socket->fd, how);
 	}
 
 	tcp_unlock(socket);
@@ -217,13 +230,20 @@ tcp_close(struct tcp_socket* const socket)
 void
 tcp_terminate(struct tcp_socket* const client)
 {
+	if(client->type == TCP_SERVER)
+	{
+		tcp_close(client);
+
+		return;
+	}
+
 	tcp_lock(client);
 
 	client->closing_fast = 1;
 
 	data_storage_free(&client->queue);
 
-	if(client->opened)
+	if(client->opened && !client->close_guard)
 	{
 		client->close_guard = 1;
 
@@ -412,6 +432,7 @@ tcp_send(struct tcp_socket* const client, const struct data_frame* const frame)
 		}
 	}
 
+
 	goto_err:
 
 	tcp_unlock(client);
@@ -535,7 +556,8 @@ tcp_connect(struct tcp_socket* const socket,
 			info == NULL ||
 			socket->closing_fast ||
 			(socket->closing && data_storage_is_empty(&socket->queue))
-		) {
+		)
+		{
 			goto goto_err;
 		}
 
@@ -558,7 +580,9 @@ tcp_connect(struct tcp_socket* const socket,
 		}
 		else if(!net_socket_bind(socket->fd, info))
 		{
-			listen(socket->fd, options->backlog == 0 ? 32 : options->backlog);
+			const int backlog = options->backlog == 0 ? 32 : options->backlog;
+
+			net_socket_listen(socket->fd, backlog);
 		}
 
 		switch(errno)
@@ -576,6 +600,16 @@ tcp_connect(struct tcp_socket* const socket,
 				continue;
 			}
 
+			if(socket->type == TCP_SERVER)
+			{
+				socket->opened = 1;
+
+				if(socket->closing)
+				{
+					tcp_close(socket);
+				}
+			}
+
 			return 0;
 		}
 
@@ -591,6 +625,7 @@ tcp_connect(struct tcp_socket* const socket,
 
 			shnet_fallthrough();
 		}
+
 		default:
 		{
 			info = info->ai_next;
@@ -600,6 +635,7 @@ tcp_connect(struct tcp_socket* const socket,
 
 		}
 	}
+
 
 	goto_err:
 
@@ -622,7 +658,7 @@ tcp_connect_async(struct net_async_address* addr, struct addrinfo* info)
 {
 	struct tcp_socket* const socket = addr->data;
 
-	struct tcp_async_data* const data = (struct tcp_async_data*) addr;
+	struct tcp_async_data* const data = (void*) addr;
 
 	if(info == NULL)
 	{
@@ -630,6 +666,8 @@ tcp_connect_async(struct net_async_address* addr, struct addrinfo* info)
 	}
 	else
 	{
+		data->options.info = info;
+
 		if(tcp_connect(socket, &data->options))
 		{
 			tcp_free_internal(socket);
@@ -653,7 +691,8 @@ tcp_init(struct tcp_socket* const socket,
 			options->hostname == NULL &&
 			options->port == NULL
 		)
-	) {
+	)
+	{
 		errno = EINVAL;
 
 		return -1;
@@ -739,7 +778,7 @@ tcp_init(struct tcp_socket* const socket,
 		void* past_data = data + 1;
 
 		info = past_data;
-		info->ai_family = options->family;
+		info->ai_family = options->family ? options->family : NET_FAMILY_IPV4;
 		info->ai_socktype = NET_SOCK_STREAM;
 		info->ai_protocol = NET_PROTO_TCP;
 		info->ai_flags = options->flags;
@@ -783,6 +822,7 @@ tcp_init(struct tcp_socket* const socket,
 
 	return 0;
 
+
 	goto_loop:
 
 	if(socket->alloc_loop)
@@ -823,7 +863,7 @@ tcp_client_onevent(struct tcp_socket* const client, uint32_t events)
 
 			if(client->on_event)
 			{
-				client->on_event(client, TCP_OPEN);
+				(void) client->on_event(client, TCP_OPEN);
 			}
 
 			tcp_lock(client);
@@ -869,7 +909,7 @@ tcp_client_onevent(struct tcp_socket* const client, uint32_t events)
 
 		if((events & EPOLLIN) && client->on_event)
 		{
-			client->on_event(client, TCP_DATA);
+			(void) client->on_event(client, TCP_DATA);
 		}
 	}
 
@@ -886,7 +926,7 @@ tcp_client_onevent(struct tcp_socket* const client, uint32_t events)
 	{
 		if(client->on_event)
 		{
-			client->on_event(client, TCP_CAN_SEND);
+			(void) client->on_event(client, TCP_CAN_SEND);
 		}
 		else
 		{
@@ -905,7 +945,7 @@ tcp_client_onevent(struct tcp_socket* const client, uint32_t events)
 	{
 		if(client->on_event)
 		{
-			client->on_event(client, TCP_READCLOSE);
+			(void) client->on_event(client, TCP_READCLOSE);
 		}
 		else
 		{
@@ -919,17 +959,40 @@ tcp_client_onevent(struct tcp_socket* const client, uint32_t events)
 
 struct tcp_server_data
 {
-	struct tcp_socket* client;
+	struct tcp_socket client;
+
 	struct tcp_socket* server;
 };
 
 
 struct tcp_socket*
-tcp_get_server(const struct tcp_socket* const client)
+tcp_get_server(struct tcp_socket* const client, const enum tcp_event event)
 {
-	const struct tcp_server_data* const data = (struct tcp_server_data*) client;
+	switch(event)
+	{
 
-	return data->server;
+	case TCP_OPEN:
+	{
+		const struct tcp_server_data* const data = (void*) client;
+
+		return data->server;
+	}
+
+	case TCP_CLOSE:
+	case TCP_DEINIT:
+	case TCP_FREE:
+	{
+		return client;
+	}
+
+	default:
+	{
+		errno = EINVAL;
+
+		return NULL;
+	}
+
+	}
 }
 
 
@@ -937,31 +1000,18 @@ static struct tcp_socket*
 tcp_server_onevent(struct tcp_socket* const server, uint32_t events)
 {
 	struct tcp_server_data data;
-
-	data.client = NULL;
 	data.server = server;
 
 	if(events & EPOLLHUP)
 	{
-		(void) server->on_event(data.client, TCP_CLOSE);
+		tcp_free_internal(server);
 
 		return NULL;
 	}
 
 	while(1)
 	{
-		struct sockaddr_storage addr;
-		int sfd;
-
-		safe_execute(
-			sfd = accept(
-				server->fd,
-				(struct sockaddr*)&addr,
-				(socklen_t[]){ sizeof(addr) }
-			),
-			sfd == -1,
-			errno
-		);
+		int sfd = net_socket_accept(server->fd);
 
 		if(sfd == -1)
 		{
@@ -980,21 +1030,19 @@ tcp_server_onevent(struct tcp_socket* const server, uint32_t events)
 			}
 		}
 
-		struct tcp_socket sock = {0};
-
-		sock.fd = sfd;
-		data.client = &sock;
+		data.client = (struct tcp_socket){0};
+		data.client.fd = sfd;
 
 		net_socket_default_options(sfd);
 
-		struct tcp_socket* socket = server->on_event(data.client, TCP_OPEN);
+		struct tcp_socket* socket = server->on_event(&data.client, TCP_OPEN);
 
 		if(socket == NULL)
 		{
 			goto goto_sock;
 		}
 
-		if(socket == &sock)
+		if(socket == &data.client)
 		{
 			void* const ptr = shnet_malloc(sizeof(*socket));
 
@@ -1004,10 +1052,10 @@ tcp_server_onevent(struct tcp_socket* const server, uint32_t events)
 			}
 
 			socket = ptr;
-			sock.free_ptr = 1;
+			data.client.free_ptr = 1;
 		}
 
-		*socket = sock;
+		*socket = data.client;
 
 		if(socket->loop == NULL)
 		{
@@ -1057,7 +1105,6 @@ tcp_client(struct tcp_socket* const client,
 	const struct tcp_options* const options)
 {
 	client->type = TCP_CLIENT;
-	client->on_event = tcp_client_onevent;
 
 	return tcp_init(client, options);
 }
@@ -1068,7 +1115,6 @@ tcp_server(struct tcp_socket* const server,
 	const struct tcp_options* const options)
 {
 	server->type = TCP_SERVER;
-	server->on_event = tcp_server_onevent;
 
 	return tcp_init(server, options);
 }
@@ -1079,7 +1125,7 @@ tcp_onevent(struct async_loop* loop, int* event_fd, uint32_t events)
 {
 	(void) loop;
 
-	struct tcp_socket* const socket = (struct tcp_socket*) event_fd;
+	struct tcp_socket* const socket = (void*) event_fd;
 
 	if(socket->type == TCP_CLIENT)
 	{

@@ -97,6 +97,10 @@ net_free_address(struct addrinfo* info);
 
 
 
+extern void*
+net_get_address(const struct addrinfo* info);
+
+
 extern void
 net_address_to_string(const void* addr, char* buffer);
 
@@ -123,7 +127,15 @@ net_socket_bind(int sfd, const struct addrinfo* info);
 
 
 extern int
+net_socket_listen(int sfd, int backlog);
+
+
+extern int
 net_socket_connect(int sfd, const struct addrinfo* info);
+
+
+extern int
+net_socket_accept(int sfd);
 
 
 extern int

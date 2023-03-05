@@ -16,7 +16,7 @@
 #define thread_count 25UL
 #define repeat 3
 
-#define safety_timeout 30000
+#define safety_timeout 5000
 
 #endif
 

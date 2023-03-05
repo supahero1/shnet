@@ -84,6 +84,13 @@ net_free_address(struct addrinfo* const info)
 
 
 
+void*
+net_get_address(const struct addrinfo* info)
+{
+	return info->ai_addr;
+}
+
+
 void
 net_address_to_string(const void* const addr, char* const buffer)
 {
@@ -236,6 +243,17 @@ net_socket_bind(const int sfd, const struct addrinfo* const info)
 
 
 int
+net_socket_listen(const int sfd, const int backlog)
+{
+	int err;
+
+	safe_execute(err = listen(sfd, backlog), err == -1, errno);
+
+	return err;
+}
+
+
+int
 net_socket_connect(const int sfd, const struct addrinfo* const info)
 {
 	int err;
@@ -247,6 +265,26 @@ net_socket_connect(const int sfd, const struct addrinfo* const info)
 	);
 
 	return err;
+}
+
+
+int
+net_socket_accept(const int sfd)
+{
+	net_address_t addr;
+	int fd;
+
+	safe_execute(
+		fd = accept(
+			sfd,
+			(struct sockaddr*)&addr,
+			(socklen_t[]){ sizeof(addr) }
+		),
+		fd == -1,
+		errno
+	);
+
+	return fd;
 }
 
 

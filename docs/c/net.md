@@ -108,6 +108,11 @@ contain a valid address and port, while `info` refers to a fully initialised
 structure that one can use to retrieve the address, port, and perhaps also next
 addresses in the singly linked list.
 
+On top of that, `addr` is something completely different from `hints` and
+`info`. They both contain `addr`, but they are not `addr`. You can get `addr`
+from a socket's file descriptor via `net_socket_get_*_address()`, and from
+an `info` via `net_get_address()`.
+
 ## DNS queries
 
 This module supports both sync and async DNS queries.
@@ -199,9 +204,19 @@ int
 net_socket_bind(int sfd, const struct addrinfo* info);
 
 
+/* listen() */
+int
+net_socket_listen(int sfd, int backlog);
+
+
 /* connect() */
 int
 net_socket_connect(int sfd, const struct addrinfo* info);
+
+
+/* accept() */
+int
+net_socket_accept(int sfd);
 
 
 /* setsockopt() */

@@ -215,6 +215,7 @@ _test_preempt_init(void)
 	if(!libc)
 	{
 		fprintf(stderr, "Error loading the C library: %s\n", dlerror());
+
 		abort();
 	}
 
@@ -222,7 +223,7 @@ _test_preempt_init(void)
 
 	assert(_test_pthread_create_real);
 
-	*(void**)(&pthread_create) = _test_pthread_create;
+	*(void**)(&_test_pthread_create_real) = _test_pthread_create;
 
 	(void) dlclose(libc);
 }

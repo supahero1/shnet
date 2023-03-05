@@ -154,7 +154,7 @@ tcp_recv_len(const struct tcp_socket* socket);
 
 
 extern struct tcp_socket*
-tcp_get_server(const struct tcp_socket* client);
+tcp_get_server(struct tcp_socket* client, enum tcp_event event);
 
 
 extern int
